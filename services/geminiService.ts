@@ -1,24 +1,21 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
   /**
-   * Generates a preview image for the user's tier.
-   * Instantiates GoogleGenAI immediately before the call.
+   * Generates a high-quality badge visual using Gemini 2.5 Flash Image.
    */
   async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      // Use the gemini-2.5-flash-image model for generating the NFT visual
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
             {
-              text: `A cinematic, high-quality 3D NFT badge for a project called "BASE IMPRESSION". 
-              The badge features a sleek purple Lamborghini and the Farcaster "Warplet" icon. 
-              The tier is ${tier}. Theme color: ${tier === 'PLATINUM' ? 'rainbow sparkling' : tier.toLowerCase()}. 
-              The handle "${handle}" is engraved in digital neon letters. Cyberpunk aesthetic, Base blue lighting.`
+              text: `A cinematic, ultra-high-definition 3D NFT badge for the "BASE IMPRESSION" project. 
+              The badge centerpiece is a sleek, neon-lit purple Lamborghini and a glowing Farcaster logo. 
+              Tier level: ${tier}. Lighting: ${tier === 'PLATINUM' ? 'Hyper-reflective holographic' : 'Futuristic ambient'}. 
+              The text "${handle}" is laser-etched in the base. 4K resolution, Unreal Engine 5 render style.`
             }
           ]
         },
@@ -36,28 +33,27 @@ export class GeminiService {
       }
       return null;
     } catch (error) {
-      console.error("Error generating badge preview:", error);
+      console.error("Gemini Image Generation Error:", error);
       return null;
     }
   }
 
   /**
-   * Gets a motivational analysis message from the model.
-   * Instantiates GoogleGenAI immediately before the call.
+   * Generates motivational copy using Gemini 3 Flash Preview.
    */
   async getImpressionAnalysis(points: number, rank: number): Promise<string> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `I have ${points} points and I am ranked #${rank} in the BASE IMPRESSION contribution event. 
-        Write a short, hype-inducing motivational message about my contribution to the Base ecosystem. 
-        Keep it under 3 sentences and mention "Onchain Summer" or "Building Base".`
+        contents: `Analyze my stats for the BASE IMPRESSION event: Points ${points}, Rank #${rank}. 
+        Write a hyper-energetic, punchy motivational message (max 2 sentences). 
+        Mention 'Onchain Summer' and my potential as a Base ecosystem builder.`
       });
-      return response.text || "You're a legend in the making. Keep building on Base!";
+      return response.text || "You're carving a path on Base. The snapshot is watching!";
     } catch (error) {
-      console.error("Error getting impression analysis:", error);
-      return "Your impact on Base is undeniable. Ready for the next leap?";
+      console.error("Gemini Text Generation Error:", error);
+      return "Your footprint on Base is growing. Keep building the future!";
     }
   }
 }

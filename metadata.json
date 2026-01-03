@@ -1,9 +1,7 @@
 {
   "name": "BASE IMPRESSION",
-  "description": "Calculate your impact across Base and social channels to earn tiered NFT badges. Top 100 builders recognized.",
-  "requestFramePermissions": [
-    "camera"
-  ],
+  "description": "Calculate your impact across Base and social channels to earn tiered NFT badges.",
+  "requestFramePermissions": [],
   "frame": {
     "version": "vNext",
     "imageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=600",
