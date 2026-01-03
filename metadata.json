@@ -1,0 +1,7 @@
+{
+  "name": "BASE IMPRESSION",
+  "description": "Calculate your BaseApp and Twitter contribution points to earn exclusive NFT badges. Ranking top 1000 unlocks special Platinum, Gold, Silver, and Bronze rewards based on your impact.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
