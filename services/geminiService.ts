@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
@@ -6,7 +7,8 @@ export class GeminiService {
    */
   async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Correctly initialize GoogleGenAI with the API key from environment variables.
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
@@ -26,6 +28,7 @@ export class GeminiService {
         }
       });
 
+      // Iterate through parts to find the image part, as it might not be the first part.
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
           return `data:image/png;base64,${part.inlineData.data}`;
@@ -43,13 +46,15 @@ export class GeminiService {
    */
   async getImpressionAnalysis(points: number, rank: number): Promise<string> {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Correctly initialize GoogleGenAI with the API key from environment variables.
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Analyze my stats for the BASE IMPRESSION event: Points ${points}, Rank #${rank}. 
         Write a hyper-energetic, punchy motivational message (max 2 sentences). 
         Mention 'Onchain Summer' and my potential as a Base ecosystem builder.`
       });
+      // Use the .text property directly instead of a method call.
       return response.text || "You're carving a path on Base. The snapshot is watching!";
     } catch (error) {
       console.error("Gemini Text Generation Error:", error);

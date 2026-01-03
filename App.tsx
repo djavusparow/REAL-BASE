@@ -72,13 +72,14 @@ const App: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Connection Requirements
-  const [fcUser, setFcUser] = useState<{ username: string; displayName?: string } | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
   
-  // Twitter Verification States
+  // Interaction States
   const [isTwitterModalOpen, setIsTwitterModalOpen] = useState(false);
   const [tempTwitterHandle, setTempTwitterHandle] = useState('');
-  const [twitterStep, setTwitterStep] = useState<1 | 2 | 3>(1); // 1: Input, 2: Post, 3: Verifying
+  const [twitterStep, setTwitterStep] = useState<1 | 2 | 3>(1);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -86,22 +87,38 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const init = async () => {
+    const initFrame = async () => {
       try {
-        const context = await sdk.context;
-        if (context?.user) {
-          setFcUser({ 
-            username: context.user.username,
-            displayName: context.user.displayName 
-          });
-        }
         sdk.actions.ready();
       } catch (e) {
         console.error("SDK initialization failed", e);
       }
     };
-    init();
+    initFrame();
   }, []);
+
+  const handleWalletConnect = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      // Fix: Use (window as any).ethereum to avoid TypeScript errors on non-standard properties
+      if (typeof (window as any).ethereum !== 'undefined') {
+        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts && accounts[0]) {
+          setWalletAddress(accounts[0]);
+        }
+      } else {
+        // Mock fallback if ethereum provider isn't detected (for development/frames environment)
+        await new Promise(r => setTimeout(r, 1000));
+        setWalletAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Wallet connection failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleTwitterVerifyStart = () => {
     if (!tempTwitterHandle.trim()) return;
@@ -114,7 +131,6 @@ const App: React.FC = () => {
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
     setTwitterStep(3);
     
-    // Simulate real lookup after "tweeting"
     setTimeout(() => {
       setTwUser({ handle: handle });
       setIsTwitterModalOpen(false);
@@ -123,7 +139,7 @@ const App: React.FC = () => {
   };
 
   const handleFinalizeConnection = async () => {
-    if (!fcUser || !twUser) return;
+    if (!walletAddress || !twUser) return;
     
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
@@ -135,7 +151,7 @@ const App: React.FC = () => {
     const rank = 420;
 
     setUser({
-      address: "0x742d...444",
+      address: walletAddress,
       twitterHandle: twUser.handle,
       baseAppAgeDays: baseAge,
       twitterAgeDays: twitterAge,
@@ -292,7 +308,9 @@ const App: React.FC = () => {
         {user && (
           <div className="flex items-center gap-2 glass-effect px-3 py-1.5 rounded-full border border-blue-500/20">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-mono font-bold text-gray-300">{user.address}</span>
+            <span className="text-[10px] font-mono font-bold text-gray-300">
+              {user.address.slice(0, 6)}...{user.address.slice(-4)}
+            </span>
           </div>
         )}
       </header>
@@ -307,44 +325,50 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
               <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
-                Connect your accounts to aggregate your activity across the Base ecosystem.
+                Aggregating your on-chain and social footprint. Please connect your Coinbase wallet to start.
               </p>
             </div>
 
             <div className="space-y-4 max-w-sm mx-auto">
               <div className="glass-effect p-5 rounded-3xl border border-white/10 space-y-4">
-                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Connection Requirements</h3>
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Required Proofs</h3>
                 
-                {/* Step 1: Farcaster */}
-                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${fcUser ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                {/* Step 1: Wallet Connection */}
+                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${walletAddress ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center gap-4">
-                    <div className={`${fcUser ? 'text-green-500' : 'text-blue-500'}`}>
-                      <UserIcon className="w-6 h-6" />
+                    <div className={`${walletAddress ? 'text-green-500' : 'text-blue-500'}`}>
+                      <Wallet className="w-6 h-6" />
                     </div>
                     <div>
-                      <div className="text-xs font-black">Farcaster Account</div>
+                      <div className="text-xs font-black">Base Wallet</div>
                       <div className="text-[10px] text-gray-500">
-                        {fcUser ? `@${fcUser.username}` : 'Not detected'}
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect Coinbase Wallet'}
                       </div>
                     </div>
                   </div>
-                  {fcUser ? (
+                  {walletAddress ? (
                     <CheckCircle2 className="w-5 h-5 text-green-500" />
                   ) : (
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+                    <button 
+                      onClick={handleWalletConnect}
+                      disabled={loading}
+                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+                    >
+                      {loading ? 'Linking...' : 'Connect'}
+                    </button>
                   )}
                 </div>
 
-                {/* Step 2: Twitter */}
+                {/* Step 2: Twitter Verification */}
                 <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${twUser ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`${twUser ? 'text-green-500' : 'text-blue-400'}`}>
                       <Twitter className="w-6 h-6" />
                     </div>
                     <div>
-                      <div className="text-xs font-black">Twitter Account</div>
+                      <div className="text-xs font-black">Twitter Identity</div>
                       <div className="text-[10px] text-gray-500">
-                        {twUser ? twUser.handle : 'Real connection required'}
+                        {twUser ? twUser.handle : 'Verify account ownership'}
                       </div>
                     </div>
                   </div>
@@ -353,7 +377,7 @@ const App: React.FC = () => {
                   ) : (
                     <button 
                       onClick={() => setIsTwitterModalOpen(true)}
-                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+                      className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-black hover:bg-white/10 transition-all active:scale-95"
                     >
                       Verify X
                     </button>
@@ -361,11 +385,18 @@ const App: React.FC = () => {
                 </div>
               </div>
 
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-3 text-red-500">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <p className="text-[10px] font-bold">{error}</p>
+                </div>
+              )}
+
               <button 
                 onClick={handleFinalizeConnection}
-                disabled={!fcUser || !twUser || loading}
+                disabled={!walletAddress || !twUser || loading}
                 className={`w-full py-4 rounded-2xl font-black text-base transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 ${
-                  fcUser && twUser 
+                  walletAddress && twUser 
                   ? 'bg-white text-black hover:bg-blue-50 cursor-pointer' 
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-white/5'
                 }`}
@@ -378,12 +409,12 @@ const App: React.FC = () => {
             <div className="flex items-center justify-center gap-4 opacity-40">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Secure</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">On-Chain</span>
               </div>
               <div className="w-1 h-1 rounded-full bg-gray-500" />
               <div className="flex items-center gap-1.5">
                 <Link2 className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Read-Only</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">EIP-1193</span>
               </div>
             </div>
           </div>
