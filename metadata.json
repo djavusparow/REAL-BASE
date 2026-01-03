@@ -1,6 +1,6 @@
 {
   "name": "BASE IMPRESSION",
-  "description": "The definitive contribution event for the Base ecosystem. Calculate your impact across Base and social channels to earn tiered NFT badges. Top 1000 builders recognized.",
+  "description": "Calculate your impact across Base and social channels to earn tiered NFT badges. Top 100 builders recognized.",
   "requestFramePermissions": [
     "camera"
   ],
@@ -17,6 +17,7 @@
       "social",
       "rewards"
     ],
-    "accentColor": "#2563eb"
+    "accentColor": "#2563eb",
+    "iconUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128"
   }
 }
