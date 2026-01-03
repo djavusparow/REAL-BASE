@@ -2,24 +2,31 @@
 import { RankTier } from '../types';
 
 /**
- * Points are obtained from:
- * 20% BaseApp account age
- * 30% Twitter account age
- * 50% Contributions (tweets with tags @base @baseapp @baseposting @jessepollak @brian_armstrong $LAMBOLESS)
+ * Points Calculation Formula:
+ * 1. BaseApp Age Points: (Days since activation) * 0.20
+ * 2. Twitter Age Points: (Days since activation) * 0.30
+ * 3. Contribution Points: 
+ *    - Each post with tags (@jessepollak @brian_armstrong @base @baseapp @baseposting $LAMBOLESS) = 1 point
+ *    - Maximum 5 points per day
+ *    - Only within range: Nov 1, 2025, 00:01 UTC to Jan 15, 2026, 23:59 UTC
+ *    - Total contribution points are then multiplied by 0.50 (50%)
+ * 
+ * Total Points = BaseAppAgePoints + TwitterAgePoints + ContributionPoints
  */
 export const calculatePoints = (
   baseAppAgeDays: number, 
   twitterAgeDays: number, 
-  mentionsCount: number
+  cappedContributionPoints: number // This value should already respect the max 5/day and date range logic
 ): number => {
-  // Normalize age: assume 365 days is "max points" for age categories
-  const baseAgeScore = Math.min((baseAppAgeDays / 365) * 20, 20);
-  const twitterAgeScore = Math.min((twitterAgeDays / 730) * 30, 30); // Twitter accounts are usually older
+  const baseAgePoints = baseAppAgeDays * 0.20;
+  const twitterAgePoints = twitterAgeDays * 0.30;
   
-  // Normalize mentions: assume 100 valid tweets is "max points"
-  const mentionScore = Math.min((mentionsCount / 100) * 50, 50);
+  // The contribution points result is the capped points multiplied by 50%
+  const contributionPoints = cappedContributionPoints * 0.50;
   
-  return parseFloat((baseAgeScore + twitterAgeScore + mentionScore).toFixed(2));
+  const total = baseAgePoints + twitterAgePoints + contributionPoints;
+  
+  return parseFloat(total.toFixed(2));
 };
 
 export const getTierFromRank = (rank: number): RankTier => {

@@ -217,19 +217,24 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    // Simulated Impact Score
-    const baseAge = 145;
-    const twitterAge = 890;
-    const tweets = 62;
-    const points = calculatePoints(baseAge, twitterAge, tweets);
+    // Impact Score Calculation based on requirements
+    // BaseApp age points: days * 0.20
+    const baseAppAge = 145; 
+    // Twitter age points: days * 0.30
+    const twitterAge = 890; 
+    // Contribution points: (Posts with tags, max 5/day, within range) * 0.50
+    // We simulate the total capped points here (e.g. 76 valid days with activity)
+    const cappedContributionPoints = 76; 
+    
+    const points = calculatePoints(baseAppAge, twitterAge, cappedContributionPoints);
     const rank = 12;
 
     setUser({
       address: walletAddress,
       twitterHandle: twUser.handle,
-      baseAppAgeDays: baseAge,
+      baseAppAgeDays: baseAppAge,
       twitterAgeDays: twitterAge,
-      validTweetsCount: tweets,
+      validTweetsCount: cappedContributionPoints, // We'll display the capped points as the "Contribution" metric
       lambolessBalance: 120.50,
       points: points,
       rank: rank
@@ -673,9 +678,9 @@ const App: React.FC = () => {
                     <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Verified Metrics</h3>
                     <div className="space-y-3">
                         {[
-                            { icon: <Target className="w-4 h-4" />, label: "Base Network Presence", val: `${user.baseAppAgeDays}D`, weight: "20%" },
-                            { icon: <Twitter className="w-4 h-4" />, label: "Social Reputation Weight", val: `${user.twitterAgeDays}D`, weight: "30%" },
-                            { icon: <Zap className="w-4 h-4" />, label: "Builder Action Index", val: user.validTweetsCount, weight: "50%" },
+                            { icon: <Target className="w-4 h-4" />, label: "Base Network Age (20%)", val: `${user.baseAppAgeDays}D`, weight: "x0.2" },
+                            { icon: <Twitter className="w-4 h-4" />, label: "Twitter Age (30%)", val: `${user.twitterAgeDays}D`, weight: "x0.3" },
+                            { icon: <Zap className="w-4 h-4" />, label: "Builder Action (50%)", val: `${user.validTweetsCount} pts`, weight: "x0.5" },
                         ].map((stat, i) => (
                             <div key={i} className="flex items-center justify-between p-5 glass-effect rounded-[1.5rem] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors shadow-sm">
                                 <div className="flex items-center gap-4">
