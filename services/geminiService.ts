@@ -2,16 +2,15 @@
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
-  private ai: GoogleGenAI;
-
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  }
-
+  /**
+   * Generates a preview image for the user's tier.
+   * Instantiates GoogleGenAI immediately before the call.
+   */
   async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
     try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       // Use the gemini-2.5-flash-image model for generating the NFT visual
-      const response = await this.ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
@@ -42,9 +41,14 @@ export class GeminiService {
     }
   }
 
+  /**
+   * Gets a motivational analysis message from the model.
+   * Instantiates GoogleGenAI immediately before the call.
+   */
   async getImpressionAnalysis(points: number, rank: number): Promise<string> {
     try {
-      const response = await this.ai.models.generateContent({
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `I have ${points} points and I am ranked #${rank} in the BASE IMPRESSION contribution event. 
         Write a short, hype-inducing motivational message about my contribution to the Base ecosystem. 
@@ -52,6 +56,7 @@ export class GeminiService {
       });
       return response.text || "You're a legend in the making. Keep building on Base!";
     } catch (error) {
+      console.error("Error getting impression analysis:", error);
       return "Your impact on Base is undeniable. Ready for the next leap?";
     }
   }
