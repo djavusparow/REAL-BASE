@@ -1,6 +1,6 @@
 {
   "name": "BASE IMPRESSION",
-  "description": "Calculate your impact across Base and social channels to earn tiered NFT badges.",
+  "description": "Calculate your impact across Base and social channels to earn tiered NFT badges via BaseApp.",
   "requestFramePermissions": [],
   "frame": {
     "version": "vNext",
@@ -13,9 +13,12 @@
     "type": "miniapp",
     "categories": [
       "social",
-      "rewards"
+      "rewards",
+      "identity"
     ],
     "accentColor": "#2563eb",
-    "iconUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128"
+    "iconUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128",
+    "name": "Base Impression",
+    "developer": "Base Impression DAO"
   }
 }

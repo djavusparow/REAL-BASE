@@ -39,7 +39,7 @@ import Countdown from './components/Countdown';
 import BadgeDisplay from './components/BadgeDisplay';
 import { geminiService } from './services/geminiService';
 
-const APP_NAME = 'BASE IMPRESSION';
+const APP_NAME = 'BaseApp';
 const APP_LOGO_URL = 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128';
 
 const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
@@ -51,7 +51,7 @@ const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
     <div className={`${dimensions} relative rounded-2xl overflow-hidden shadow-2xl group border border-white/20`}>
       <img 
         src="https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=400" 
-        alt="Lambo" 
+        alt="Base Background" 
         className="absolute inset-0 w-full h-full object-cover brightness-50 group-hover:scale-110 transition-transform duration-700"
       />
       <div className="absolute inset-0 bg-blue-900/40 mix-blend-multiply" />
@@ -110,43 +110,40 @@ const App: React.FC = () => {
     setIsWalletSigned(false);
     
     try {
-      // Initialize Coinbase Wallet SDK for a real connection
-      const coinbaseWallet = new CoinbaseWalletSDK({
+      // Initialize BaseApp (formerly Coinbase Wallet) SDK for a real connection
+      const baseAppSDK = new CoinbaseWalletSDK({
         appName: APP_NAME,
         appLogoUrl: APP_LOGO_URL,
         darkMode: true
       });
 
-      // Use Base mainnet by default. The SDK provides a provider even if no extension is installed.
-      const provider = coinbaseWallet.makeWeb3Provider('https://mainnet.base.org', 8453);
+      // Connect specifically to the Base Network
+      const provider = baseAppSDK.makeWeb3Provider('https://mainnet.base.org', 8453);
       
-      // Step 1: Request Accounts
-      // This will open the Coinbase Wallet extension if available, or a QR code modal.
+      // Step 1: Request Accounts from BaseApp
       const accounts = await provider.request({ 
         method: 'eth_requestAccounts' 
       });
       
       const address = (accounts as string[])[0];
-      if (!address) throw new Error("No wallet account selected.");
+      if (!address) throw new Error("No BaseApp account selected.");
 
       // Step 2: Request Signature (Real Approval)
-      // This verifies the user actually controls the wallet they just connected.
-      const message = `Base Impression Verification\n\nI am verifying my identity to calculate my impact on the Base ecosystem.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+      const message = `Base Impression Identity Verification\n\nI am verifying my BaseApp identity to calculate my ecosystem impact.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
       
       await provider.request({
         method: 'personal_sign',
         params: [message, address],
       });
 
-      // Connection and signing successful
       setWalletAddress(address);
       setIsWalletSigned(true);
     } catch (err: any) {
-      console.error("Wallet Connection Error:", err);
+      console.error("BaseApp Connection Error:", err);
       if (err.code === 4001) {
-        setError("Approval denied. Please sign the message in your wallet to proceed.");
+        setError("Signature rejected. Please approve the request in BaseApp to proceed.");
       } else {
-        setError(err.message || "Could not connect to Coinbase Wallet.");
+        setError(err.message || "Could not detect or connect to BaseApp.");
       }
       setWalletAddress(null);
       setIsWalletSigned(false);
@@ -179,12 +176,12 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    // In a production app, we would query on-chain data and social APIs here.
-    const baseAge = 64;
-    const twitterAge = 950;
-    const tweets = 12;
+    // Stats calculation based on simulated indexer data
+    const baseAge = 88;
+    const twitterAge = 1100;
+    const tweets = 34;
     const points = calculatePoints(baseAge, twitterAge, tweets);
-    const rank = 188;
+    const rank = 42;
 
     setUser({
       address: walletAddress,
@@ -192,7 +189,7 @@ const App: React.FC = () => {
       baseAppAgeDays: baseAge,
       twitterAgeDays: twitterAge,
       validTweetsCount: tweets,
-      lambolessBalance: 12.50,
+      lambolessBalance: 25.00,
       points: points,
       rank: rank
     });
@@ -222,13 +219,12 @@ const App: React.FC = () => {
     setIsMinting(true);
     
     try {
-      // Logic for real minting transaction would go here
       await new Promise(r => setTimeout(r, 3000));
       const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
       setTxHash(fakeHash);
       setIsMinted(true);
     } catch (e) {
-      setError("Minting failed. Please check your wallet.");
+      setError("Minting failed. Check your BaseApp balance.");
     } finally {
       setIsMinting(false);
     }
@@ -237,8 +233,8 @@ const App: React.FC = () => {
   const handleShare = (platform: 'twitter' | 'farcaster') => {
     if (!user) return;
     const shareText = isMinted 
-      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt on @base! 🚀`
-      : `I just checked my @base impression! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nBuilding the future on @base! 🚀\n#BaseImpression #LamboLess #OnchainSummer`;
+      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt via BaseApp! 🚀`
+      : `I just checked my @base impression impact! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nJoin me on Base via BaseApp! 🚀\n#BaseImpression #LamboLess #BaseApp`;
     const encodedText = encodeURIComponent(shareText);
     if (platform === 'farcaster') {
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodedText}`);
@@ -273,7 +269,7 @@ const App: React.FC = () => {
               <div className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center mx-auto mb-4">
                 <Twitter className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black">Verify Account</h3>
+              <h3 className="text-xl font-black">Verify Socials</h3>
               <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Ownership Verification Required</p>
             </div>
 
@@ -368,15 +364,15 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
               <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
-                Aggregating your on-chain and social footprint via official Coinbase Wallet connection.
+                Aggregating your on-chain footprint and social impact via official BaseApp connection.
               </p>
             </div>
 
             <div className="space-y-4 max-w-sm mx-auto">
               <div className="glass-effect p-5 rounded-3xl border border-white/10 space-y-4">
-                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Required Proofs</h3>
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Identity Check</h3>
                 
-                {/* Step 1: Wallet Connection & Signature */}
+                {/* Step 1: BaseApp Connection & Signature */}
                 <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${isWalletSigned ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`${isWalletSigned ? 'text-green-500' : 'text-blue-500'}`}>
@@ -384,10 +380,10 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-xs font-black">
-                        {isWalletSigned ? 'Wallet Verified' : 'Base Wallet'}
+                        {isWalletSigned ? 'BaseApp Linked' : 'BaseApp Identity'}
                       </div>
                       <div className="text-[10px] text-gray-500">
-                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect & Sign'}
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect & Sign Message'}
                       </div>
                     </div>
                   </div>
@@ -407,7 +403,7 @@ const App: React.FC = () => {
                       ) : (
                         <>
                           <Fingerprint className="w-3 h-3" />
-                          Verify
+                          Link
                         </>
                       )}
                     </button>
@@ -421,9 +417,9 @@ const App: React.FC = () => {
                       <Twitter className="w-6 h-6" />
                     </div>
                     <div>
-                      <div className="text-xs font-black">Twitter Identity</div>
+                      <div className="text-xs font-black">Social Identity</div>
                       <div className="text-[10px] text-gray-500">
-                        {twUser ? twUser.handle : 'Verify account ownership'}
+                        {twUser ? twUser.handle : 'Verify Twitter owner'}
                       </div>
                     </div>
                   </div>
@@ -434,7 +430,7 @@ const App: React.FC = () => {
                       onClick={() => setIsTwitterModalOpen(true)}
                       className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-black hover:bg-white/10 transition-all active:scale-95"
                     >
-                      Verify X
+                      Link X
                     </button>
                   )}
                 </div>
@@ -448,12 +444,12 @@ const App: React.FC = () => {
                   </div>
                   {!walletAddress && (
                     <a 
-                      href="https://www.coinbase.com/wallet" 
+                      href="https://www.base.org/baseapp" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
                     >
-                      <Download className="w-3 h-3" /> Get Coinbase Wallet
+                      <Download className="w-3 h-3" /> Open BaseApp
                     </a>
                   )}
                 </div>
@@ -468,7 +464,7 @@ const App: React.FC = () => {
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-white/5'
                 }`}
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Calculate My Impression'}
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Analyze My Impact'}
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
@@ -476,12 +472,12 @@ const App: React.FC = () => {
             <div className="flex items-center justify-center gap-4 opacity-40">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Signed</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">BaseApp</span>
               </div>
               <div className="w-1 h-1 rounded-full bg-gray-500" />
               <div className="flex items-center gap-1.5">
                 <Fingerprint className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Verified</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Secured</span>
               </div>
             </div>
           </div>
@@ -512,14 +508,14 @@ const App: React.FC = () => {
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="glass-effect p-4 rounded-3xl border border-blue-500/20 text-center">
-                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Points</span>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Impact Points</span>
                     <div className="text-3xl font-black text-white mt-0.5">{user.points}</div>
                     <div className="mt-1 text-[8px] text-green-400 font-bold bg-green-400/10 px-1.5 py-0.5 rounded-full inline-block">
                         ↑ LIVE
                     </div>
                   </div>
                   <div className="glass-effect p-4 rounded-3xl border border-purple-500/20 text-center">
-                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Rank</span>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Ecosystem Rank</span>
                     <div className="text-3xl font-black text-white mt-0.5">#{user.rank}</div>
                     <div className="mt-1 text-[8px] text-purple-400 font-bold bg-purple-400/10 px-1.5 py-0.5 rounded-full inline-block">
                         {user.rank <= 1000 ? 'ELIGIBLE' : 'RANK UP'}
@@ -568,7 +564,7 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-3">
-                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Metrics Breakdown</h3>
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1">Impression Metrics</h3>
                     <div className="space-y-2">
                         {[
                             { icon: <Target className="w-4 h-4" />, label: "Base Presence", val: `${user.baseAppAgeDays}D`, weight: "20%" },
@@ -594,8 +590,8 @@ const App: React.FC = () => {
             {activeTab === 'leaderboard' && (
               <div className="space-y-4 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between px-2">
-                    <h2 className="text-lg font-black">Top Impact</h2>
-                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">Jan 16 Deadline</span>
+                    <h2 className="text-lg font-black">Top Impressionists</h2>
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">Deadline Jan 16</span>
                 </div>
                 
                 <div className="space-y-2">
@@ -638,9 +634,9 @@ const App: React.FC = () => {
                         <div className="w-16 h-16 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20">
                             <Wallet className="w-8 h-8 text-blue-500" />
                         </div>
-                        <h2 className="text-xl font-black">Claim Reward</h2>
+                        <h2 className="text-xl font-black">Claim Badge</h2>
                         <p className="text-xs text-gray-400 max-w-[240px] mx-auto">
-                            Snapshots finalized. Check your status below. Minting opens Jan 16, 2:00 AM UTC.
+                            Snapshots finalized. Verify your eligibility in BaseApp below.
                         </p>
                     </div>
 
@@ -650,7 +646,7 @@ const App: React.FC = () => {
                                 {user.rank <= 1000 ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
                                 <div>
                                     <div className="text-xs font-black">Rank Check</div>
-                                    <div className="text-[10px] text-gray-500">#{user.rank} / 1000</div>
+                                    <div className="text-[10px] text-gray-500">#{user.rank} / Top 1000</div>
                                 </div>
                             </div>
                         </div>
@@ -659,8 +655,8 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 {user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
                                 <div>
-                                    <div className="text-xs font-black">Balance Check</div>
-                                    <div className="text-[10px] text-gray-500">Min. $2.50 USD in Wallet</div>
+                                    <div className="text-xs font-black">BaseApp Balance</div>
+                                    <div className="text-[10px] text-gray-500">Min. $2.50 USD required</div>
                                 </div>
                             </div>
                         </div>
@@ -668,10 +664,10 @@ const App: React.FC = () => {
                         <div className="p-3.5 bg-blue-500/5 border border-blue-500/20 rounded-xl space-y-1.5">
                             <div className="flex items-center gap-2 text-[8px] font-bold text-blue-400 uppercase tracking-wider">
                                 <Info className="w-2.5 h-2.5" />
-                                <span>Timeline Notice</span>
+                                <span>Minting Window</span>
                             </div>
                             <p className="text-[10px] text-gray-400 leading-tight">
-                                Claiming is locked until <strong className="text-white">January 16, 2026, 02:00 UTC</strong>. Please return then to mint your NFT.
+                                Badges are locked for claiming until <strong className="text-white">Jan 16, 2026, 02:00 UTC</strong>.
                             </p>
                         </div>
                     </div>
@@ -692,10 +688,10 @@ const App: React.FC = () => {
                                 ) : isMinting ? (
                                   <>
                                     <Loader2 className="w-5 h-5 animate-spin" />
-                                    Minting...
+                                    Processing...
                                   </>
                                 ) : (
-                                  'Mint NFT'
+                                  'Mint Impact NFT'
                                 )}
                             </div>
                         </button>
@@ -711,8 +707,8 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="space-y-1.5">
-                      <h2 className="text-2xl font-black text-white">Minted!</h2>
-                      <p className="text-gray-400 text-xs px-6">Your exclusive {TIERS[currentTier].name} Badge is secured on-chain.</p>
+                      <h2 className="text-2xl font-black text-white">On-Chain Success!</h2>
+                      <p className="text-gray-400 text-xs px-6">Your tiered {TIERS[currentTier].name} Badge is secured in your BaseApp.</p>
                     </div>
 
                     <div className="glass-effect p-5 rounded-2xl border border-green-500/20 space-y-3">
@@ -724,8 +720,8 @@ const App: React.FC = () => {
                         </div>
                         <div className="h-px bg-white/5" />
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Reward</span>
-                          <span className="text-white font-bold text-[10px] uppercase tracking-tighter">{TIERS[currentTier].name} Impression Badge</span>
+                          <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Status</span>
+                          <span className="text-white font-bold text-[10px] uppercase tracking-tighter">Verified Member</span>
                         </div>
                     </div>
 
@@ -734,7 +730,7 @@ const App: React.FC = () => {
                         onClick={() => handleShare('farcaster')}
                         className="w-full py-3.5 bg-[#8a63d2] text-white rounded-xl font-black text-sm hover:bg-[#7a52c2] transition-all flex items-center justify-center gap-2 active:scale-95"
                       >
-                        <Share2 className="w-4 h-4" /> Share on Farcaster
+                        <Share2 className="w-4 h-4" /> Post to Farcaster
                       </button>
                     </div>
                   </div>
