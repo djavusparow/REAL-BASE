@@ -110,26 +110,31 @@ const App: React.FC = () => {
     setIsWalletSigned(false);
     
     try {
-      // Initialize BaseApp (formerly Coinbase Wallet) SDK for a real connection
-      const baseAppSDK = new CoinbaseWalletSDK({
-        appName: APP_NAME,
-        appLogoUrl: APP_LOGO_URL,
-        darkMode: true
-      });
-
-      // Connect specifically to the Base Network
-      const provider = baseAppSDK.makeWeb3Provider('https://mainnet.base.org', 8453);
+      let provider: any;
       
-      // Step 1: Request Accounts from BaseApp
+      // Smart Detection: If we are inside the BaseApp browser, use the native provider
+      if (typeof (window as any).ethereum !== 'undefined' && ((window as any).ethereum.isCoinbaseWallet || (window as any).ethereum.isBaseApp)) {
+        provider = (window as any).ethereum;
+      } else {
+        // Fallback: Use Coinbase Wallet SDK to trigger QR or extension
+        const baseAppSDK = new CoinbaseWalletSDK({
+          appName: APP_NAME,
+          appLogoUrl: APP_LOGO_URL,
+          darkMode: true
+        });
+        provider = baseAppSDK.makeWeb3Provider('https://mainnet.base.org', 8453);
+      }
+      
+      // Step 1: Request Accounts
       const accounts = await provider.request({ 
         method: 'eth_requestAccounts' 
       });
       
       const address = (accounts as string[])[0];
-      if (!address) throw new Error("No BaseApp account selected.");
+      if (!address) throw new Error("No BaseApp account found.");
 
-      // Step 2: Request Signature (Real Approval)
-      const message = `Base Impression Identity Verification\n\nI am verifying my BaseApp identity to calculate my ecosystem impact.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+      // Step 2: Request Signature
+      const message = `Base Impression Identity Verification\n\nI am verifying my BaseApp account to calculate my impact on the Base ecosystem.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
       
       await provider.request({
         method: 'personal_sign',
@@ -141,9 +146,9 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error("BaseApp Connection Error:", err);
       if (err.code === 4001) {
-        setError("Signature rejected. Please approve the request in BaseApp to proceed.");
+        setError("Approval rejected. Please sign the request in BaseApp.");
       } else {
-        setError(err.message || "Could not detect or connect to BaseApp.");
+        setError(err.message || "Failed to link BaseApp identity.");
       }
       setWalletAddress(null);
       setIsWalletSigned(false);
@@ -176,7 +181,7 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    // Stats calculation based on simulated indexer data
+    // Simulate real on-chain indexing
     const baseAge = 88;
     const twitterAge = 1100;
     const tweets = 34;
@@ -219,12 +224,13 @@ const App: React.FC = () => {
     setIsMinting(true);
     
     try {
+      // In a production app, the contract call would happen here.
       await new Promise(r => setTimeout(r, 3000));
       const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
       setTxHash(fakeHash);
       setIsMinted(true);
     } catch (e) {
-      setError("Minting failed. Check your BaseApp balance.");
+      setError("Minting failed. Verify your BaseApp connection.");
     } finally {
       setIsMinting(false);
     }
@@ -364,13 +370,13 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
               <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
-                Aggregating your on-chain footprint and social impact via official BaseApp connection.
+                Connect your BaseApp (Coinbase Wallet) to calculate your contribution points and claim your tier.
               </p>
             </div>
 
             <div className="space-y-4 max-w-sm mx-auto">
               <div className="glass-effect p-5 rounded-3xl border border-white/10 space-y-4">
-                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Identity Check</h3>
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Base Identification</h3>
                 
                 {/* Step 1: BaseApp Connection & Signature */}
                 <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${isWalletSigned ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
@@ -382,8 +388,8 @@ const App: React.FC = () => {
                       <div className="text-xs font-black">
                         {isWalletSigned ? 'BaseApp Linked' : 'BaseApp Identity'}
                       </div>
-                      <div className="text-[10px] text-gray-500">
-                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect & Sign Message'}
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Approval & Signature'}
                       </div>
                     </div>
                   </div>
@@ -398,7 +404,7 @@ const App: React.FC = () => {
                       {loading ? (
                         <>
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          Waiting...
+                          Wait...
                         </>
                       ) : (
                         <>
@@ -418,8 +424,8 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-xs font-black">Social Identity</div>
-                      <div className="text-[10px] text-gray-500">
-                        {twUser ? twUser.handle : 'Verify Twitter owner'}
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        {twUser ? twUser.handle : 'Verify owner'}
                       </div>
                     </div>
                   </div>
@@ -440,7 +446,7 @@ const App: React.FC = () => {
                 <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl space-y-3 animate-in slide-in-from-top-2">
                   <div className="flex items-center gap-3 text-red-500">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    <p className="text-[10px] font-bold">{error}</p>
+                    <p className="text-[10px] font-bold leading-tight">{error}</p>
                   </div>
                   {!walletAddress && (
                     <a 
@@ -449,7 +455,7 @@ const App: React.FC = () => {
                       rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
                     >
-                      <Download className="w-3 h-3" /> Open BaseApp
+                      <Download className="w-3 h-3" /> Get BaseApp
                     </a>
                   )}
                 </div>
@@ -477,7 +483,7 @@ const App: React.FC = () => {
               <div className="w-1 h-1 rounded-full bg-gray-500" />
               <div className="flex items-center gap-1.5">
                 <Fingerprint className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Secured</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Verified</span>
               </div>
             </div>
           </div>
