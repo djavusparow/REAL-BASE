@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Trophy, 
   Target, 
@@ -24,7 +24,10 @@ import {
   CreditCard,
   Layers,
   Globe,
-  Plus
+  Plus,
+  Search,
+  History,
+  Activity
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
@@ -43,6 +46,7 @@ import { calculatePoints, getTierFromRank } from './utils/calculations';
 import Countdown from './components/Countdown';
 import BadgeDisplay from './components/BadgeDisplay';
 import { geminiService } from './services/geminiService';
+import { twitterService, ScanResult } from './services/twitterService';
 
 const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-48 h-48' : 'w-12 h-12';
@@ -96,6 +100,12 @@ const App: React.FC = () => {
   const [isWalletSigned, setIsWalletSigned] = useState(false);
   const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
   
+  // Scanner Logic
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [scanLogs, setScanLogs] = useState<string[]>([]);
+  const scanLogsRef = useRef<HTMLDivElement>(null);
+
   // EIP-6963 Detected Providers
   const [detectedProviders, setDetectedProviders] = useState<EIP6963ProviderDetail[]>([]);
   
@@ -111,83 +121,62 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // EIP-6963 Autodetection Configuration
+  useEffect(() => {
+    if (scanLogsRef.current) {
+      scanLogsRef.current.scrollTop = scanLogsRef.current.scrollHeight;
+    }
+  }, [scanLogs]);
+
+  // EIP-6963 Autodetection
   useEffect(() => {
     const onAnnouncement = (event: any) => {
       setDetectedProviders(prev => {
-        // Avoid duplicates
         if (prev.find(p => p.info.uuid === event.detail.info.uuid)) return prev;
         return [...prev, event.detail];
       });
     };
-
     window.addEventListener("eip6963:announceProvider", onAnnouncement);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
-
     return () => window.removeEventListener("eip6963:announceProvider", onAnnouncement);
   }, []);
 
   useEffect(() => {
-    const initFrame = async () => {
-      try {
-        sdk.actions.ready();
-      } catch (e) {
-        console.error("SDK initialization failed", e);
-      }
-    };
-    initFrame();
+    sdk.actions.ready();
   }, []);
 
   const connectWallet = async (providerDetail: EIP6963ProviderDetail | any) => {
     setError(null);
     setLoading(true);
-    
-    // Normalize provider access
     const providerInstance = providerDetail.provider || providerDetail;
-
     try {
-      // Step 1: Connect/Authorize (Standard EIP-1193)
       const web3 = new Web3(providerInstance);
       const accounts = await web3.eth.requestAccounts();
-      const address = accounts[0];
-      
-      if (address) {
-        setWalletAddress(address);
+      if (accounts[0]) {
+        setWalletAddress(accounts[0]);
         setActiveProvider(providerInstance);
         setIsWalletConnected(true);
         setIsWalletSelectorOpen(false);
         setIsWalletSigned(false); 
       }
     } catch (err: any) {
-      console.error("Wallet connection error:", err);
-      setError(err.message || "Failed to authorize wallet connection.");
+      setError(err.message || "Failed to authorize wallet.");
     } finally {
       setLoading(false);
     }
   };
 
   const signVerification = async () => {
-    if (!walletAddress || !activeProvider) {
-      setError("Active provider lost. Please reconnect.");
-      return;
-    }
+    if (!walletAddress || !activeProvider) return;
     setError(null);
     setLoading(true);
-
     try {
-      // Step 2: Secure Sign with Ethers.js
       const ethersProvider = new ethers.BrowserProvider(activeProvider);
       const signer = await ethersProvider.getSigner();
-      
-      const message = `Base Impression Secure Verification\n\nI am verifying my onchain identity for the Base Impression Season 1 Snapshot.\n\nAccount: ${walletAddress}\nNonce: ${Math.floor(Math.random() * 1000000)}`;
-      
-      const signature = await signer.signMessage(message);
-      console.log("Verified Signature:", signature);
-
+      const message = `Base Impression Secure Verification\nAccount: ${walletAddress}\nNonce: ${Date.now()}`;
+      await signer.signMessage(message);
       setIsWalletSigned(true);
     } catch (err: any) {
-      console.error("Signature error:", err);
-      setError("Signature rejected. Cryptographic proof is required to ensure identity security.");
+      setError("Signature rejected. Proof required.");
     } finally {
       setLoading(false);
     }
@@ -200,7 +189,7 @@ const App: React.FC = () => {
 
   const handlePostVerificationTweet = () => {
     const handle = tempTwitterHandle.startsWith('@') ? tempTwitterHandle : `@${tempTwitterHandle}`;
-    const text = `Verifying my impact for @base impression! 🛡️💎\n\nHandle: ${handle}\nCode: BI-${Math.random().toString(36).substring(7).toUpperCase()}\n\nBuild on @base. #BaseImpression #LamboLess`;
+    const text = `Verifying my @base impact with @jessepollak! 🛡️💎 Handle: ${handle}\nCode: BI-${Math.random().toString(36).substring(7).toUpperCase()}\n#BaseImpression #LamboLess`;
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
     setTwitterStep(3);
     
@@ -214,32 +203,50 @@ const App: React.FC = () => {
   const handleFinalizeConnection = async () => {
     if (!walletAddress || !twUser) return;
     
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 2000));
+    setIsScanning(true);
+    setScanProgress(0);
+    setScanLogs(["Initializing secure Twitter bridge...", "Requesting read-only permissions..."]);
     
-    // Impact Score Calculation based on requirements
-    // BaseApp age points: days * 0.20
+    // Simulate real-time scanning steps
+    const addLog = (log: string) => setScanLogs(prev => [...prev, log]);
+    
+    await new Promise(r => setTimeout(r, 1000));
+    setScanProgress(20);
+    addLog("Authenticated @ " + twUser.handle);
+    addLog("Searching for tags: @base, @jessepollak, $LAMBOLESS...");
+
+    const scanResult = await twitterService.scanPosts(twUser.handle);
+    
+    setScanProgress(60);
+    addLog(`Scanning historical posts (Nov 2025 - Jan 2026)...`);
+    addLog(`Found ${scanResult.totalValidPosts} posts matching ecosystem tags.`);
+    addLog(`Enforcing daily 5-point cap for fair distribution...`);
+    
+    await new Promise(r => setTimeout(r, 1200));
+    setScanProgress(100);
+    addLog("Scan complete. Contribution summary finalized.");
+
+    // Points Calculation per Requirements:
+    // BaseApp: days * 0.20
+    // Twitter: days * 0.30
+    // Contribution: cappedPosts * 0.50
     const baseAppAge = 145; 
-    // Twitter age points: days * 0.30
-    const twitterAge = 890; 
-    // Contribution points: (Posts with tags, max 5/day, within range) * 0.50
-    // We simulate the total capped points here (e.g. 76 valid days with activity)
-    const cappedContributionPoints = 76; 
+    const twitterAge = 980; 
     
-    const points = calculatePoints(baseAppAge, twitterAge, cappedContributionPoints);
-    const rank = 12;
+    const points = calculatePoints(baseAppAge, twitterAge, scanResult.cappedPoints);
+    const rank = Math.floor(Math.random() * 900) + 1; // Simulated rank
 
     setUser({
       address: walletAddress,
       twitterHandle: twUser.handle,
       baseAppAgeDays: baseAppAge,
       twitterAgeDays: twitterAge,
-      validTweetsCount: cappedContributionPoints, // We'll display the capped points as the "Contribution" metric
+      validTweetsCount: scanResult.cappedPoints, // Displaying capped score
       lambolessBalance: 120.50,
       points: points,
       rank: rank
     });
-    setLoading(false);
+    setIsScanning(false);
   };
 
   const currentTier = useMemo(() => {
@@ -257,7 +264,6 @@ const App: React.FC = () => {
     setBadgeImage(img);
     setAnalysis(msg);
     setIsGenerating(false);
-    setActiveTab('dashboard');
   };
 
   const handleMint = async () => {
@@ -265,27 +271,29 @@ const App: React.FC = () => {
     setIsMinting(true);
     try {
       await new Promise(r => setTimeout(r, 3000));
-      const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-      setTxHash(fakeHash);
+      setTxHash("0x" + Math.random().toString(16).slice(2, 64));
       setIsMinted(true);
     } catch (e) {
-      setError("Onchain mint failed. Check your ETH on Base.");
+      setError("Mint failed.");
     } finally {
       setIsMinting(false);
     }
   };
 
-  const handleShare = (platform: 'twitter' | 'farcaster') => {
+  // Fix: Added handleShare function to resolve "Cannot find name 'handleShare'" errors.
+  const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
-    const shareText = isMinted 
-      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt on Base via Onchain verification! 🚀`
-      : `I just checked my @base impression impact! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nJoin me on Base! 🚀\n#BaseImpression #LamboLess #Base`;
-    const encodedText = encodeURIComponent(shareText);
+    const shareText = `I'm a ${TIERS[currentTier].name} contributor on Base Impression with ${user.points} impact points! 🔵💎 Rank: #${user.rank} #BaseImpression #LamboLess`;
+    const shareUrl = window.location.origin;
+    
+    let url = '';
     if (platform === 'farcaster') {
-      sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodedText}`);
+      url = `https://warpcast.com/~/compose?text=${encodeURIComponent(shareText)}&embeds[]=${encodeURIComponent(shareUrl)}`;
     } else {
-      window.open(`https://twitter.com/intent/tweet?text=${encodedText}`, '_blank');
+      url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText + ' ' + shareUrl)}`;
     }
+    
+    sdk.actions.openUrl(url);
   };
 
   const isClaimable = useMemo(() => {
@@ -302,9 +310,53 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 safe-top safe-bottom font-['Space_Grotesk']">
       
-      {/* Dynamic Wallet Selector (EIP-6963) */}
+      {/* Real-time Scanner Overlay */}
+      {isScanning && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" />
+          <div className="relative w-full max-w-sm space-y-8 animate-in zoom-in-95 duration-500">
+            <div className="text-center space-y-3">
+              <div className="relative inline-block">
+                <Search className="w-12 h-12 text-blue-500 animate-pulse" />
+                <div className="absolute inset-0 bg-blue-500 blur-2xl opacity-20" />
+              </div>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter">Indexing Profile</h3>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em]">Live Onchain Verification</p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-600 transition-all duration-700 ease-out" 
+                  style={{ width: `${scanProgress}%` }}
+                />
+              </div>
+              <div 
+                ref={scanLogsRef}
+                className="h-48 bg-black border border-white/5 rounded-2xl p-4 overflow-y-auto space-y-2 font-mono text-[10px]"
+              >
+                {scanLogs.map((log, i) => (
+                  <div key={i} className="flex gap-2 text-blue-400/80">
+                    <span className="text-blue-600/40">{`>`}</span>
+                    <span className="leading-tight">{log}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-center gap-8">
+               <div className="flex flex-col items-center gap-1">
+                  <span className="text-[10px] font-black text-gray-600 uppercase">Tags Found</span>
+                  <span className="text-xl font-black text-white">Searching...</span>
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallet Selector */}
       {isWalletSelectorOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setIsWalletSelectorOpen(false)} />
           <div className="relative glass-effect border border-white/10 w-full max-w-[340px] rounded-[2.5rem] p-8 space-y-8 shadow-2xl border-t-white/20">
             <div className="flex items-center justify-between">
@@ -323,59 +375,29 @@ const App: React.FC = () => {
                   <button
                     key={det.info.uuid}
                     onClick={() => connectWallet(det)}
-                    className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-[0.98] group relative overflow-hidden"
+                    className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-[0.98] group"
                   >
-                    <div className="flex items-center gap-4 relative z-10">
-                      <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden">
-                        <img src={det.info.icon} alt={det.info.name} className="w-6 h-6 object-contain" />
-                      </div>
+                    <div className="flex items-center gap-4">
+                      <img src={det.info.icon} alt={det.info.name} className="w-6 h-6 object-contain" />
                       <span className="text-sm font-bold tracking-tight">{det.info.name}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[8px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">Active</span>
-                      <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
-                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
                   </button>
                 ))
               ) : (
-                <div className="space-y-4">
-                  {/* Fallback for standard Injection if EIP-6963 not supported */}
-                  {(window as any).ethereum && (
-                    <button
-                      onClick={() => connectWallet((window as any).ethereum)}
-                      className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-[0.98] group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/10">
-                          <Wallet className="w-5 h-5 text-blue-500" />
-                        </div>
-                        <span className="text-sm font-bold tracking-tight">Injected Wallet</span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
-                    </button>
-                  )}
-                  <div className="text-center p-6 border border-dashed border-white/10 rounded-3xl opacity-50 space-y-2">
-                    <Globe className="w-8 h-8 mx-auto text-gray-600" />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">No browser wallet detected</p>
-                    <a href="https://www.base.org/baseapp" target="_blank" className="text-[9px] text-blue-400 font-bold underline">Get BaseApp Wallet</a>
-                  </div>
+                <div className="text-center p-6 border border-dashed border-white/10 rounded-3xl opacity-50 space-y-2">
+                  <Globe className="w-8 h-8 mx-auto text-gray-600" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">No browser wallet detected</p>
                 </div>
               )}
-            </div>
-
-            <div className="flex items-center gap-2 justify-center py-2">
-                <ShieldCheck className="w-3 h-3 text-green-500" />
-                <p className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">
-                  EIP-6963 & EIP-1193 Secure Protocol
-                </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Social Verification Modal */}
+      {/* Twitter Modal */}
       {isTwitterModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !loading && setIsTwitterModalOpen(false)} />
           <div className="relative glass-effect border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 shadow-2xl">
             <button onClick={() => setIsTwitterModalOpen(false)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors">
@@ -383,17 +405,17 @@ const App: React.FC = () => {
             </button>
             
             <div className="text-center space-y-2">
-              <div className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(255,255,255,0.3)]">
                 <Twitter className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black uppercase italic">Link Social Graph</h3>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Ownership Verification</p>
+              <h3 className="text-xl font-black uppercase italic">Twitter Authorization</h3>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest opacity-60">Impact Scanning Permissions</p>
             </div>
 
             {twitterStep === 1 && (
-              <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Username</label>
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Handle</label>
                   <div className="relative">
                     <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 font-black">@</span>
                     <input 
@@ -408,41 +430,31 @@ const App: React.FC = () => {
                 <button 
                   onClick={handleTwitterVerifyStart}
                   disabled={!tempTwitterHandle.trim()}
-                  className="w-full py-4 bg-white text-black rounded-2xl font-black text-sm hover:bg-blue-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 uppercase italic"
+                  className="w-full py-4 bg-white text-black rounded-2xl font-black text-sm hover:bg-blue-50 transition-all active:scale-95 uppercase italic"
                 >
-                  Confirm <ArrowRight className="w-4 h-4" />
+                  Verify Permissions <ArrowRight className="w-4 h-4 ml-1" />
                 </button>
               </div>
             )}
 
             {twitterStep === 2 && (
-              <div className="space-y-5 animate-in slide-in-from-bottom-2 duration-300">
-                <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-2">
-                  <p className="text-xs text-gray-400 leading-relaxed text-center">
-                    To connect <span className="text-white font-bold">@{tempTwitterHandle}</span>, post the proof tweet below.
-                  </p>
+              <div className="space-y-5">
+                <div className="bg-blue-500/5 p-5 rounded-2xl border border-blue-500/10 space-y-3">
+                  <div className="flex items-center gap-2 text-[10px] font-black text-blue-500 uppercase">
+                     <ShieldCheck className="w-3 h-3" /> Scope of access
+                  </div>
+                  <ul className="text-[10px] text-gray-400 space-y-2 font-medium">
+                    <li className="flex gap-2"><span>•</span> <span>Read your posts and analytics</span></li>
+                    <li className="flex gap-2"><span>•</span> <span>Search for specific ecosystem tags</span></li>
+                    <li className="flex gap-2"><span>•</span> <span>Calculate historical contribution</span></li>
+                  </ul>
                 </div>
                 <button 
                   onClick={handlePostVerificationTweet}
-                  className="w-full py-4 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-400 transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(59,130,246,0.3)] active:scale-95"
+                  className="w-full py-4 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-400 transition-all shadow-[0_0_15px_rgba(59,130,246,0.3)] active:scale-95"
                 >
-                  <Twitter className="w-4 h-4 fill-current" /> Post Verification
+                  <Twitter className="w-4 h-4 fill-current mr-2" /> Auth & Verify Profile
                 </button>
-                <button onClick={() => setTwitterStep(1)} className="w-full text-[10px] font-black text-gray-500 uppercase tracking-widest hover:text-gray-300 transition-colors">
-                  Go Back
-                </button>
-              </div>
-            )}
-
-            {twitterStep === 3 && (
-              <div className="space-y-6 text-center py-4 animate-in zoom-in-95 duration-300">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-black text-white">Indexing...</p>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Searching for @{tempTwitterHandle}</p>
-                  </div>
-                </div>
               </div>
             )}
           </div>
@@ -454,7 +466,7 @@ const App: React.FC = () => {
           <BrandIcon size="sm" />
           <div className="flex flex-col">
             <h1 className="font-black text-sm tracking-tighter uppercase leading-none text-white">Base Impression</h1>
-            <span className="text-[8px] text-blue-500 font-bold tracking-[0.2em] uppercase opacity-90 mt-0.5 font-mono">Season 1 Protocol</span>
+            <span className="text-[8px] text-blue-500 font-bold tracking-[0.2em] uppercase mt-0.5 font-mono">Season 1 Protocol</span>
           </div>
         </div>
         
@@ -497,24 +509,12 @@ const App: React.FC = () => {
                       <Wallet className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="text-[11px] font-black uppercase tracking-tight">
-                        {isWalletConnected ? 'Authorized' : 'Step 1: Auth'}
-                      </div>
-                      <div className="text-[9px] text-gray-500 font-bold uppercase">
-                        {walletAddress ? `${walletAddress.slice(0, 10)}...` : 'Detect Provider'}
-                      </div>
+                      <div className="text-[11px] font-black uppercase tracking-tight">Step 1: Auth</div>
+                      <div className="text-[9px] text-gray-500 font-bold uppercase">{walletAddress ? `${walletAddress.slice(0, 10)}...` : 'Detect Provider'}</div>
                     </div>
                   </div>
-                  {isWalletConnected ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <button 
-                      onClick={() => setIsWalletSelectorOpen(true)}
-                      disabled={loading}
-                      className="px-5 py-2.5 bg-white text-black rounded-xl text-[10px] font-black hover:bg-blue-50 transition-all active:scale-95 shadow-lg uppercase tracking-tight"
-                    >
-                      Connect
-                    </button>
+                  {isWalletConnected ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : (
+                    <button onClick={() => setIsWalletSelectorOpen(true)} className="px-5 py-2.5 bg-white text-black rounded-xl text-[10px] font-black uppercase tracking-tight active:scale-95">Connect</button>
                   )}
                 </div>
 
@@ -525,70 +525,42 @@ const App: React.FC = () => {
                       <Fingerprint className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="text-[11px] font-black uppercase tracking-tight">
-                        {isWalletSigned ? 'Signed' : 'Step 2: Sign'}
-                      </div>
-                      <div className="text-[9px] text-gray-500 font-bold uppercase">
-                        {isWalletSigned ? 'Proof generated' : 'Ethers.js Secure'}
-                      </div>
+                      <div className="text-[11px] font-black uppercase tracking-tight">Step 2: Sign</div>
+                      <div className="text-[9px] text-gray-500 font-bold uppercase">{isWalletSigned ? 'Proof generated' : 'Ethers.js Secure'}</div>
                     </div>
                   </div>
-                  {isWalletSigned ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <button 
-                      onClick={signVerification}
-                      disabled={!isWalletConnected || loading}
-                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all active:scale-95 uppercase tracking-tight ${isWalletConnected ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-600/20' : 'bg-white/5 text-gray-600'}`}
-                    >
-                      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Sign'}
-                    </button>
+                  {isWalletSigned ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : (
+                    <button onClick={signVerification} disabled={!isWalletConnected} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tight active:scale-95 ${isWalletConnected ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' : 'bg-white/5 text-gray-600'}`}>Sign</button>
                   )}
                 </div>
 
-                {/* Step 3: Social Connection */}
+                {/* Step 3: Twitter Connect */}
                 <div className={`p-4 rounded-[1.5rem] flex items-center justify-between transition-all border ${twUser ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10 shadow-inner'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`${twUser ? 'text-green-500' : 'text-blue-400'}`}>
                       <Twitter className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="text-[11px] font-black uppercase tracking-tight">Social Identity</div>
-                      <div className="text-[9px] text-gray-500 font-bold uppercase">
-                        {twUser ? twUser.handle : 'Link handle'}
-                      </div>
+                      <div className="text-[11px] font-black uppercase tracking-tight">Social Indexer</div>
+                      <div className="text-[9px] text-gray-500 font-bold uppercase">{twUser ? twUser.handle : 'Link handle'}</div>
                     </div>
                   </div>
-                  {twUser ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <button 
-                      onClick={() => setIsTwitterModalOpen(true)}
-                      className="px-5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black hover:bg-white/10 transition-all active:scale-95 uppercase tracking-tight"
-                    >
-                      Link
-                    </button>
+                  {twUser ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : (
+                    <button onClick={() => setIsTwitterModalOpen(true)} className="px-5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-tight active:scale-95">Link</button>
                   )}
                 </div>
               </div>
-
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex items-start gap-3 text-red-500 animate-in slide-in-from-top-2 shadow-2xl">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <p className="text-[10px] font-black leading-tight uppercase tracking-tight">{error}</p>
-                </div>
-              )}
 
               <button 
                 onClick={handleFinalizeConnection}
                 disabled={!isWalletSigned || !twUser || loading}
                 className={`w-full py-5 rounded-[2rem] font-black text-sm transition-all flex items-center justify-center gap-2 shadow-2xl active:scale-95 uppercase tracking-widest italic ${
                   isWalletSigned && twUser 
-                  ? 'bg-blue-600 text-white hover:bg-blue-500 cursor-pointer shadow-blue-600/20' 
+                  ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-600/20' 
                   : 'bg-white/5 text-gray-600 cursor-not-allowed border border-white/10'
                 }`}
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Calculate Impression'}
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Scan & Track Impact'}
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
@@ -596,10 +568,7 @@ const App: React.FC = () => {
         ) : (
           <div className="space-y-8 animate-in fade-in duration-700">
             <div className="grid grid-cols-1 gap-3 mb-2">
-              <Countdown 
-                targetDate={claimTimeReached ? SNAPSHOT_END : CLAIM_START} 
-                label={claimTimeReached ? "Genesis Snapshot Finalized" : "Genesis SBT Mint Opens In"} 
-              />
+              <Countdown targetDate={claimTimeReached ? SNAPSHOT_END : CLAIM_START} label={claimTimeReached ? "Genesis Snapshot Finalized" : "Genesis SBT Mint Opens In"} />
             </div>
 
             <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5 sticky top-[76px] z-30 backdrop-blur-xl bg-black/40 shadow-2xl">
@@ -632,59 +601,36 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border border-white/10 text-center space-y-8 bg-white/[0.01] shadow-2xl">
-                   <BadgeDisplay 
-                    tier={currentTier} 
-                    imageUrl={badgeImage} 
-                    loading={isGenerating} 
-                   />
-
+                   <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
                    {analysis && (
                      <div className="relative">
-                        <p className="text-xs font-bold text-blue-100/60 leading-relaxed px-6 py-4 bg-blue-500/5 rounded-[1.5rem] border border-blue-500/10 italic">
-                          "{analysis}"
-                        </p>
+                        <p className="text-xs font-bold text-blue-100/60 leading-relaxed px-6 py-4 bg-blue-500/5 rounded-[1.5rem] border border-blue-500/10 italic">"{analysis}"</p>
                         <div className="absolute -top-2 -left-2 text-blue-500 opacity-30 text-2xl font-black">"</div>
                      </div>
                    )}
-
                    <div className="grid grid-cols-1 gap-4">
-                     <button 
-                        onClick={handleCheckpoint}
-                        disabled={isGenerating}
-                        className="w-full py-5 bg-white text-black rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl italic"
-                      >
+                     <button onClick={handleCheckpoint} disabled={isGenerating} className="w-full py-5 bg-white text-black rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl italic">
                         <ShieldCheck className="w-4 h-4" />
                         {isGenerating ? 'Indexing Chain...' : 'Update Snapshot'}
                       </button>
-
                       <div className="flex gap-3">
-                        <button 
-                          onClick={() => handleShare('farcaster')}
-                          className="flex-1 py-4 bg-[#8a63d2]/10 hover:bg-[#8a63d2]/20 text-[#8a63d2] border border-[#8a63d2]/30 rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95"
-                        >
-                          <Share2 className="w-3.5 h-3.5" /> Farcaster
-                        </button>
-                        <button 
-                          onClick={() => handleShare('twitter')}
-                          className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95"
-                        >
-                          <Twitter className="w-3.5 h-3.5" /> Share X
-                        </button>
+                        <button onClick={() => handleShare('farcaster')} className="flex-1 py-4 bg-[#8a63d2]/10 hover:bg-[#8a63d2]/20 text-[#8a63d2] border border-[#8a63d2]/30 rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95"><Share2 className="w-3.5 h-3.5" /> Farcaster</button>
+                        <button onClick={() => handleShare('twitter')} className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95"><Twitter className="w-3.5 h-3.5" /> Share X</button>
                       </div>
                    </div>
                 </div>
 
                 <div className="space-y-4">
-                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Verified Metrics</h3>
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Real-time Summary</h3>
                     <div className="space-y-3">
                         {[
-                            { icon: <Target className="w-4 h-4" />, label: "Base Network Age (20%)", val: `${user.baseAppAgeDays}D`, weight: "x0.2" },
-                            { icon: <Twitter className="w-4 h-4" />, label: "Twitter Age (30%)", val: `${user.twitterAgeDays}D`, weight: "x0.3" },
-                            { icon: <Zap className="w-4 h-4" />, label: "Builder Action (50%)", val: `${user.validTweetsCount} pts`, weight: "x0.5" },
+                            { icon: <Target className="w-4 h-4" />, label: "Base Network Age (20%)", val: `${user.baseAppAgeDays}D`, weight: "x0.2", color: "text-blue-500" },
+                            { icon: <Twitter className="w-4 h-4" />, label: "Twitter Age (30%)", val: `${user.twitterAgeDays}D`, weight: "x0.3", color: "text-indigo-400" },
+                            { icon: <Zap className="w-4 h-4" />, label: "Builder Action (50%)", val: `${user.validTweetsCount} pts`, weight: "x0.5", color: "text-yellow-500" },
                         ].map((stat, i) => (
                             <div key={i} className="flex items-center justify-between p-5 glass-effect rounded-[1.5rem] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors shadow-sm">
                                 <div className="flex items-center gap-4">
-                                    <div className="text-blue-500 p-2 bg-blue-500/10 rounded-xl">{stat.icon}</div>
+                                    <div className={`${stat.color} p-2 bg-white/5 rounded-xl`}>{stat.icon}</div>
                                     <span className="text-[11px] font-black uppercase tracking-tight text-gray-300">{stat.label}</span>
                                 </div>
                                 <div className="text-right">
@@ -704,7 +650,6 @@ const App: React.FC = () => {
                     <h2 className="text-lg font-black uppercase italic tracking-tight text-white">Top Contributors</h2>
                     <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em]">Live Rank</span>
                 </div>
-                
                 <div className="space-y-3">
                   <div className="p-5 bg-blue-600/20 border border-blue-500/40 rounded-[2rem] flex items-center justify-between shadow-2xl shadow-blue-600/10">
                     <div className="flex items-center gap-4">
@@ -714,22 +659,16 @@ const App: React.FC = () => {
                             <div className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] font-mono">{TIERS[currentTier].name} Impact</div>
                         </div>
                     </div>
-                    <div className="text-right">
-                        <div className="text-xl font-black text-white">{user.points} pts</div>
-                    </div>
+                    <div className="text-right"><div className="text-xl font-black text-white">{user.points} pts</div></div>
                   </div>
-
                   <div className="h-px bg-white/5 my-4 mx-4" />
-
                   {MOCKED_LEADERBOARD.map((player) => (
                     <div key={player.rank} className="p-5 glass-effect border border-white/10 rounded-[1.5rem] flex items-center justify-between opacity-80 hover:opacity-100 transition-all hover:translate-x-1 group shadow-lg">
                         <div className="flex items-center gap-4">
                             <span className="text-sm font-black text-gray-500 group-hover:text-white transition-colors italic">#{player.rank}</span>
                             <div>
                                 <div className="text-xs font-black text-gray-200">{player.handle}</div>
-                                <div className={`text-[8px] font-black uppercase tracking-[0.15em] bg-clip-text text-transparent bg-gradient-to-r ${TIERS[player.tier as RankTier].color}`}>
-                                    {TIERS[player.tier as RankTier].name} Member
-                                </div>
+                                <div className={`text-[8px] font-black uppercase tracking-[0.15em] bg-clip-text text-transparent bg-gradient-to-r ${TIERS[player.tier as RankTier].color}`}>{TIERS[player.tier as RankTier].name} Member</div>
                             </div>
                         </div>
                         <div className="text-sm font-black text-white">{player.points} pts</div>
@@ -744,17 +683,12 @@ const App: React.FC = () => {
                 {!isMinted ? (
                   <>
                     <div className="text-center space-y-4">
-                        <div className="w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/30 shadow-2xl shadow-blue-600/20">
-                            <CreditCard className="w-10 h-10 text-blue-500" />
-                        </div>
+                        <div className="w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/30 shadow-2xl shadow-blue-600/20"><CreditCard className="w-10 h-10 text-blue-500" /></div>
                         <div className="space-y-2">
                           <h2 className="text-2xl font-black uppercase italic text-white">SBT Minting Portal</h2>
-                          <p className="text-xs text-gray-400 max-w-[280px] mx-auto font-medium uppercase tracking-tight opacity-70">
-                            Tiered Soulbound Tokens (SBT) represent your verifiable contribution weight.
-                          </p>
+                          <p className="text-xs text-gray-400 max-w-[280px] mx-auto font-medium uppercase tracking-tight opacity-70">Tiered Soulbound Tokens (SBT) represent your verifiable contribution weight.</p>
                         </div>
                     </div>
-
                     <div className="space-y-3">
                         <div className={`p-5 rounded-[1.5rem] border flex items-center justify-between transition-all shadow-xl ${user.rank <= 1000 ? 'bg-green-500/5 border-green-500/30' : 'bg-red-500/5 border-red-500/30'}`}>
                             <div className="flex items-center gap-4">
@@ -765,7 +699,6 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-
                         <div className={`p-5 rounded-[1.5rem] border flex items-center justify-between transition-all shadow-xl ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'bg-green-500/5 border-green-500/30' : 'bg-red-500/5 border-red-500/30'}`}>
                             <div className="flex items-center gap-4">
                                 {user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
@@ -775,39 +708,15 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-
                         <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-[1.2rem] space-y-2 shadow-inner">
-                            <div className="flex items-center gap-2 text-[9px] font-black text-blue-400 uppercase tracking-[0.2em]">
-                                <Info className="w-3 h-3" />
-                                <span>Security Protocol</span>
-                            </div>
-                            <p className="text-[10px] text-gray-500 leading-tight uppercase font-black tracking-tight opacity-60">
-                              Contribution badges are soulbound to your verified address. Claims locked until <strong className="text-white">January 16, 2026</strong>.
-                            </p>
+                            <div className="flex items-center gap-2 text-[9px] font-black text-blue-400 uppercase tracking-[0.2em]"><Info className="w-3 h-3" /><span>Security Protocol</span></div>
+                            <p className="text-[10px] text-gray-500 leading-tight uppercase font-black tracking-tight opacity-60">Contribution badges are soulbound to your verified address. Claims locked until <strong className="text-white">January 16, 2026</strong>.</p>
                         </div>
                     </div>
-
                     <div className="space-y-4 pt-4">
-                        <button 
-                            onClick={handleMint}
-                            disabled={!isClaimable || isMinting}
-                            className={`w-full py-5 rounded-[2.5rem] font-black text-lg transition-all shadow-2xl relative overflow-hidden active:scale-95 uppercase italic tracking-tighter ${
-                                isClaimable 
-                                ? 'bg-blue-600 text-white hover:bg-blue-500 cursor-pointer shadow-blue-600/30' 
-                                : 'bg-white/5 text-gray-700 cursor-not-allowed border border-white/5'
-                            }`}
-                        >
+                        <button onClick={handleMint} disabled={!isClaimable || isMinting} className={`w-full py-5 rounded-[2.5rem] font-black text-lg transition-all shadow-2xl relative overflow-hidden active:scale-95 uppercase italic tracking-tighter ${isClaimable ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-600/30' : 'bg-white/5 text-gray-700 cursor-not-allowed border border-white/5'}`}>
                             <div className="relative z-10 flex items-center justify-center gap-3">
-                                {!claimTimeReached ? (
-                                  'Pre-Registration'
-                                ) : isMinting ? (
-                                  <>
-                                    <Loader2 className="w-6 h-6 animate-spin" />
-                                    Minting Tier SBT...
-                                  </>
-                                ) : (
-                                  'Mint Genesis SBT'
-                                )}
+                                {!claimTimeReached ? 'Pre-Registration' : isMinting ? (<><Loader2 className="w-6 h-6 animate-spin" />Minting Tier SBT...</>) : 'Mint Genesis SBT'}
                             </div>
                         </button>
                     </div>
@@ -816,39 +725,18 @@ const App: React.FC = () => {
                   <div className="space-y-8 py-4 text-center">
                     <div className="relative inline-block">
                         <div className="absolute inset-0 bg-green-500 blur-[100px] opacity-30 animate-pulse" />
-                        <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto border-2 border-green-500/50 relative shadow-2xl">
-                            <PartyPopper className="w-12 h-12 text-green-500" />
-                        </div>
+                        <div className="w-24 h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto border-2 border-green-500/50 relative shadow-2xl"><PartyPopper className="w-12 h-12 text-green-500" /></div>
                     </div>
-                    
                     <div className="space-y-3">
                       <h2 className="text-3xl font-black text-white uppercase italic">Impact Secured!</h2>
-                      <p className="text-gray-400 text-xs px-12 uppercase font-bold tracking-tight opacity-70 leading-relaxed font-mono">
-                        Your identity as a Base builder is now immutable onchain.
-                      </p>
+                      <p className="text-gray-400 text-xs px-12 uppercase font-bold tracking-tight opacity-70 leading-relaxed font-mono">Your identity as a Base builder is now immutable onchain.</p>
                     </div>
-
                     <div className="glass-effect p-6 rounded-[2rem] border border-green-500/30 space-y-4 bg-green-500/5 shadow-2xl">
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">SBT HASH</span>
-                          <span className="text-blue-400 font-mono text-[10px] font-bold">
-                            {txHash?.slice(0, 16)}...
-                          </span>
-                        </div>
-                        <div className="h-px bg-white/10" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">OWNER</span>
-                          <span className="text-white font-black text-[10px] uppercase font-mono">{walletAddress?.slice(0, 16)}...</span>
-                        </div>
+                        <div className="flex items-center justify-between"><span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">SBT HASH</span><span className="text-blue-400 font-mono text-[10px] font-bold">{txHash?.slice(0, 16)}...</span></div>
+                        <div className="h-px bg-white/10" /><div className="flex items-center justify-between"><span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">OWNER</span><span className="text-white font-black text-[10px] uppercase font-mono">{walletAddress?.slice(0, 16)}...</span></div>
                     </div>
-
                     <div className="space-y-3 pt-4">
-                      <button 
-                        onClick={() => handleShare('farcaster')}
-                        className="w-full py-5 bg-[#8a63d2] text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-[#7a52c2] transition-all flex items-center justify-center gap-2 active:scale-95 shadow-2xl shadow-[#8a63d2]/30 italic"
-                      >
-                        <Share2 className="w-4 h-4" /> Broadcast to Farcaster
-                      </button>
+                      <button onClick={() => handleShare('farcaster')} className="w-full py-5 bg-[#8a63d2] text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-[#7a52c2] transition-all flex items-center justify-center gap-2 active:scale-95 shadow-2xl shadow-[#8a63d2]/30 italic"><Share2 className="w-4 h-4" /> Broadcast to Farcaster</button>
                     </div>
                   </div>
                 )}
@@ -860,14 +748,8 @@ const App: React.FC = () => {
 
       {user && (
           <div className="fixed bottom-0 left-0 right-0 glass-effect border-t border-white/10 px-8 py-6 flex items-center justify-between md:hidden z-40 bg-black/95 backdrop-blur-3xl shadow-[0_-20px_40px_rgba(0,0,0,0.5)]">
-              <div className="flex flex-col">
-                  <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Impact Rank</span>
-                  <span className="text-2xl font-black mt-1 italic text-white tracking-tighter">#{user.rank}</span>
-              </div>
-              <div className="flex flex-col items-end">
-                  <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Verified Weight</span>
-                  <span className="text-2xl font-black text-blue-500 mt-1 italic tracking-tighter">{user.points} PTS</span>
-              </div>
+              <div className="flex flex-col"><span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Impact Rank</span><span className="text-2xl font-black mt-1 italic text-white tracking-tighter">#{user.rank}</span></div>
+              <div className="flex flex-col items-end"><span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Verified Weight</span><span className="text-2xl font-black text-blue-500 mt-1 italic tracking-tighter">{user.points} PTS</span></div>
           </div>
       )}
     </div>
