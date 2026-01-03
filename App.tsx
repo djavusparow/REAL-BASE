@@ -20,10 +20,11 @@ import {
   X,
   ArrowRight,
   Fingerprint,
-  Download
+  Download,
+  CreditCard,
+  Layers
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
-import CoinbaseWalletSDK from '@coinbase/wallet-sdk';
 import { UserStats, RankTier } from './types';
 import { 
   TOKEN_CONTRACT, 
@@ -38,9 +39,6 @@ import { calculatePoints, getTierFromRank } from './utils/calculations';
 import Countdown from './components/Countdown';
 import BadgeDisplay from './components/BadgeDisplay';
 import { geminiService } from './services/geminiService';
-
-const APP_NAME = 'BaseApp';
-const APP_LOGO_URL = 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128';
 
 const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-48 h-48' : 'w-12 h-12';
@@ -64,6 +62,14 @@ const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   );
 };
 
+interface WalletOption {
+  id: string;
+  name: string;
+  icon: React.ReactNode;
+  detector: () => any;
+  downloadUrl: string;
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,16 +83,49 @@ const App: React.FC = () => {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Connection Requirements
+  // Connection States
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [isWalletSigned, setIsWalletSigned] = useState(false);
   const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
   
-  // Interaction States
+  // Modal States
+  const [isWalletSelectorOpen, setIsWalletSelectorOpen] = useState(false);
   const [isTwitterModalOpen, setIsTwitterModalOpen] = useState(false);
   const [tempTwitterHandle, setTempTwitterHandle] = useState('');
   const [twitterStep, setTwitterStep] = useState<1 | 2 | 3>(1);
   const [error, setError] = useState<string | null>(null);
+
+  const walletOptions: WalletOption[] = [
+    {
+      id: 'okx',
+      name: 'OKX Wallet',
+      icon: <Layers className="w-5 h-5 text-white" />,
+      detector: () => (window as any).okxwallet,
+      downloadUrl: 'https://www.okx.com/web3'
+    },
+    {
+      id: 'zerion',
+      name: 'Zerion Wallet',
+      icon: <Zap className="w-5 h-5 text-blue-400" />,
+      detector: () => (window as any).zerion || ((window as any).ethereum?.isZerion ? (window as any).ethereum : null),
+      downloadUrl: 'https://zerion.io/'
+    },
+    {
+      id: 'rabby',
+      name: 'Rabby Wallet',
+      icon: <ShieldCheck className="w-5 h-5 text-indigo-400" />,
+      detector: () => (window as any).rabby || ((window as any).ethereum?.isRabby ? (window as any).ethereum : null),
+      downloadUrl: 'https://rabby.io/'
+    },
+    {
+      id: 'baseapp',
+      name: 'BaseApp',
+      icon: <Wallet className="w-5 h-5 text-blue-600" />,
+      detector: () => (window as any).ethereum?.isCoinbaseWallet || (window as any).ethereum?.isBaseApp ? (window as any).ethereum : null,
+      downloadUrl: 'https://www.base.org/baseapp'
+    }
+  ];
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -104,54 +143,53 @@ const App: React.FC = () => {
     initFrame();
   }, []);
 
-  const handleWalletConnect = async () => {
+  const connectWallet = async (option: WalletOption) => {
     setError(null);
     setLoading(true);
-    setIsWalletSigned(false);
-    
-    try {
-      let provider: any;
-      
-      // Smart Detection: If we are inside the BaseApp browser, use the native provider
-      if (typeof (window as any).ethereum !== 'undefined' && ((window as any).ethereum.isCoinbaseWallet || (window as any).ethereum.isBaseApp)) {
-        provider = (window as any).ethereum;
-      } else {
-        // Fallback: Use Coinbase Wallet SDK to trigger QR or extension
-        const baseAppSDK = new CoinbaseWalletSDK({
-          appName: APP_NAME,
-          appLogoUrl: APP_LOGO_URL,
-          darkMode: true
-        });
-        provider = baseAppSDK.makeWeb3Provider('https://mainnet.base.org', 8453);
-      }
-      
-      // Step 1: Request Accounts
-      const accounts = await provider.request({ 
-        method: 'eth_requestAccounts' 
-      });
-      
-      const address = (accounts as string[])[0];
-      if (!address) throw new Error("No BaseApp account found.");
+    const provider = option.detector();
 
-      // Step 2: Request Signature
-      const message = `Base Impression Identity Verification\n\nI am verifying my BaseApp account to calculate my impact on the Base ecosystem.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+    if (!provider) {
+      setError(`${option.name} not detected. Please install it or open this app in your wallet browser.`);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // Step 1: Connect (Approval)
+      const accounts = await provider.request({ method: 'eth_requestAccounts' });
+      const address = (accounts as string[])[0];
+      
+      if (address) {
+        setWalletAddress(address);
+        setIsWalletConnected(true);
+        setIsWalletSelectorOpen(false);
+      }
+    } catch (err: any) {
+      console.error("Connection error:", err);
+      setError(err.message || "Failed to connect wallet.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const signVerification = async () => {
+    if (!walletAddress) return;
+    setError(null);
+    setLoading(true);
+
+    try {
+      const provider = (window as any).ethereum || (window as any).okxwallet || (window as any).rabby || (window as any).zerion;
+      const message = `Base Impression Secure Verification\n\nI am verifying my identity to participate in the Base ecosystem snapshot.\n\nAddress: ${walletAddress}\nNonce: ${Math.floor(Math.random() * 1000000)}`;
       
       await provider.request({
         method: 'personal_sign',
-        params: [message, address],
+        params: [message, walletAddress],
       });
 
-      setWalletAddress(address);
       setIsWalletSigned(true);
     } catch (err: any) {
-      console.error("BaseApp Connection Error:", err);
-      if (err.code === 4001) {
-        setError("Approval rejected. Please sign the request in BaseApp.");
-      } else {
-        setError(err.message || "Failed to link BaseApp identity.");
-      }
-      setWalletAddress(null);
-      setIsWalletSigned(false);
+      console.error("Signing error:", err);
+      setError("Signature rejected. Verification required to proceed.");
     } finally {
       setLoading(false);
     }
@@ -181,7 +219,6 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    // Simulate real on-chain indexing
     const baseAge = 88;
     const twitterAge = 1100;
     const tweets = 34;
@@ -222,15 +259,13 @@ const App: React.FC = () => {
   const handleMint = async () => {
     if (!isClaimable || isMinting || isMinted) return;
     setIsMinting(true);
-    
     try {
-      // In a production app, the contract call would happen here.
       await new Promise(r => setTimeout(r, 3000));
       const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
       setTxHash(fakeHash);
       setIsMinted(true);
     } catch (e) {
-      setError("Minting failed. Verify your BaseApp connection.");
+      setError("Minting failed. Verify your connection.");
     } finally {
       setIsMinting(false);
     }
@@ -239,8 +274,8 @@ const App: React.FC = () => {
   const handleShare = (platform: 'twitter' | 'farcaster') => {
     if (!user) return;
     const shareText = isMinted 
-      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt via BaseApp! 🚀`
-      : `I just checked my @base impression impact! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nJoin me on Base via BaseApp! 🚀\n#BaseImpression #LamboLess #BaseApp`;
+      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt on Base! 🚀`
+      : `I just checked my @base impression impact! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nJoin me on Base! 🚀\n#BaseImpression #LamboLess #BaseApp`;
     const encodedText = encodeURIComponent(shareText);
     if (platform === 'farcaster') {
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodedText}`);
@@ -262,6 +297,44 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 safe-top safe-bottom">
+      
+      {/* Wallet Selection Modal */}
+      {isWalletSelectorOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setIsWalletSelectorOpen(false)} />
+          <div className="relative glass-effect border border-white/10 w-full max-w-[320px] rounded-[2rem] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black uppercase tracking-widest text-gray-400">Select Wallet</h3>
+              <button onClick={() => setIsWalletSelectorOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="grid gap-3">
+              {walletOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => connectWallet(opt)}
+                  className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-95 group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-white/5 group-hover:bg-white/10 transition-colors">
+                      {opt.icon}
+                    </div>
+                    <span className="text-sm font-bold">{opt.name}</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-colors" />
+                </button>
+              ))}
+            </div>
+
+            <p className="text-[10px] text-center text-gray-500 font-medium">
+              By connecting, you agree to the Base Impression snapshot terms.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Twitter Verification Modal */}
       {isTwitterModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -276,7 +349,7 @@ const App: React.FC = () => {
                 <Twitter className="w-6 h-6" />
               </div>
               <h3 className="text-xl font-black">Verify Socials</h3>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Ownership Verification Required</p>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Identity Confirmation</p>
             </div>
 
             {twitterStep === 1 && (
@@ -328,13 +401,10 @@ const App: React.FC = () => {
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
                   <div className="space-y-1">
-                    <p className="text-sm font-black">Looking for tweet...</p>
+                    <p className="text-sm font-black">Verifying tweet...</p>
                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Linking @{tempTwitterHandle}</p>
                   </div>
                 </div>
-                <p className="text-[10px] text-gray-600 px-4">
-                  Checking the X API for your proof. This usually takes 2-5 seconds.
-                </p>
               </div>
             )}
           </div>
@@ -368,28 +438,56 @@ const App: React.FC = () => {
                   <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20" />
                   <BrandIcon size="lg" />
               </div>
-              <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
-              <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
-                Connect your BaseApp (Coinbase Wallet) to calculate your contribution points and claim your tier.
+              <h2 className="text-3xl font-black tracking-tight leading-tight px-4 uppercase italic">Prove Your<br/>Base Impact.</h2>
+              <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed font-medium">
+                Connect your preferred wallet to calculate contribution points and claim your on-chain tier.
               </p>
             </div>
 
             <div className="space-y-4 max-w-sm mx-auto">
               <div className="glass-effect p-5 rounded-3xl border border-white/10 space-y-4">
-                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Base Identification</h3>
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Required Steps</h3>
                 
-                {/* Step 1: BaseApp Connection & Signature */}
-                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${isWalletSigned ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                {/* Step 1: Connect Wallet (Approval) */}
+                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${isWalletConnected ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center gap-4">
-                    <div className={`${isWalletSigned ? 'text-green-500' : 'text-blue-500'}`}>
-                      {isWalletSigned ? <ShieldCheck className="w-6 h-6" /> : <Wallet className="w-6 h-6" />}
+                    <div className={`${isWalletConnected ? 'text-green-500' : 'text-blue-500'}`}>
+                      <Wallet className="w-6 h-6" />
                     </div>
                     <div>
                       <div className="text-xs font-black">
-                        {isWalletSigned ? 'BaseApp Linked' : 'BaseApp Identity'}
+                        {isWalletConnected ? 'Connected' : 'Step 1: Connect'}
                       </div>
                       <div className="text-[10px] text-gray-500 font-medium">
-                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Approval & Signature'}
+                        {walletAddress ? `${walletAddress.slice(0, 8)}...` : 'Select Wallet Provider'}
+                      </div>
+                    </div>
+                  </div>
+                  {isWalletConnected ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <button 
+                      onClick={() => setIsWalletSelectorOpen(true)}
+                      disabled={loading}
+                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+                    >
+                      Connect
+                    </button>
+                  )}
+                </div>
+
+                {/* Step 2: Secure Sign (Identity) */}
+                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${isWalletSigned ? 'bg-green-500/5 border-green-500/20' : isWalletConnected ? 'bg-blue-500/5 border-blue-500/20 animate-pulse' : 'bg-white/5 border-white/10 opacity-50'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`${isWalletSigned ? 'text-green-500' : 'text-indigo-400'}`}>
+                      <Fingerprint className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">
+                        {isWalletSigned ? 'Signed & Verified' : 'Step 2: Sign'}
+                      </div>
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        {isWalletSigned ? 'Identity confirmed' : 'Cryptographic proof'}
                       </div>
                     </div>
                   </div>
@@ -397,26 +495,16 @@ const App: React.FC = () => {
                     <CheckCircle2 className="w-5 h-5 text-green-500" />
                   ) : (
                     <button 
-                      onClick={handleWalletConnect}
-                      disabled={loading}
-                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20 flex items-center gap-2"
+                      onClick={signVerification}
+                      disabled={!isWalletConnected || loading}
+                      className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all active:scale-95 ${isWalletConnected ? 'bg-white text-black hover:bg-gray-200 shadow-xl' : 'bg-white/5 text-gray-600'}`}
                     >
-                      {loading ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          Wait...
-                        </>
-                      ) : (
-                        <>
-                          <Fingerprint className="w-3 h-3" />
-                          Link
-                        </>
-                      )}
+                      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Sign'}
                     </button>
                   )}
                 </div>
 
-                {/* Step 2: Twitter Verification */}
+                {/* Step 3: Twitter */}
                 <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${twUser ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`${twUser ? 'text-green-500' : 'text-blue-400'}`}>
@@ -425,7 +513,7 @@ const App: React.FC = () => {
                     <div>
                       <div className="text-xs font-black">Social Identity</div>
                       <div className="text-[10px] text-gray-500 font-medium">
-                        {twUser ? twUser.handle : 'Verify owner'}
+                        {twUser ? twUser.handle : 'Link X account'}
                       </div>
                     </div>
                   </div>
@@ -436,28 +524,16 @@ const App: React.FC = () => {
                       onClick={() => setIsTwitterModalOpen(true)}
                       className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-black hover:bg-white/10 transition-all active:scale-95"
                     >
-                      Link X
+                      Link
                     </button>
                   )}
                 </div>
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl space-y-3 animate-in slide-in-from-top-2">
-                  <div className="flex items-center gap-3 text-red-500">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <p className="text-[10px] font-bold leading-tight">{error}</p>
-                  </div>
-                  {!walletAddress && (
-                    <a 
-                      href="https://www.base.org/baseapp" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                    >
-                      <Download className="w-3 h-3" /> Get BaseApp
-                    </a>
-                  )}
+                <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-start gap-3 text-red-500 animate-in slide-in-from-top-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-bold leading-tight">{error}</p>
                 </div>
               )}
 
@@ -470,21 +546,9 @@ const App: React.FC = () => {
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-white/5'
                 }`}
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Analyze My Impact'}
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Calculate Impact'}
                 <ChevronRight className="w-5 h-5" />
               </button>
-            </div>
-            
-            <div className="flex items-center justify-center gap-4 opacity-40">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">BaseApp</span>
-              </div>
-              <div className="w-1 h-1 rounded-full bg-gray-500" />
-              <div className="flex items-center gap-1.5">
-                <Fingerprint className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Verified</span>
-              </div>
             </div>
           </div>
         ) : (
@@ -492,7 +556,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 gap-3 mb-2">
               <Countdown 
                 targetDate={claimTimeReached ? SNAPSHOT_END : CLAIM_START} 
-                label={claimTimeReached ? "Snapshot End" : "Mint Opens In"} 
+                label={claimTimeReached ? "Snapshot Finalized" : "Mint Opens In"} 
               />
             </div>
 
@@ -514,14 +578,14 @@ const App: React.FC = () => {
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="glass-effect p-4 rounded-3xl border border-blue-500/20 text-center">
-                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Impact Points</span>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Points</span>
                     <div className="text-3xl font-black text-white mt-0.5">{user.points}</div>
                     <div className="mt-1 text-[8px] text-green-400 font-bold bg-green-400/10 px-1.5 py-0.5 rounded-full inline-block">
                         ↑ LIVE
                     </div>
                   </div>
                   <div className="glass-effect p-4 rounded-3xl border border-purple-500/20 text-center">
-                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Ecosystem Rank</span>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Rank</span>
                     <div className="text-3xl font-black text-white mt-0.5">#{user.rank}</div>
                     <div className="mt-1 text-[8px] text-purple-400 font-bold bg-purple-400/10 px-1.5 py-0.5 rounded-full inline-block">
                         {user.rank <= 1000 ? 'ELIGIBLE' : 'RANK UP'}
@@ -596,7 +660,7 @@ const App: React.FC = () => {
             {activeTab === 'leaderboard' && (
               <div className="space-y-4 animate-in fade-in duration-500">
                 <div className="flex items-center justify-between px-2">
-                    <h2 className="text-lg font-black">Top Impressionists</h2>
+                    <h2 className="text-lg font-black">Global Impact</h2>
                     <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">Deadline Jan 16</span>
                 </div>
                 
@@ -638,11 +702,11 @@ const App: React.FC = () => {
                   <>
                     <div className="text-center space-y-3">
                         <div className="w-16 h-16 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20">
-                            <Wallet className="w-8 h-8 text-blue-500" />
+                            <CreditCard className="w-8 h-8 text-blue-500" />
                         </div>
-                        <h2 className="text-xl font-black">Claim Badge</h2>
+                        <h2 className="text-xl font-black">Claim Reward</h2>
                         <p className="text-xs text-gray-400 max-w-[240px] mx-auto">
-                            Snapshots finalized. Verify your eligibility in BaseApp below.
+                            Snapshots finalized. Check your tier status on-chain.
                         </p>
                     </div>
 
@@ -651,7 +715,7 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 {user.rank <= 1000 ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
                                 <div>
-                                    <div className="text-xs font-black">Rank Check</div>
+                                    <div className="text-xs font-black">Rank Eligibility</div>
                                     <div className="text-[10px] text-gray-500">#{user.rank} / Top 1000</div>
                                 </div>
                             </div>
@@ -661,7 +725,7 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 {user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
                                 <div>
-                                    <div className="text-xs font-black">BaseApp Balance</div>
+                                    <div className="text-xs font-black">Minimum Balance</div>
                                     <div className="text-[10px] text-gray-500">Min. $2.50 USD required</div>
                                 </div>
                             </div>
@@ -670,10 +734,10 @@ const App: React.FC = () => {
                         <div className="p-3.5 bg-blue-500/5 border border-blue-500/20 rounded-xl space-y-1.5">
                             <div className="flex items-center gap-2 text-[8px] font-bold text-blue-400 uppercase tracking-wider">
                                 <Info className="w-2.5 h-2.5" />
-                                <span>Minting Window</span>
+                                <span>Timeline Notice</span>
                             </div>
                             <p className="text-[10px] text-gray-400 leading-tight">
-                                Badges are locked for claiming until <strong className="text-white">Jan 16, 2026, 02:00 UTC</strong>.
+                                Claiming is locked until <strong className="text-white">January 16, 2026</strong>.
                             </p>
                         </div>
                     </div>
@@ -697,7 +761,7 @@ const App: React.FC = () => {
                                     Processing...
                                   </>
                                 ) : (
-                                  'Mint Impact NFT'
+                                  'Mint Badge NFT'
                                 )}
                             </div>
                         </button>
@@ -713,8 +777,8 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="space-y-1.5">
-                      <h2 className="text-2xl font-black text-white">On-Chain Success!</h2>
-                      <p className="text-gray-400 text-xs px-6">Your tiered {TIERS[currentTier].name} Badge is secured in your BaseApp.</p>
+                      <h2 className="text-2xl font-black text-white">Mint Success!</h2>
+                      <p className="text-gray-400 text-xs px-6">Your exclusive {TIERS[currentTier].name} Tier Badge is now on-chain.</p>
                     </div>
 
                     <div className="glass-effect p-5 rounded-2xl border border-green-500/20 space-y-3">
@@ -726,8 +790,8 @@ const App: React.FC = () => {
                         </div>
                         <div className="h-px bg-white/5" />
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Status</span>
-                          <span className="text-white font-bold text-[10px] uppercase tracking-tighter">Verified Member</span>
+                          <span className="text-gray-500 font-bold uppercase tracking-wider text-[8px]">Recipient</span>
+                          <span className="text-white font-bold text-[10px]">{walletAddress?.slice(0, 10)}...</span>
                         </div>
                     </div>
 
@@ -736,7 +800,7 @@ const App: React.FC = () => {
                         onClick={() => handleShare('farcaster')}
                         className="w-full py-3.5 bg-[#8a63d2] text-white rounded-xl font-black text-sm hover:bg-[#7a52c2] transition-all flex items-center justify-center gap-2 active:scale-95"
                       >
-                        <Share2 className="w-4 h-4" /> Post to Farcaster
+                        <Share2 className="w-4 h-4" /> Share to Farcaster
                       </button>
                     </div>
                   </div>
