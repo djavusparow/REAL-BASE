@@ -23,7 +23,8 @@ import {
   Download,
   CreditCard,
   Layers,
-  Globe
+  Globe,
+  Plus
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
@@ -65,11 +66,14 @@ const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   );
 };
 
-interface WalletOption {
-  id: string;
-  name: string;
-  icon: React.ReactNode;
-  detector: () => any;
+interface EIP6963ProviderDetail {
+  info: {
+    uuid: string;
+    name: string;
+    icon: string;
+    rdns: string;
+  };
+  provider: any;
 }
 
 const App: React.FC = () => {
@@ -80,8 +84,8 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [analysis, setAnalysis] = useState<string>('');
   
-  const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
+  const [isMinting, setIsMinting] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -92,6 +96,9 @@ const App: React.FC = () => {
   const [isWalletSigned, setIsWalletSigned] = useState(false);
   const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
   
+  // EIP-6963 Detected Providers
+  const [detectedProviders, setDetectedProviders] = useState<EIP6963ProviderDetail[]>([]);
+  
   // Modal States
   const [isWalletSelectorOpen, setIsWalletSelectorOpen] = useState(false);
   const [isTwitterModalOpen, setIsTwitterModalOpen] = useState(false);
@@ -99,36 +106,25 @@ const App: React.FC = () => {
   const [twitterStep, setTwitterStep] = useState<1 | 2 | 3>(1);
   const [error, setError] = useState<string | null>(null);
 
-  const walletOptions: WalletOption[] = [
-    {
-      id: 'okx',
-      name: 'OKX Wallet',
-      icon: <Layers className="w-5 h-5 text-white" />,
-      detector: () => (window as any).okxwallet
-    },
-    {
-      id: 'zerion',
-      name: 'Zerion Wallet',
-      icon: <Zap className="w-5 h-5 text-blue-400" />,
-      detector: () => (window as any).zerion || ((window as any).ethereum?.isZerion ? (window as any).ethereum : null)
-    },
-    {
-      id: 'rabby',
-      name: 'Rabby Wallet',
-      icon: <ShieldCheck className="w-5 h-5 text-indigo-400" />,
-      detector: () => (window as any).rabby || ((window as any).ethereum?.isRabby ? (window as any).ethereum : null)
-    },
-    {
-      id: 'baseapp',
-      name: 'BaseApp',
-      icon: <Wallet className="w-5 h-5 text-blue-600" />,
-      detector: () => (window as any).ethereum?.isCoinbaseWallet || (window as any).ethereum?.isBaseApp ? (window as any).ethereum : null
-    }
-  ];
-
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // EIP-6963 Autodetection Configuration
+  useEffect(() => {
+    const onAnnouncement = (event: any) => {
+      setDetectedProviders(prev => {
+        // Avoid duplicates
+        if (prev.find(p => p.info.uuid === event.detail.info.uuid)) return prev;
+        return [...prev, event.detail];
+      });
+    };
+
+    window.addEventListener("eip6963:announceProvider", onAnnouncement);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    return () => window.removeEventListener("eip6963:announceProvider", onAnnouncement);
   }, []);
 
   useEffect(() => {
@@ -142,34 +138,15 @@ const App: React.FC = () => {
     initFrame();
   }, []);
 
-  // Use Web3 for standardized provider checks if needed
-  const detectAllProviders = () => {
-    const providers: any[] = [];
-    if (typeof (window as any).ethereum !== 'undefined') {
-      if ((window as any).ethereum.providers) {
-        providers.push(...(window as any).ethereum.providers);
-      } else {
-        providers.push((window as any).ethereum);
-      }
-    }
-    return providers;
-  };
-
-  const connectWallet = async (option: WalletOption) => {
+  const connectWallet = async (providerDetail: EIP6963ProviderDetail | any) => {
     setError(null);
     setLoading(true);
     
-    // We can also use Web3 library to wrap or check the provider
-    const providerInstance = option.detector();
-
-    if (!providerInstance) {
-      setError(`${option.name} not detected. Please install the extension or open this site in the ${option.name} app browser.`);
-      setLoading(false);
-      return;
-    }
+    // Normalize provider access
+    const providerInstance = providerDetail.provider || providerDetail;
 
     try {
-      // Use standard web3/ethers patterns for initial detection
+      // Step 1: Connect/Authorize (Standard EIP-1193)
       const web3 = new Web3(providerInstance);
       const accounts = await web3.eth.requestAccounts();
       const address = accounts[0];
@@ -183,7 +160,7 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Wallet connection error:", err);
-      setError(err.message || `Failed to connect to ${option.name}.`);
+      setError(err.message || "Failed to authorize wallet connection.");
     } finally {
       setLoading(false);
     }
@@ -191,27 +168,26 @@ const App: React.FC = () => {
 
   const signVerification = async () => {
     if (!walletAddress || !activeProvider) {
-      setError("Please connect a wallet first.");
+      setError("Active provider lost. Please reconnect.");
       return;
     }
     setError(null);
     setLoading(true);
 
     try {
-      // Use Ethers.js for secure cryptographic signing
+      // Step 2: Secure Sign with Ethers.js
       const ethersProvider = new ethers.BrowserProvider(activeProvider);
       const signer = await ethersProvider.getSigner();
       
       const message = `Base Impression Secure Verification\n\nI am verifying my onchain identity for the Base Impression Season 1 Snapshot.\n\nAccount: ${walletAddress}\nNonce: ${Math.floor(Math.random() * 1000000)}`;
       
-      // Step 2: Securely sign the message
       const signature = await signer.signMessage(message);
       console.log("Verified Signature:", signature);
 
       setIsWalletSigned(true);
     } catch (err: any) {
       console.error("Signature error:", err);
-      setError("Signature rejected. Secure verification is required to participate in the contribution event.");
+      setError("Signature rejected. Cryptographic proof is required to ensure identity security.");
     } finally {
       setLoading(false);
     }
@@ -241,12 +217,12 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    // Impact calculations
-    const baseAge = 112;
-    const twitterAge = 980;
-    const tweets = 45;
+    // Simulated Impact Score
+    const baseAge = 145;
+    const twitterAge = 890;
+    const tweets = 62;
     const points = calculatePoints(baseAge, twitterAge, tweets);
-    const rank = 18;
+    const rank = 12;
 
     setUser({
       address: walletAddress,
@@ -254,7 +230,7 @@ const App: React.FC = () => {
       baseAppAgeDays: baseAge,
       twitterAgeDays: twitterAge,
       validTweetsCount: tweets,
-      lambolessBalance: 42.50,
+      lambolessBalance: 120.50,
       points: points,
       rank: rank
     });
@@ -288,7 +264,7 @@ const App: React.FC = () => {
       setTxHash(fakeHash);
       setIsMinted(true);
     } catch (e) {
-      setError("Onchain mint failed. Check your ETH balance on Base for gas.");
+      setError("Onchain mint failed. Check your ETH on Base.");
     } finally {
       setIsMinting(false);
     }
@@ -321,51 +297,78 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 safe-top safe-bottom font-['Space_Grotesk']">
       
-      {/* Universal Wallet Selector */}
+      {/* Dynamic Wallet Selector (EIP-6963) */}
       {isWalletSelectorOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setIsWalletSelectorOpen(false)} />
           <div className="relative glass-effect border border-white/10 w-full max-w-[340px] rounded-[2.5rem] p-8 space-y-8 shadow-2xl border-t-white/20">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
-                <h3 className="text-xs font-black uppercase tracking-widest text-blue-500">Secure Connect</h3>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Universal Provider Detection</p>
+                <h3 className="text-xs font-black uppercase tracking-widest text-blue-500">Connect Wallet</h3>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Detected Onchain Providers</p>
               </div>
               <button onClick={() => setIsWalletSelectorOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors group">
                 <X className="w-4 h-4 text-gray-500 group-hover:text-white" />
               </button>
             </div>
             
-            <div className="grid gap-3">
-              {walletOptions.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => connectWallet(opt)}
-                  className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-[0.98] group relative overflow-hidden"
-                >
-                  <div className="flex items-center gap-4 relative z-10">
-                    <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 group-hover:border-white/30 transition-colors">
-                      {opt.icon}
+            <div className="grid gap-3 max-h-[400px] overflow-y-auto pr-1">
+              {detectedProviders.length > 0 ? (
+                detectedProviders.map((det) => (
+                  <button
+                    key={det.info.uuid}
+                    onClick={() => connectWallet(det)}
+                    className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-[0.98] group relative overflow-hidden"
+                  >
+                    <div className="flex items-center gap-4 relative z-10">
+                      <div className="w-10 h-10 rounded-xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden">
+                        <img src={det.info.icon} alt={det.info.name} className="w-6 h-6 object-contain" />
+                      </div>
+                      <span className="text-sm font-bold tracking-tight">{det.info.name}</span>
                     </div>
-                    <span className="text-sm font-bold tracking-tight">{opt.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[8px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">Active</span>
+                      <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="space-y-4">
+                  {/* Fallback for standard Injection if EIP-6963 not supported */}
+                  {(window as any).ethereum && (
+                    <button
+                      onClick={() => connectWallet((window as any).ethereum)}
+                      className="flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 transition-all active:scale-[0.98] group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/10">
+                          <Wallet className="w-5 h-5 text-blue-500" />
+                        </div>
+                        <span className="text-sm font-bold tracking-tight">Injected Wallet</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
+                    </button>
+                  )}
+                  <div className="text-center p-6 border border-dashed border-white/10 rounded-3xl opacity-50 space-y-2">
+                    <Globe className="w-8 h-8 mx-auto text-gray-600" />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">No browser wallet detected</p>
+                    <a href="https://www.base.org/baseapp" target="_blank" className="text-[9px] text-blue-400 font-bold underline">Get BaseApp Wallet</a>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-all transform group-hover:translate-x-1" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2 justify-center py-2">
-                <Globe className="w-3 h-3 text-gray-600" />
-                <p className="text-[10px] text-gray-500 font-medium tracking-tight">
-                  Ethers & Web3.js Integrated
+                <ShieldCheck className="w-3 h-3 text-green-500" />
+                <p className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">
+                  EIP-6963 & EIP-1193 Secure Protocol
                 </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Social Auth Modal */}
+      {/* Social Verification Modal */}
       {isTwitterModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !loading && setIsTwitterModalOpen(false)} />
@@ -378,8 +381,8 @@ const App: React.FC = () => {
               <div className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center mx-auto mb-4">
                 <Twitter className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black uppercase italic">Link Social Profile</h3>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest opacity-60">Impact Proof required</p>
+              <h3 className="text-xl font-black uppercase italic">Link Social Graph</h3>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Ownership Verification</p>
             </div>
 
             {twitterStep === 1 && (
@@ -402,7 +405,7 @@ const App: React.FC = () => {
                   disabled={!tempTwitterHandle.trim()}
                   className="w-full py-4 bg-white text-black rounded-2xl font-black text-sm hover:bg-blue-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 uppercase italic"
                 >
-                  Verify <ArrowRight className="w-4 h-4" />
+                  Confirm <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             )}
@@ -411,7 +414,7 @@ const App: React.FC = () => {
               <div className="space-y-5 animate-in slide-in-from-bottom-2 duration-300">
                 <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-2">
                   <p className="text-xs text-gray-400 leading-relaxed text-center">
-                    To connect <span className="text-white font-bold">@{tempTwitterHandle}</span>, post the proof below.
+                    To connect <span className="text-white font-bold">@{tempTwitterHandle}</span>, post the proof tweet below.
                   </p>
                 </div>
                 <button 
@@ -431,8 +434,8 @@ const App: React.FC = () => {
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
                   <div className="space-y-1">
-                    <p className="text-sm font-black text-white">Indexing Account...</p>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Verifying @{tempTwitterHandle}</p>
+                    <p className="text-sm font-black text-white">Indexing...</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Searching for @{tempTwitterHandle}</p>
                   </div>
                 </div>
               </div>
@@ -446,7 +449,7 @@ const App: React.FC = () => {
           <BrandIcon size="sm" />
           <div className="flex flex-col">
             <h1 className="font-black text-sm tracking-tighter uppercase leading-none text-white">Base Impression</h1>
-            <span className="text-[8px] text-blue-500 font-bold tracking-[0.2em] uppercase opacity-90 mt-0.5 font-mono">2-Step Secure Auth</span>
+            <span className="text-[8px] text-blue-500 font-bold tracking-[0.2em] uppercase opacity-90 mt-0.5 font-mono">Season 1 Protocol</span>
           </div>
         </div>
         
@@ -470,19 +473,19 @@ const App: React.FC = () => {
               </div>
               <div className="space-y-3">
                 <h2 className="text-4xl font-black tracking-tight leading-[0.9] uppercase italic text-white drop-shadow-2xl">
-                  Impact<br/>Verified.
+                  Impact<br/>Analysis.
                 </h2>
                 <p className="text-gray-400 text-xs max-w-[280px] mx-auto leading-relaxed font-bold uppercase tracking-wide opacity-70">
-                  Connect your wallet and sign for your onchain legacy.
+                  Securely link your wallet and social footprint to claim your onchain rank.
                 </p>
               </div>
             </div>
 
             <div className="space-y-4 max-w-sm mx-auto">
               <div className="glass-effect p-6 rounded-[2.5rem] border border-white/10 space-y-5 bg-white/[0.02] shadow-2xl">
-                <h3 className="text-[9px] font-black text-gray-500 uppercase tracking-[0.3em] text-center mb-2">2-Step Protocol</h3>
+                <h3 className="text-[9px] font-black text-gray-500 uppercase tracking-[0.3em] text-center mb-2">Autodetection Mode</h3>
                 
-                {/* Step 1: Request Access */}
+                {/* Step 1: Secure Connection */}
                 <div className={`p-4 rounded-[1.5rem] flex items-center justify-between transition-all border ${isWalletConnected ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10 shadow-inner'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`${isWalletConnected ? 'text-green-500' : 'text-blue-500'}`}>
@@ -490,7 +493,7 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-[11px] font-black uppercase tracking-tight">
-                        {isWalletConnected ? 'Connected' : 'Step 1: Access'}
+                        {isWalletConnected ? 'Authorized' : 'Step 1: Auth'}
                       </div>
                       <div className="text-[9px] text-gray-500 font-bold uppercase">
                         {walletAddress ? `${walletAddress.slice(0, 10)}...` : 'Detect Provider'}
@@ -510,7 +513,7 @@ const App: React.FC = () => {
                   )}
                 </div>
 
-                {/* Step 2: Sign Message */}
+                {/* Step 2: Identity Signing */}
                 <div className={`p-4 rounded-[1.5rem] flex items-center justify-between transition-all border ${isWalletSigned ? 'bg-green-500/5 border-green-500/30' : isWalletConnected ? 'bg-indigo-500/10 border-indigo-500/40 animate-pulse' : 'bg-white/5 border-white/10 opacity-40 shadow-inner'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`${isWalletSigned ? 'text-green-500' : 'text-indigo-400'}`}>
@@ -518,10 +521,10 @@ const App: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-[11px] font-black uppercase tracking-tight">
-                        {isWalletSigned ? 'Identity Signed' : 'Step 2: Sign'}
+                        {isWalletSigned ? 'Signed' : 'Step 2: Sign'}
                       </div>
                       <div className="text-[9px] text-gray-500 font-bold uppercase">
-                        {isWalletSigned ? 'Cryptographic Proof' : 'Ethers.js Verification'}
+                        {isWalletSigned ? 'Proof generated' : 'Ethers.js Secure'}
                       </div>
                     </div>
                   </div>
@@ -545,7 +548,7 @@ const App: React.FC = () => {
                       <Twitter className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="text-[11px] font-black uppercase tracking-tight">Social Profile</div>
+                      <div className="text-[11px] font-black uppercase tracking-tight">Social Identity</div>
                       <div className="text-[9px] text-gray-500 font-bold uppercase">
                         {twUser ? twUser.handle : 'Link handle'}
                       </div>
@@ -590,11 +593,11 @@ const App: React.FC = () => {
             <div className="grid grid-cols-1 gap-3 mb-2">
               <Countdown 
                 targetDate={claimTimeReached ? SNAPSHOT_END : CLAIM_START} 
-                label={claimTimeReached ? "Genesis Snapshot Over" : "SBT Mint Opens In"} 
+                label={claimTimeReached ? "Genesis Snapshot Finalized" : "Genesis SBT Mint Opens In"} 
               />
             </div>
 
-            <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5 sticky top-[76px] z-30 backdrop-blur-xl bg-black/40">
+            <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5 sticky top-[76px] z-30 backdrop-blur-xl bg-black/40 shadow-2xl">
                 {(['dashboard', 'leaderboard', 'claim'] as const).map(tab => (
                     <button
                         key={tab}
@@ -667,12 +670,12 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-4">
-                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Legacy Analysis</h3>
+                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.3em] ml-2">Verified Metrics</h3>
                     <div className="space-y-3">
                         {[
-                            { icon: <Target className="w-4 h-4" />, label: "Base Ecosystem History", val: `${user.baseAppAgeDays}D`, weight: "20%" },
-                            { icon: <Twitter className="w-4 h-4" />, label: "Social Graph Reputation", val: `${user.twitterAgeDays}D`, weight: "30%" },
-                            { icon: <Zap className="w-4 h-4" />, label: "Contribution Volume", val: user.validTweetsCount, weight: "50%" },
+                            { icon: <Target className="w-4 h-4" />, label: "Base Network Presence", val: `${user.baseAppAgeDays}D`, weight: "20%" },
+                            { icon: <Twitter className="w-4 h-4" />, label: "Social Reputation Weight", val: `${user.twitterAgeDays}D`, weight: "30%" },
+                            { icon: <Zap className="w-4 h-4" />, label: "Builder Action Index", val: user.validTweetsCount, weight: "50%" },
                         ].map((stat, i) => (
                             <div key={i} className="flex items-center justify-between p-5 glass-effect rounded-[1.5rem] border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors shadow-sm">
                                 <div className="flex items-center gap-4">
@@ -693,8 +696,8 @@ const App: React.FC = () => {
             {activeTab === 'leaderboard' && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between px-2">
-                    <h2 className="text-lg font-black uppercase italic tracking-tight text-white">Top Impact Builders</h2>
-                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em]">Live Ranking</span>
+                    <h2 className="text-lg font-black uppercase italic tracking-tight text-white">Top Contributors</h2>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em]">Live Rank</span>
                 </div>
                 
                 <div className="space-y-3">
@@ -702,8 +705,8 @@ const App: React.FC = () => {
                     <div className="flex items-center gap-4">
                         <span className="text-2xl font-black text-blue-400 italic">#{user.rank}</span>
                         <div>
-                            <div className="text-[11px] font-black text-white uppercase tracking-tight">Your Global Rank</div>
-                            <div className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em]">{TIERS[currentTier].name} Tier</div>
+                            <div className="text-[11px] font-black text-white uppercase tracking-tight">Your Current Rank</div>
+                            <div className="text-[9px] font-black text-blue-400 uppercase tracking-[0.2em] font-mono">{TIERS[currentTier].name} Impact</div>
                         </div>
                     </div>
                     <div className="text-right">
@@ -720,7 +723,7 @@ const App: React.FC = () => {
                             <div>
                                 <div className="text-xs font-black text-gray-200">{player.handle}</div>
                                 <div className={`text-[8px] font-black uppercase tracking-[0.15em] bg-clip-text text-transparent bg-gradient-to-r ${TIERS[player.tier as RankTier].color}`}>
-                                    {TIERS[player.tier as RankTier].name} Impact
+                                    {TIERS[player.tier as RankTier].name} Member
                                 </div>
                             </div>
                         </div>
@@ -742,7 +745,7 @@ const App: React.FC = () => {
                         <div className="space-y-2">
                           <h2 className="text-2xl font-black uppercase italic text-white">SBT Minting Portal</h2>
                           <p className="text-xs text-gray-400 max-w-[280px] mx-auto font-medium uppercase tracking-tight opacity-70">
-                            Badges are non-transferable proofs of impact. Check final eligibility.
+                            Tiered Soulbound Tokens (SBT) represent your verifiable contribution weight.
                           </p>
                         </div>
                     </div>
@@ -752,8 +755,8 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-4">
                                 {user.rank <= 1000 ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
                                 <div>
-                                    <div className="text-[11px] font-black uppercase tracking-tight">Ecosystem Rank</div>
-                                    <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">#{user.rank} / Top 1000</div>
+                                    <div className="text-[11px] font-black uppercase tracking-tight">Rank Eligibility</div>
+                                    <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider font-mono">#{user.rank} / Top 1000</div>
                                 </div>
                             </div>
                         </div>
@@ -762,8 +765,8 @@ const App: React.FC = () => {
                             <div className="flex items-center gap-4">
                                 {user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <AlertCircle className="w-5 h-5 text-red-500" />}
                                 <div>
-                                    <div className="text-[11px] font-black uppercase tracking-tight">Onchain Holdings</div>
-                                    <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider">Min. $2.50 in Assets</div>
+                                    <div className="text-[11px] font-black uppercase tracking-tight">Ecosystem Balance</div>
+                                    <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider font-mono">Min. $2.50 Verified</div>
                                 </div>
                             </div>
                         </div>
@@ -771,10 +774,10 @@ const App: React.FC = () => {
                         <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-[1.2rem] space-y-2 shadow-inner">
                             <div className="flex items-center gap-2 text-[9px] font-black text-blue-400 uppercase tracking-[0.2em]">
                                 <Info className="w-3 h-3" />
-                                <span>Soulbound Protocol</span>
+                                <span>Security Protocol</span>
                             </div>
                             <p className="text-[10px] text-gray-500 leading-tight uppercase font-black tracking-tight opacity-60">
-                              Contribution event badges are locked to your wallet. Minting starts <strong className="text-white">January 16, 2026</strong>.
+                              Contribution badges are soulbound to your verified address. Claims locked until <strong className="text-white">January 16, 2026</strong>.
                             </p>
                         </div>
                     </div>
@@ -791,14 +794,14 @@ const App: React.FC = () => {
                         >
                             <div className="relative z-10 flex items-center justify-center gap-3">
                                 {!claimTimeReached ? (
-                                  'Registration Only'
+                                  'Pre-Registration'
                                 ) : isMinting ? (
                                   <>
                                     <Loader2 className="w-6 h-6 animate-spin" />
-                                    Minting Soulbound...
+                                    Minting Tier SBT...
                                   </>
                                 ) : (
-                                  'Mint Genesis Badge'
+                                  'Mint Genesis SBT'
                                 )}
                             </div>
                         </button>
@@ -814,22 +817,22 @@ const App: React.FC = () => {
                     </div>
                     
                     <div className="space-y-3">
-                      <h2 className="text-3xl font-black text-white uppercase italic">Mint Confirmed!</h2>
+                      <h2 className="text-3xl font-black text-white uppercase italic">Impact Secured!</h2>
                       <p className="text-gray-400 text-xs px-12 uppercase font-bold tracking-tight opacity-70 leading-relaxed font-mono">
-                        Your legacy as a Base builder is now immutable onchain.
+                        Your identity as a Base builder is now immutable onchain.
                       </p>
                     </div>
 
                     <div className="glass-effect p-6 rounded-[2rem] border border-green-500/30 space-y-4 bg-green-500/5 shadow-2xl">
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">BASE TX HASH</span>
+                          <span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">SBT HASH</span>
                           <span className="text-blue-400 font-mono text-[10px] font-bold">
                             {txHash?.slice(0, 16)}...
                           </span>
                         </div>
                         <div className="h-px bg-white/10" />
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">HOLDER</span>
+                          <span className="text-gray-500 font-black uppercase tracking-[0.2em] text-[9px]">OWNER</span>
                           <span className="text-white font-black text-[10px] uppercase font-mono">{walletAddress?.slice(0, 16)}...</span>
                         </div>
                     </div>
@@ -853,11 +856,11 @@ const App: React.FC = () => {
       {user && (
           <div className="fixed bottom-0 left-0 right-0 glass-effect border-t border-white/10 px-8 py-6 flex items-center justify-between md:hidden z-40 bg-black/95 backdrop-blur-3xl shadow-[0_-20px_40px_rgba(0,0,0,0.5)]">
               <div className="flex flex-col">
-                  <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Global Position</span>
+                  <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Impact Rank</span>
                   <span className="text-2xl font-black mt-1 italic text-white tracking-tighter">#{user.rank}</span>
               </div>
               <div className="flex flex-col items-end">
-                  <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Impact Weight</span>
+                  <span className="text-[9px] text-gray-500 font-black uppercase tracking-[0.3em] leading-none opacity-60">Verified Weight</span>
                   <span className="text-2xl font-black text-blue-500 mt-1 italic tracking-tighter">{user.points} PTS</span>
               </div>
           </div>
