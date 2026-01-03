@@ -14,7 +14,9 @@ import {
   Share2, 
   ExternalLink, 
   Loader2, 
-  PartyPopper 
+  PartyPopper,
+  User as UserIcon,
+  Link2
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { UserStats, RankTier } from './types';
@@ -67,19 +69,24 @@ const App: React.FC = () => {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Update current time every second to handle live UI transitions
+  // Connection Requirements
+  const [fcUser, setFcUser] = useState<{ username: string; displayName?: string } | null>(null);
+  const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Initialize Farcaster SDK
   useEffect(() => {
     const init = async () => {
       try {
         const context = await sdk.context;
         if (context?.user) {
-          handleConnect(context.user.username);
+          setFcUser({ 
+            username: context.user.username,
+            displayName: context.user.displayName 
+          });
         }
         sdk.actions.ready();
       } catch (e) {
@@ -89,9 +96,19 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  const handleConnect = async (customHandle?: string) => {
+  const handleTwitterConnect = async () => {
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
+    // Simulate OAuth interaction
+    await new Promise(r => setTimeout(r, 1200));
+    setTwUser({ handle: "@base_builder" });
+    setLoading(false);
+  };
+
+  const handleFinalizeConnection = async () => {
+    if (!fcUser || !twUser) return;
+    
+    setLoading(true);
+    await new Promise(r => setTimeout(r, 2000));
     
     const baseAge = 45;
     const twitterAge = 800;
@@ -101,7 +118,7 @@ const App: React.FC = () => {
 
     setUser({
       address: "0x742d...444",
-      twitterHandle: customHandle ? `@${customHandle}` : "@base_maxi",
+      twitterHandle: twUser.handle,
       baseAppAgeDays: baseAge,
       twitterAgeDays: twitterAge,
       validTweetsCount: tweets,
@@ -132,10 +149,8 @@ const App: React.FC = () => {
 
   const handleMint = async () => {
     if (!isClaimable || isMinting || isMinted) return;
-    
     setIsMinting(true);
     await new Promise(r => setTimeout(r, 3000));
-    
     const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
     setTxHash(fakeHash);
     setIsMinted(true);
@@ -147,9 +162,7 @@ const App: React.FC = () => {
     const shareText = isMinted 
       ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt on @base via @baseapp! 🚀`
       : `I just checked my @base impression on @baseapp! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nBuilding the future on @base! 🚀\n#BaseImpression #LamboLess #OnchainSummer`;
-    
     const encodedText = encodeURIComponent(shareText);
-    
     if (platform === 'farcaster') {
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodedText}`);
     } else {
@@ -159,7 +172,6 @@ const App: React.FC = () => {
 
   const isClaimable = useMemo(() => {
     if (!user) return false;
-    // Strict enforcement: current time must be after CLAIM_START
     return (
       currentTime >= CLAIM_START &&
       user.rank <= 1000 && 
@@ -180,52 +192,114 @@ const App: React.FC = () => {
           </div>
         </div>
         
-        {user ? (
+        {user && (
           <div className="flex items-center gap-2 glass-effect px-3 py-1.5 rounded-full border border-blue-500/20">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
             <span className="text-[10px] font-mono font-bold text-gray-300">{user.address}</span>
           </div>
-        ) : (
-          <button 
-            onClick={() => handleConnect()}
-            disabled={loading}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-full font-bold text-[11px] transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)]"
-          >
-            {loading ? 'Connecting...' : 'Connect'}
-          </button>
         )}
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 pb-28">
-        <div className="grid grid-cols-1 gap-3 mb-6">
-          <Countdown 
-            targetDate={claimTimeReached ? SNAPSHOT_END : CLAIM_START} 
-            label={claimTimeReached ? "Snapshot End" : "Mint Opens In"} 
-          />
-        </div>
-
         {!user ? (
-          <div className="text-center py-12 space-y-6">
-            <div className="relative inline-block">
-                <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20" />
-                <BrandIcon size="lg" />
-            </div>
-            <div className="space-y-3">
+          <div className="space-y-10 animate-in fade-in duration-700">
+            <div className="text-center space-y-4">
+              <div className="relative inline-block mb-2">
+                  <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20" />
+                  <BrandIcon size="lg" />
+              </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
-              <p className="text-gray-400 text-xs max-w-[280px] mx-auto leading-relaxed">
-                Connect to calculate points from your Base and Twitter contributions. 
-                Top 1000 contributors earn exclusive NFT badges.
+              <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
+                To calculate your impression, we require a verified link to your Farcaster and Twitter accounts.
               </p>
             </div>
-            <button 
-              onClick={() => handleConnect()}
-              className="px-8 py-3.5 bg-white text-black rounded-2xl font-black text-base hover:bg-blue-50 transition-all flex items-center gap-2 mx-auto shadow-xl active:scale-95"
-            >
-              Get Started <ChevronRight className="w-5 h-5" />
-            </button>
+
+            <div className="space-y-4 max-w-sm mx-auto">
+              <div className="glass-effect p-5 rounded-3xl border border-white/10 space-y-4">
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Connection Requirements</h3>
+                
+                {/* Step 1: Farcaster */}
+                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${fcUser ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`${fcUser ? 'text-green-500' : 'text-blue-500'}`}>
+                      <UserIcon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">Farcaster Account</div>
+                      <div className="text-[10px] text-gray-500">
+                        {fcUser ? `@${fcUser.username}` : 'Not detected'}
+                      </div>
+                    </div>
+                  </div>
+                  {fcUser ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+                  )}
+                </div>
+
+                {/* Step 2: Twitter */}
+                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${twUser ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`${twUser ? 'text-green-500' : 'text-blue-400'}`}>
+                      <Twitter className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">Twitter Account</div>
+                      <div className="text-[10px] text-gray-500">
+                        {twUser ? twUser.handle : 'Connection mandatory'}
+                      </div>
+                    </div>
+                  </div>
+                  {twUser ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  ) : (
+                    <button 
+                      onClick={handleTwitterConnect}
+                      disabled={loading}
+                      className="px-3 py-1 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95"
+                    >
+                      {loading ? 'Linking...' : 'Link X'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <button 
+                onClick={handleFinalizeConnection}
+                disabled={!fcUser || !twUser || loading}
+                className={`w-full py-4 rounded-2xl font-black text-base transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 ${
+                  fcUser && twUser 
+                  ? 'bg-white text-black hover:bg-blue-50 cursor-pointer' 
+                  : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-white/5'
+                }`}
+              >
+                {loading && !twUser ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Calculate My Impression'}
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex items-center justify-center gap-4 opacity-40">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Secure</span>
+              </div>
+              <div className="w-1 h-1 rounded-full bg-gray-500" />
+              <div className="flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Read-Only</span>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-3 mb-2">
+              <Countdown 
+                targetDate={claimTimeReached ? SNAPSHOT_END : CLAIM_START} 
+                label={claimTimeReached ? "Snapshot End" : "Mint Opens In"} 
+              />
+            </div>
+
             <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5 sticky top-[72px] z-30 backdrop-blur-md">
                 {(['dashboard', 'leaderboard', 'claim'] as const).map(tab => (
                     <button
