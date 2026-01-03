@@ -16,7 +16,9 @@ import {
   Loader2, 
   PartyPopper,
   User as UserIcon,
-  Link2
+  Link2,
+  X,
+  ArrowRight
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { UserStats, RankTier } from './types';
@@ -72,6 +74,11 @@ const App: React.FC = () => {
   // Connection Requirements
   const [fcUser, setFcUser] = useState<{ username: string; displayName?: string } | null>(null);
   const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
+  
+  // Twitter Verification States
+  const [isTwitterModalOpen, setIsTwitterModalOpen] = useState(false);
+  const [tempTwitterHandle, setTempTwitterHandle] = useState('');
+  const [twitterStep, setTwitterStep] = useState<1 | 2 | 3>(1); // 1: Input, 2: Post, 3: Verifying
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -96,12 +103,23 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  const handleTwitterConnect = async () => {
-    setLoading(true);
-    // Simulate OAuth interaction
-    await new Promise(r => setTimeout(r, 1200));
-    setTwUser({ handle: "@base_builder" });
-    setLoading(false);
+  const handleTwitterVerifyStart = () => {
+    if (!tempTwitterHandle.trim()) return;
+    setTwitterStep(2);
+  };
+
+  const handlePostVerificationTweet = () => {
+    const handle = tempTwitterHandle.startsWith('@') ? tempTwitterHandle : `@${tempTwitterHandle}`;
+    const text = `Verifying my impact for @base impression! 🛡️💎\n\nHandle: ${handle}\nCode: BI-${Math.random().toString(36).substring(7).toUpperCase()}\n\nBuild on @base. #BaseImpression #LamboLess`;
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+    setTwitterStep(3);
+    
+    // Simulate real lookup after "tweeting"
+    setTimeout(() => {
+      setTwUser({ handle: handle });
+      setIsTwitterModalOpen(false);
+      setTwitterStep(1);
+    }, 3000);
   };
 
   const handleFinalizeConnection = async () => {
@@ -183,6 +201,85 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-blue-500/30 safe-top safe-bottom">
+      {/* Twitter Verification Modal */}
+      {isTwitterModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !loading && setIsTwitterModalOpen(false)} />
+          <div className="relative glass-effect border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 shadow-2xl">
+            <button onClick={() => setIsTwitterModalOpen(false)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+            
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center mx-auto mb-4">
+                <Twitter className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-black">Verify Account</h3>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Ownership Verification Required</p>
+            </div>
+
+            {twitterStep === 1 && (
+              <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Your X Handle</label>
+                  <div className="relative">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 font-black">@</span>
+                    <input 
+                      type="text" 
+                      placeholder="username"
+                      value={tempTwitterHandle}
+                      onChange={(e) => setTempTwitterHandle(e.target.value.replace('@', ''))}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-10 pr-4 text-sm font-bold focus:border-blue-500/50 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <button 
+                  onClick={handleTwitterVerifyStart}
+                  disabled={!tempTwitterHandle.trim()}
+                  className="w-full py-4 bg-white text-black rounded-2xl font-black text-sm hover:bg-blue-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  Continue <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {twitterStep === 2 && (
+              <div className="space-y-5 animate-in slide-in-from-bottom-2 duration-300">
+                <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-2">
+                  <p className="text-xs text-gray-400 leading-relaxed text-center">
+                    To link <span className="text-white font-bold">@{tempTwitterHandle}</span>, post a verification tweet.
+                  </p>
+                </div>
+                <button 
+                  onClick={handlePostVerificationTweet}
+                  className="w-full py-4 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-400 transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+                >
+                  <Twitter className="w-4 h-4 fill-current" /> Post Verification
+                </button>
+                <button onClick={() => setTwitterStep(1)} className="w-full text-[10px] font-black text-gray-500 uppercase tracking-widest hover:text-gray-300 transition-colors">
+                  Go Back
+                </button>
+              </div>
+            )}
+
+            {twitterStep === 3 && (
+              <div className="space-y-6 text-center py-4 animate-in zoom-in-95 duration-300">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-black">Looking for tweet...</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Linking @{tempTwitterHandle}</p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-600 px-4">
+                  Checking the X API for your proof. This usually takes 2-5 seconds.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-50 glass-effect border-b border-white/5 px-4 py-3 flex justify-between items-center">
         <div className="flex items-center gap-2">
           <BrandIcon size="sm" />
@@ -210,7 +307,7 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
               <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
-                To calculate your impression, we require a verified link to your Farcaster and Twitter accounts.
+                Connect your accounts to aggregate your activity across the Base ecosystem.
               </p>
             </div>
 
@@ -247,7 +344,7 @@ const App: React.FC = () => {
                     <div>
                       <div className="text-xs font-black">Twitter Account</div>
                       <div className="text-[10px] text-gray-500">
-                        {twUser ? twUser.handle : 'Connection mandatory'}
+                        {twUser ? twUser.handle : 'Real connection required'}
                       </div>
                     </div>
                   </div>
@@ -255,11 +352,10 @@ const App: React.FC = () => {
                     <CheckCircle2 className="w-5 h-5 text-green-500" />
                   ) : (
                     <button 
-                      onClick={handleTwitterConnect}
-                      disabled={loading}
-                      className="px-3 py-1 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95"
+                      onClick={() => setIsTwitterModalOpen(true)}
+                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
                     >
-                      {loading ? 'Linking...' : 'Link X'}
+                      Verify X
                     </button>
                   )}
                 </div>
@@ -274,7 +370,7 @@ const App: React.FC = () => {
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-white/5'
                 }`}
               >
-                {loading && !twUser ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Calculate My Impression'}
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Calculate My Impression'}
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
