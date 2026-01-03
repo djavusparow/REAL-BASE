@@ -18,7 +18,8 @@ import {
   User as UserIcon,
   Link2,
   X,
-  ArrowRight
+  ArrowRight,
+  Fingerprint
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { UserStats, RankTier } from './types';
@@ -73,6 +74,7 @@ const App: React.FC = () => {
 
   // Connection Requirements
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [isWalletSigned, setIsWalletSigned] = useState(false);
   const [twUser, setTwUser] = useState<{ handle: string } | null>(null);
   
   // Interaction States
@@ -100,21 +102,38 @@ const App: React.FC = () => {
   const handleWalletConnect = async () => {
     setError(null);
     setLoading(true);
+    setIsWalletSigned(false);
+    
     try {
-      // Fix: Use (window as any).ethereum to avoid TypeScript errors on non-standard properties
       if (typeof (window as any).ethereum !== 'undefined') {
+        // Step 1: Request Accounts
         const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts && accounts[0]) {
-          setWalletAddress(accounts[0]);
-        }
+        const address = accounts[0];
+        
+        if (!address) throw new Error("No wallet account selected");
+
+        // Step 2: Request Signature (Approve and Sign)
+        const message = `Welcome to Base Impression!\n\nSign this message to verify your identity and start calculating your onchain impact.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+        
+        await (window as any).ethereum.request({
+          method: 'personal_sign',
+          params: [message, address],
+        });
+
+        // Successful sign and connect
+        setWalletAddress(address);
+        setIsWalletSigned(true);
       } else {
-        // Mock fallback if ethereum provider isn't detected (for development/frames environment)
-        await new Promise(r => setTimeout(r, 1000));
+        // Mock fallback if ethereum provider isn't detected
+        await new Promise(r => setTimeout(r, 1500));
         setWalletAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
+        setIsWalletSigned(true);
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Wallet connection failed");
+      setError(err.code === 4001 ? "Approval denied. Please sign the message to proceed." : (err.message || "Connection failed"));
+      setWalletAddress(null);
+      setIsWalletSigned(false);
     } finally {
       setLoading(false);
     }
@@ -333,28 +352,42 @@ const App: React.FC = () => {
               <div className="glass-effect p-5 rounded-3xl border border-white/10 space-y-4">
                 <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest text-center">Required Proofs</h3>
                 
-                {/* Step 1: Wallet Connection */}
-                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${walletAddress ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
+                {/* Step 1: Wallet Connection & Signature */}
+                <div className={`p-4 rounded-2xl flex items-center justify-between transition-all border ${isWalletSigned ? 'bg-green-500/5 border-green-500/20' : 'bg-white/5 border-white/10'}`}>
                   <div className="flex items-center gap-4">
-                    <div className={`${walletAddress ? 'text-green-500' : 'text-blue-500'}`}>
-                      <Wallet className="w-6 h-6" />
+                    <div className={`${isWalletSigned ? 'text-green-500' : 'text-blue-500'}`}>
+                      {isWalletSigned ? <ShieldCheck className="w-6 h-6" /> : <Wallet className="w-6 h-6" />}
                     </div>
                     <div>
-                      <div className="text-xs font-black">Base Wallet</div>
+                      <div className="text-xs font-black">
+                        {isWalletSigned ? 'Wallet Verified' : 'Base Wallet'}
+                      </div>
                       <div className="text-[10px] text-gray-500">
-                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect Coinbase Wallet'}
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Approve & Sign Message'}
                       </div>
                     </div>
                   </div>
-                  {walletAddress ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  {isWalletSigned ? (
+                    <div className="flex items-center gap-1">
+                      <CheckCircle2 className="w-5 h-5 text-green-500" />
+                    </div>
                   ) : (
                     <button 
                       onClick={handleWalletConnect}
                       disabled={loading}
-                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+                      className="px-4 py-1.5 bg-blue-600 rounded-lg text-[10px] font-black hover:bg-blue-500 transition-all active:scale-95 shadow-lg shadow-blue-600/20 flex items-center gap-2"
                     >
-                      {loading ? 'Linking...' : 'Connect'}
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Signing...
+                        </>
+                      ) : (
+                        <>
+                          <Fingerprint className="w-3 h-3" />
+                          Approve
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -386,7 +419,7 @@ const App: React.FC = () => {
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-3 text-red-500">
+                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-3 text-red-500 animate-in slide-in-from-top-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <p className="text-[10px] font-bold">{error}</p>
                 </div>
@@ -394,9 +427,9 @@ const App: React.FC = () => {
 
               <button 
                 onClick={handleFinalizeConnection}
-                disabled={!walletAddress || !twUser || loading}
+                disabled={!isWalletSigned || !twUser || loading}
                 className={`w-full py-4 rounded-2xl font-black text-base transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 ${
-                  walletAddress && twUser 
+                  isWalletSigned && twUser 
                   ? 'bg-white text-black hover:bg-blue-50 cursor-pointer' 
                   : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-white/5'
                 }`}
@@ -409,12 +442,12 @@ const App: React.FC = () => {
             <div className="flex items-center justify-center gap-4 opacity-40">
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">On-Chain</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">Signed</span>
               </div>
               <div className="w-1 h-1 rounded-full bg-gray-500" />
               <div className="flex items-center gap-1.5">
-                <Link2 className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">EIP-1193</span>
+                <Fingerprint className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Verified</span>
               </div>
             </div>
           </div>
