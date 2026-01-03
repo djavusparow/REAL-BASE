@@ -19,7 +19,8 @@ import {
   Link2,
   X,
   ArrowRight,
-  Fingerprint
+  Fingerprint,
+  Download
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { UserStats, RankTier } from './types';
@@ -105,33 +106,40 @@ const App: React.FC = () => {
     setIsWalletSigned(false);
     
     try {
-      if (typeof (window as any).ethereum !== 'undefined') {
-        // Step 1: Request Accounts
-        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+      const provider = (window as any).ethereum;
+      
+      if (typeof provider !== 'undefined') {
+        // Step 1: Connect Account
+        // This will open the Coinbase Wallet / MetaMask / Browser Wallet UI
+        const accounts = await provider.request({ 
+          method: 'eth_requestAccounts' 
+        });
+        
         const address = accounts[0];
-        
-        if (!address) throw new Error("No wallet account selected");
+        if (!address) throw new Error("No wallet account found. Please check your wallet app.");
 
-        // Step 2: Request Signature (Approve and Sign)
-        const message = `Welcome to Base Impression!\n\nSign this message to verify your identity and start calculating your onchain impact.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+        // Step 2: Request Signature
+        // This triggers the 'Approve & Sign' UI in the wallet
+        const message = `Base Impression Verification\n\nI am verifying my identity to calculate my impact on the Base ecosystem.\n\nAddress: ${address}\nNonce: ${Math.floor(Math.random() * 1000000)}`;
         
-        await (window as any).ethereum.request({
+        await provider.request({
           method: 'personal_sign',
           params: [message, address],
         });
 
-        // Successful sign and connect
+        // If we get here, the user signed successfully
         setWalletAddress(address);
         setIsWalletSigned(true);
       } else {
-        // Mock fallback if ethereum provider isn't detected
-        await new Promise(r => setTimeout(r, 1500));
-        setWalletAddress("0x742d35Cc6634C0532925a3b844Bc454e4438f44e");
-        setIsWalletSigned(true);
+        throw new Error("No Web3 provider detected. Please install Coinbase Wallet or use a dApp browser.");
       }
     } catch (err: any) {
-      console.error(err);
-      setError(err.code === 4001 ? "Approval denied. Please sign the message to proceed." : (err.message || "Connection failed"));
+      console.error("Wallet Error:", err);
+      if (err.code === 4001) {
+        setError("Request rejected. Please sign to verify your account.");
+      } else {
+        setError(err.message || "An unexpected error occurred during connection.");
+      }
       setWalletAddress(null);
       setIsWalletSigned(false);
     } finally {
@@ -163,11 +171,12 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    const baseAge = 45;
-    const twitterAge = 800;
-    const tweets = 42;
+    // Simulate data fetching from indexers
+    const baseAge = 64;
+    const twitterAge = 950;
+    const tweets = 12; // In a real app, this would be fetched from a backend
     const points = calculatePoints(baseAge, twitterAge, tweets);
-    const rank = 420;
+    const rank = 188;
 
     setUser({
       address: walletAddress,
@@ -175,7 +184,7 @@ const App: React.FC = () => {
       baseAppAgeDays: baseAge,
       twitterAgeDays: twitterAge,
       validTweetsCount: tweets,
-      lambolessBalance: 3.50,
+      lambolessBalance: 12.50,
       points: points,
       rank: rank
     });
@@ -203,18 +212,29 @@ const App: React.FC = () => {
   const handleMint = async () => {
     if (!isClaimable || isMinting || isMinted) return;
     setIsMinting(true);
-    await new Promise(r => setTimeout(r, 3000));
-    const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
-    setTxHash(fakeHash);
-    setIsMinted(true);
-    setIsMinting(false);
+    
+    try {
+      const provider = (window as any).ethereum;
+      if (provider && walletAddress) {
+        // In a real app, we would call the contract here
+        // For now, we simulate the 'Confirm' UI in the wallet
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
+      setTxHash(fakeHash);
+      setIsMinted(true);
+    } catch (e) {
+      setError("Minting failed. Please check your wallet balance.");
+    } finally {
+      setIsMinting(false);
+    }
   };
 
   const handleShare = (platform: 'twitter' | 'farcaster') => {
     if (!user) return;
     const shareText = isMinted 
-      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt on @base via @baseapp! 🚀`
-      : `I just checked my @base impression on @baseapp! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nBuilding the future on @base! 🚀\n#BaseImpression #LamboLess #OnchainSummer`;
+      ? `I just minted my exclusive ${TIERS[currentTier].name} Badge for @base impression! 🛡️💎\n\nRank: #${user.rank}\n\nBuilt on @base! 🚀`
+      : `I just checked my @base impression! 🛡️\n\nRank: #${user.rank}\nPoints: ${user.points}\n\nBuilding the future on @base! 🚀\n#BaseImpression #LamboLess #OnchainSummer`;
     const encodedText = encodeURIComponent(shareText);
     if (platform === 'farcaster') {
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodedText}`);
@@ -363,7 +383,7 @@ const App: React.FC = () => {
                         {isWalletSigned ? 'Wallet Verified' : 'Base Wallet'}
                       </div>
                       <div className="text-[10px] text-gray-500">
-                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Approve & Sign Message'}
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect & Sign Message'}
                       </div>
                     </div>
                   </div>
@@ -380,12 +400,12 @@ const App: React.FC = () => {
                       {loading ? (
                         <>
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          Signing...
+                          Sign Request...
                         </>
                       ) : (
                         <>
                           <Fingerprint className="w-3 h-3" />
-                          Approve
+                          Verify Wallet
                         </>
                       )}
                     </button>
@@ -419,9 +439,21 @@ const App: React.FC = () => {
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl flex items-center gap-3 text-red-500 animate-in slide-in-from-top-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <p className="text-[10px] font-bold">{error}</p>
+                <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl space-y-3 animate-in slide-in-from-top-2">
+                  <div className="flex items-center gap-3 text-red-500">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <p className="text-[10px] font-bold">{error}</p>
+                  </div>
+                  {!walletAddress && (
+                    <a 
+                      href="https://www.coinbase.com/wallet" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    >
+                      <Download className="w-3 h-3" /> Install Coinbase Wallet
+                    </a>
+                  )}
                 </div>
               )}
 
