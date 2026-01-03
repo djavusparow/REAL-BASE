@@ -23,6 +23,7 @@ import {
   Download
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
+import CoinbaseWalletSDK from '@coinbase/wallet-sdk';
 import { UserStats, RankTier } from './types';
 import { 
   TOKEN_CONTRACT, 
@@ -37,6 +38,9 @@ import { calculatePoints, getTierFromRank } from './utils/calculations';
 import Countdown from './components/Countdown';
 import BadgeDisplay from './components/BadgeDisplay';
 import { geminiService } from './services/geminiService';
+
+const APP_NAME = 'BASE IMPRESSION';
+const APP_LOGO_URL = 'https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128';
 
 const BrandIcon: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-48 h-48' : 'w-12 h-12';
@@ -106,39 +110,43 @@ const App: React.FC = () => {
     setIsWalletSigned(false);
     
     try {
-      const provider = (window as any).ethereum;
+      // Initialize Coinbase Wallet SDK for a real connection
+      const coinbaseWallet = new CoinbaseWalletSDK({
+        appName: APP_NAME,
+        appLogoUrl: APP_LOGO_URL,
+        darkMode: true
+      });
+
+      // Use Base mainnet by default. The SDK provides a provider even if no extension is installed.
+      const provider = coinbaseWallet.makeWeb3Provider('https://mainnet.base.org', 8453);
       
-      if (typeof provider !== 'undefined') {
-        // Step 1: Connect Account
-        // This will open the Coinbase Wallet / MetaMask / Browser Wallet UI
-        const accounts = await provider.request({ 
-          method: 'eth_requestAccounts' 
-        });
-        
-        const address = accounts[0];
-        if (!address) throw new Error("No wallet account found. Please check your wallet app.");
+      // Step 1: Request Accounts
+      // This will open the Coinbase Wallet extension if available, or a QR code modal.
+      const accounts = await provider.request({ 
+        method: 'eth_requestAccounts' 
+      });
+      
+      const address = (accounts as string[])[0];
+      if (!address) throw new Error("No wallet account selected.");
 
-        // Step 2: Request Signature
-        // This triggers the 'Approve & Sign' UI in the wallet
-        const message = `Base Impression Verification\n\nI am verifying my identity to calculate my impact on the Base ecosystem.\n\nAddress: ${address}\nNonce: ${Math.floor(Math.random() * 1000000)}`;
-        
-        await provider.request({
-          method: 'personal_sign',
-          params: [message, address],
-        });
+      // Step 2: Request Signature (Real Approval)
+      // This verifies the user actually controls the wallet they just connected.
+      const message = `Base Impression Verification\n\nI am verifying my identity to calculate my impact on the Base ecosystem.\n\nAddress: ${address}\nTimestamp: ${Date.now()}`;
+      
+      await provider.request({
+        method: 'personal_sign',
+        params: [message, address],
+      });
 
-        // If we get here, the user signed successfully
-        setWalletAddress(address);
-        setIsWalletSigned(true);
-      } else {
-        throw new Error("No Web3 provider detected. Please install Coinbase Wallet or use a dApp browser.");
-      }
+      // Connection and signing successful
+      setWalletAddress(address);
+      setIsWalletSigned(true);
     } catch (err: any) {
-      console.error("Wallet Error:", err);
+      console.error("Wallet Connection Error:", err);
       if (err.code === 4001) {
-        setError("Request rejected. Please sign to verify your account.");
+        setError("Approval denied. Please sign the message in your wallet to proceed.");
       } else {
-        setError(err.message || "An unexpected error occurred during connection.");
+        setError(err.message || "Could not connect to Coinbase Wallet.");
       }
       setWalletAddress(null);
       setIsWalletSigned(false);
@@ -171,10 +179,10 @@ const App: React.FC = () => {
     setLoading(true);
     await new Promise(r => setTimeout(r, 2000));
     
-    // Simulate data fetching from indexers
+    // In a production app, we would query on-chain data and social APIs here.
     const baseAge = 64;
     const twitterAge = 950;
-    const tweets = 12; // In a real app, this would be fetched from a backend
+    const tweets = 12;
     const points = calculatePoints(baseAge, twitterAge, tweets);
     const rank = 188;
 
@@ -214,17 +222,13 @@ const App: React.FC = () => {
     setIsMinting(true);
     
     try {
-      const provider = (window as any).ethereum;
-      if (provider && walletAddress) {
-        // In a real app, we would call the contract here
-        // For now, we simulate the 'Confirm' UI in the wallet
-        await new Promise(r => setTimeout(r, 2000));
-      }
+      // Logic for real minting transaction would go here
+      await new Promise(r => setTimeout(r, 3000));
       const fakeHash = "0x" + Array.from({length: 64}, () => Math.floor(Math.random() * 16).toString(16)).join("");
       setTxHash(fakeHash);
       setIsMinted(true);
     } catch (e) {
-      setError("Minting failed. Please check your wallet balance.");
+      setError("Minting failed. Please check your wallet.");
     } finally {
       setIsMinting(false);
     }
@@ -364,7 +368,7 @@ const App: React.FC = () => {
               </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight px-4">Prove Your<br/>Base Impact.</h2>
               <p className="text-gray-400 text-xs max-w-[300px] mx-auto leading-relaxed">
-                Aggregating your on-chain and social footprint. Please connect your Coinbase wallet to start.
+                Aggregating your on-chain and social footprint via official Coinbase Wallet connection.
               </p>
             </div>
 
@@ -383,14 +387,12 @@ const App: React.FC = () => {
                         {isWalletSigned ? 'Wallet Verified' : 'Base Wallet'}
                       </div>
                       <div className="text-[10px] text-gray-500">
-                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect & Sign Message'}
+                        {walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Connect & Sign'}
                       </div>
                     </div>
                   </div>
                   {isWalletSigned ? (
-                    <div className="flex items-center gap-1">
-                      <CheckCircle2 className="w-5 h-5 text-green-500" />
-                    </div>
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
                   ) : (
                     <button 
                       onClick={handleWalletConnect}
@@ -400,12 +402,12 @@ const App: React.FC = () => {
                       {loading ? (
                         <>
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          Sign Request...
+                          Waiting...
                         </>
                       ) : (
                         <>
                           <Fingerprint className="w-3 h-3" />
-                          Verify Wallet
+                          Verify
                         </>
                       )}
                     </button>
@@ -451,7 +453,7 @@ const App: React.FC = () => {
                       rel="noopener noreferrer"
                       className="flex items-center justify-center gap-2 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
                     >
-                      <Download className="w-3 h-3" /> Install Coinbase Wallet
+                      <Download className="w-3 h-3" /> Get Coinbase Wallet
                     </a>
                   )}
                 </div>
