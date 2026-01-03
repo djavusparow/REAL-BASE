@@ -1,7 +1,22 @@
 {
   "name": "BASE IMPRESSION",
-  "description": "Calculate your BaseApp and Twitter contribution points to earn exclusive NFT badges. Ranking top 1000 unlocks special Platinum, Gold, Silver, and Bronze rewards based on your impact.",
+  "description": "The definitive contribution event for the Base ecosystem. Calculate your impact across Base and social channels to earn tiered NFT badges. Top 1000 builders recognized.",
   "requestFramePermissions": [
     "camera"
-  ]
+  ],
+  "frame": {
+    "version": "vNext",
+    "imageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=600",
+    "button": "Check My Impact",
+    "splashImageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=200",
+    "splashBackgroundColor": "#000000"
+  },
+  "baseapp": {
+    "type": "miniapp",
+    "categories": [
+      "social",
+      "rewards"
+    ],
+    "accentColor": "#2563eb"
+  }
 }
