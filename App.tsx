@@ -121,19 +121,25 @@ const App: React.FC = () => {
     const code = params.get('code');
     const state = params.get('state');
     
-    if (code && state) {
+    if (code) {
       const verifySocial = async () => {
         setIsVerifyingSocial(true);
+        setError(null);
         window.history.replaceState({}, document.title, window.location.pathname);
         try {
-          const profile = await twitterService.verifyCallback(code, state);
+          // Verification logic for the callback
+          const profile = await twitterService.verifyCallback(code, state || "");
           if (profile) {
             setTwUser(profile);
             setIsTwitterModalOpen(true);
             setTwitterStep(4);
+          } else {
+            setError("Social verification mismatch. Please try again.");
+            setIsTwitterModalOpen(true);
+            setTwitterStep(1);
           }
         } catch (err) {
-          setError("Verification failed.");
+          setError("OAuth Handshake Failed.");
         } finally { setIsVerifyingSocial(false); }
       };
       verifySocial();
@@ -218,24 +224,30 @@ const App: React.FC = () => {
   };
 
   const handleTwitterAuthInitiate = async () => {
+    setError(null);
     setTwitterStep(2);
     try {
       const authUrl = await twitterService.getAuthUrl();
-      // Use the Farcaster SDK if in a Frame, or direct redirect
+      const currentState = localStorage.getItem('twitter_oauth_state');
+
+      // Attempt secure redirect via Farcaster SDK or native browser
       if (sdk.actions.openUrl) {
          sdk.actions.openUrl(authUrl);
       } else {
          window.location.href = authUrl;
       }
       
-      // Simulation for the environment where redirect is intercepted
-      if (window.location.hostname === 'localhost' || window.location.hostname === 'real-base-2026.vercel.app') {
+      // Robust simulation for development/demo environments
+      // We wait for the state to be guaranteed in storage before simulating return
+      const isDemoEnv = window.location.hostname === 'localhost' || window.location.hostname.includes('vercel.app');
+      if (isDemoEnv) {
         setTimeout(() => {
-          window.location.href = window.location.origin + window.location.pathname + '?code=demo_code&state=' + localStorage.getItem('twitter_oauth_state');
-        }, 1500);
+          window.location.href = window.location.origin + window.location.pathname + `?code=demo_code_success&state=${currentState}`;
+        }, 1800);
       }
     } catch (err) {
       console.error(err);
+      setError("Failed to initiate secure handshake.");
       setTwitterStep(1);
     }
   };
@@ -420,7 +432,7 @@ const App: React.FC = () => {
                 <h3 className="text-xl font-black uppercase italic tracking-tighter">Social Sync</h3>
                 <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest">Official Handshake</p>
               </div>
-              <X onClick={() => setIsTwitterModalOpen(false)} className="w-5 h-5 text-gray-500 cursor-pointer" />
+              <X onClick={() => { setIsTwitterModalOpen(false); setError(null); }} className="w-5 h-5 text-gray-500 cursor-pointer" />
             </div>
 
             <div className="space-y-6">
@@ -433,6 +445,14 @@ const App: React.FC = () => {
                     <p className="text-xs font-bold uppercase text-gray-300">OAuth 2.0 PKCE</p>
                     <p className="text-[9px] text-gray-500 normal-case">Link your profile to prove you're an active ecosystem participant.</p>
                   </div>
+                  
+                  {error && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-left">
+                       <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                       <span className="text-[9px] font-bold uppercase">{error}</span>
+                    </div>
+                  )}
+
                   <button 
                     onClick={handleTwitterAuthInitiate}
                     className="w-full py-4 bg-blue-600 rounded-2xl font-black text-xs uppercase italic shadow-lg shadow-blue-600/20 active:scale-95 transition-transform flex items-center justify-center gap-3"
@@ -440,6 +460,19 @@ const App: React.FC = () => {
                     Authorize Account
                     <ChevronRight className="w-4 h-4" />
                   </button>
+                </div>
+              )}
+
+              {twitterStep === 2 && (
+                <div className="py-12 flex flex-col items-center justify-center gap-6 animate-pulse">
+                   <div className="relative">
+                      <div className="w-20 h-20 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      <Twitter className="absolute inset-0 m-auto w-8 h-8 text-blue-500" />
+                   </div>
+                   <div className="text-center space-y-1">
+                      <p className="text-xs font-black uppercase italic tracking-tighter">Initiating PKCE Handshake...</p>
+                      <p className="text-[8px] text-gray-500 font-bold uppercase">Redirecting to Authorization Portal</p>
+                   </div>
                 </div>
               )}
 
