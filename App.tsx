@@ -315,8 +315,36 @@ const App: React.FC = () => {
     }
   };
 
-  const isClaimable = user && user.rank <= 1000 && user.lambolessBalance >= MIN_TOKEN_VALUE_USD;
+  const handleMint = async () => {
+    setIsMinting(true);
+    // Simulate minting delay
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    setIsMinted(true);
+    setIsMinting(false);
+  };
+
   const currentTier = user ? getTierFromRank(user.rank) : RankTier.NONE;
+
+  const claimButtonState = useMemo(() => {
+    if (!user) return { text: 'Scanning Required', disabled: true, color: 'bg-white/5' };
+    if (isMinted) return { text: 'Badge Minted', disabled: true, color: 'bg-green-600/20 text-green-500 border-green-500/30' };
+    if (isMinting) return { text: 'Minting...', disabled: true, color: 'bg-blue-600/20' };
+    
+    const isRankEligible = user.rank <= 1000;
+    const isBalanceEligible = user.lambolessBalance >= MIN_TOKEN_VALUE_USD;
+
+    if (!isRankEligible && !isBalanceEligible) {
+      return { text: 'Ineligible: Rank & Balance', disabled: true, color: 'bg-red-500/10 text-red-400 border-red-500/20' };
+    }
+    if (!isRankEligible) {
+      return { text: 'Rank Too Low (Top 1000 Only)', disabled: true, color: 'bg-red-500/10 text-red-400 border-red-500/20' };
+    }
+    if (!isBalanceEligible) {
+      return { text: `Insufficient $LAMBOLESS (<$${MIN_TOKEN_VALUE_USD})`, disabled: true, color: 'bg-red-500/10 text-red-400 border-red-500/20' };
+    }
+
+    return { text: `Mint ${currentTier} Badge`, disabled: false, color: 'bg-blue-600 shadow-xl shadow-blue-600/20 active:scale-95' };
+  }, [user, isMinted, isMinting, currentTier]);
 
   return (
     <div className="min-h-screen bg-black text-white safe-top safe-bottom font-['Space_Grotesk']">
@@ -615,17 +643,45 @@ const App: React.FC = () => {
                   <CreditCard className="w-10 h-10 text-blue-500" />
                 </div>
                 <h2 className="text-2xl font-black uppercase italic">Soulbound Badge</h2>
+                
                 <div className="space-y-3">
-                  <div className={`p-5 border rounded-2xl flex justify-between ${user.rank <= 1000 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30'}`}>
-                    <span className="text-[10px] font-black uppercase">Rank Eligibility</span>
-                    <span className="text-[10px] font-bold">{user.rank <= 1000 ? 'QUALIFIED' : 'NOT ELIGIBLE'}</span>
+                  <div className={`p-5 border rounded-2xl flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase">Rank Eligibility</p>
+                      <p className="text-[8px] text-gray-500 uppercase">Top 1000 Active Wallets</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase">{user.rank <= 1000 ? 'QUALIFIED' : 'NOT ELIGIBLE'}</span>
+                      {user.rank <= 1000 ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-red-500" />}
+                    </div>
                   </div>
-                  <div className={`p-5 border rounded-2xl flex justify-between ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30'}`}>
-                    <span className="text-[10px] font-black uppercase">Min. $2.50 Verified</span>
-                    <span className="text-[10px] font-bold">${user.lambolessBalance.toFixed(2)}</span>
+                  
+                  <div className={`p-5 border rounded-2xl flex justify-between items-center ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                    <div className="text-left">
+                      <p className="text-[10px] font-black uppercase">Min. Portfolio Verification</p>
+                      <p className="text-[8px] text-gray-500 uppercase">Holds at least $2.50 in ecosystem tokens</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase">${user.lambolessBalance.toFixed(2)}</span>
+                      {user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-red-500" />}
+                    </div>
                   </div>
                 </div>
-                <button disabled={!isClaimable} className={`w-full py-5 rounded-[2rem] font-black uppercase italic ${isClaimable ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-white/5 text-gray-700 disabled:opacity-20'}`}>Mint Tier Badge</button>
+
+                <button 
+                  onClick={handleMint}
+                  disabled={claimButtonState.disabled} 
+                  className={`w-full py-5 rounded-[2rem] font-black uppercase italic text-sm transition-all border border-transparent ${claimButtonState.color}`}
+                >
+                  {claimButtonState.text}
+                </button>
+
+                {isMinted && (
+                  <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl animate-in slide-in-from-top-4 duration-500">
+                    <p className="text-[10px] font-black uppercase text-green-400">Transaction Confirmed!</p>
+                    <p className="text-[8px] text-gray-500 font-bold uppercase mt-1">Badge identity added to your wallet on Base.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
