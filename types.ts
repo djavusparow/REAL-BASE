@@ -23,6 +23,8 @@ export interface LeaderboardEntry {
   handle: string;
   points: number;
   tier: RankTier;
+  accountAgeDays: number; // Twitter age
+  baseAppAgeDays: number; // Baseapp age
 }
 
 export interface BadgeConfig {

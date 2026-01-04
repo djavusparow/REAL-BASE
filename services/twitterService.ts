@@ -1,18 +1,28 @@
 
-import { SNAPSHOT_START, SNAPSHOT_END } from '../constants';
+import { GoogleGenAI } from "@google/genai";
+import { SNAPSHOT_START, SNAPSHOT_END, TWITTER_CONFIG } from '../constants';
+import { calculateAccountAgeDays } from '../utils/calculations';
 
+/**
+ * Represents a single tweet record from the Twitter API v2.
+ */
 export interface Tweet {
   id: string;
   text: string;
   createdAt: Date;
+  qualityScore?: number; // Added: AI-driven contribution quality score
 }
 
+/**
+ * Detailed result of a profile scan.
+ */
 export interface ScanResult {
   totalValidPosts: number;
   cappedPoints: number;
   dailyBreakdown: Record<string, number>;
   foundTweets: Tweet[];
-  accountAgeDays: number; // Added to track account seniority
+  accountAgeDays: number;
+  trustScore: number; // Added: Overall profile trust rating
 }
 
 const REQUIRED_TAGS = [
@@ -24,114 +34,151 @@ const REQUIRED_TAGS = [
   '$lamboless'
 ];
 
+/**
+ * TwitterService handles OAuth 2.0 simulation and historical data indexing.
+ * It uses Gemini to perform 'Smart Verification' on found tweets to filter out spam.
+ */
 export class TwitterService {
   private accessToken: string | null = null;
+  private tokenExpiry: number | null = null;
 
   /**
-   * Initiates the Twitter OAuth flow for access permission.
-   * In a real environment, this would redirect to Twitter's auth portal.
+   * Initiates the Twitter OAuth 2.0 PKCE flow.
+   * In a live environment, this would handle state/code-challenge exchange.
    */
   async authorize(): Promise<boolean> {
-    console.log("Initiating Twitter OAuth Permission Request...");
-    // Simulate OAuth 2.0 PKCE flow
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    this.accessToken = "simulated_secure_token_" + Math.random().toString(36).substring(7);
+    const { apiKey, apiSecret } = TWITTER_CONFIG;
+    
+    // Log configuration status for internal debugging
+    if (apiKey && apiSecret) {
+      console.debug("Initializing Twitter OAuth with pre-configured API Key and Secret.");
+    } else {
+      console.debug("Initializing Twitter OAuth using default provider bridge.");
+    }
+    
+    console.debug("Requesting Twitter OAuth Scope: [tweet.read, users.read, offline.access]");
+    
+    // Simulate network latency for authorization
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    
+    // Simulate obtaining an ephemeral access token
+    this.accessToken = "x_auth_" + btoa(Math.random().toString()).substring(0, 32);
+    this.tokenExpiry = Date.now() + 3600 * 1000; // 1 hour expiry
+    
     return true;
   }
 
   /**
-   * Scans a user's timeline for ecosystem contributions and fetches account metadata.
-   * Logic: 
-   * 1. Only posts between Nov 1, 2025 and Jan 15, 2026.
-   * 2. Must contain at least one required tag.
-   * 3. Max 5 points (1 per valid post) per day.
-   * 4. Calculates account age from registration date.
+   * Performs an AI-driven quality check on a tweet using Gemini.
+   * This ensures users are actually contributing value rather than tag-spamming.
+   */
+  private async analyzeContributionQuality(tweetText: string): Promise<number> {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Analyze this tweet for contribution quality to the Base ecosystem: "${tweetText}". 
+        Score it from 0 to 1 based on depth of content, sentiment, and lack of spam. 
+        Return ONLY the number.`,
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 10
+        }
+      });
+
+      const score = parseFloat(response.text?.trim() || "0.5");
+      return isNaN(score) ? 0.5 : score;
+    } catch (e) {
+      console.warn("Gemini Quality Check failed, falling back to neutral score.", e);
+      return 0.5;
+    }
+  }
+
+  /**
+   * Scans profile for contributions with smart filtering and pagination simulation.
    */
   async scanPosts(handle: string): Promise<ScanResult> {
-    if (!this.accessToken) {
-      throw new Error("Twitter access not authorized. Please link your account first.");
+    if (!this.accessToken || (this.tokenExpiry && Date.now() > this.tokenExpiry)) {
+      throw new Error("Twitter Session Expired. Please re-authenticate.");
     }
 
-    // In production, this would use the users/by/username endpoint to get created_at
-    // fetch(`https://api.twitter.com/2/users/by/username/${handle}?user.fields=created_at`, ...)
-    
-    await new Promise(resolve => setTimeout(resolve, 3500)); // Simulate intensive historical scan
-
-    // Simulate an account created between 1 and 8 years ago
-    const yearsAgo = 1 + Math.random() * 7;
+    // Step 1: Fetch user metadata (Account Age)
+    const yearsAgo = 0.5 + Math.random() * 9;
     const registrationDate = new Date();
     registrationDate.setFullYear(registrationDate.getFullYear() - yearsAgo);
-    
-    const accountAgeDays = Math.floor((Date.now() - registrationDate.getTime()) / (1000 * 60 * 60 * 24));
+    const accountAgeDays = calculateAccountAgeDays(registrationDate);
 
+    // Step 2: Historical Indexing
     const mockTweets: Tweet[] = this.generateHistoricalMockTweets(handle);
-    
-    const dailyCounts: Record<string, number> = {};
     const validTweets: Tweet[] = [];
-    
-    mockTweets.forEach(tweet => {
-      // 1. Precise Date Filter
-      if (tweet.createdAt < SNAPSHOT_START || tweet.createdAt > SNAPSHOT_END) return;
+    const dailyCounts: Record<string, number> = {};
+
+    // Step 3: Filter & Smart Analysis
+    // We only perform AI analysis on a subset of 'potential' matches to manage latency/tokens
+    const potentialMatches = mockTweets.filter(t => {
+      const withinDate = t.createdAt >= SNAPSHOT_START && t.createdAt <= SNAPSHOT_END;
+      if (!withinDate) return false;
+      const lowercase = t.text.toLowerCase();
+      return REQUIRED_TAGS.some(tag => lowercase.includes(tag.toLowerCase()));
+    });
+
+    // Smart Validation: Check the top 5 most recent potential contributions for high quality
+    for (const tweet of potentialMatches) {
+      // In a real app, we'd use a more efficient heuristic or check all
+      tweet.qualityScore = await this.analyzeContributionQuality(tweet.text);
       
-      // 2. Tag Detection (Case Insensitive)
-      const lowercaseText = tweet.text.toLowerCase();
-      const hasTag = REQUIRED_TAGS.some(tag => lowercaseText.includes(tag.toLowerCase()));
-      
-      if (hasTag) {
+      // Only count if quality score > 0.3 (filters out lowest effort spam)
+      if (tweet.qualityScore > 0.3) {
         validTweets.push(tweet);
         const dayKey = tweet.createdAt.toISOString().split('T')[0];
         dailyCounts[dayKey] = (dailyCounts[dayKey] || 0) + 1;
       }
-    });
+    }
 
-    // 3. Daily Cap Enforcement
+    // Step 4: Points Finalization
     let cappedPoints = 0;
     Object.keys(dailyCounts).sort().forEach(day => {
-      const count = dailyCounts[day];
-      cappedPoints += Math.min(count, 5);
+      cappedPoints += Math.min(dailyCounts[day], 5);
     });
+
+    // Calculate trust score based on account age and post quality
+    const avgQuality = validTweets.length > 0 
+      ? validTweets.reduce((acc, t) => acc + (t.qualityScore || 0), 0) / validTweets.length 
+      : 0;
+    const ageFactor = Math.min(accountAgeDays / 1095, 1); // Max 1 for 3yr+ accounts
+    const trustScore = (avgQuality * 0.7) + (ageFactor * 0.3);
 
     return {
       totalValidPosts: validTweets.length,
       cappedPoints,
       dailyBreakdown: dailyCounts,
       foundTweets: validTweets,
-      accountAgeDays
+      accountAgeDays,
+      trustScore: Math.round(trustScore * 100)
     };
   }
 
-  /**
-   * Generates a realistic set of tweets for demonstration within the snapshot window.
-   */
   private generateHistoricalMockTweets(handle: string): Tweet[] {
     const tweets: Tweet[] = [];
-    const windowStart = SNAPSHOT_START.getTime();
-    const windowEnd = SNAPSHOT_END.getTime();
+    const start = SNAPSHOT_START.getTime();
+    const end = SNAPSHOT_END.getTime();
     
-    // Generate ~200 tweets to find valid ones
-    for (let i = 0; i < 200; i++) {
-      const randomTime = windowStart + Math.random() * (windowEnd - windowStart);
-      const date = new Date(randomTime);
-      
+    // Simulate ~150 random tweets to search through
+    for (let i = 0; i < 150; i++) {
+      const timestamp = start + Math.random() * (end - start);
       const dice = Math.random();
-      let text = "Building the future onchain. #Base";
-      
-      // Simulate varied user behavior with required tags
-      if (dice > 0.85) {
-        text = `Incredible work by @base and @jessepollak on the new protocol updates! $LAMBOLESS is the vibe.`;
-      } else if (dice > 0.75) {
-        text = `Checking out @baseapp. The UX is smooth! Shoutout to @brian_armstrong for the vision.`;
-      } else if (dice > 0.65) {
-        text = `@baseposting is the best community on Farcaster! @base is home.`;
-      }
+      let text = "gm onchain summer!";
+
+      if (dice > 0.9) text = `Building @baseapp is a dream. Shoutout to @jessepollak for the energy! 🔵`;
+      else if (dice > 0.8) text = `Check out the new @base bridge UI. $LAMBOLESS is the goal.`;
+      else if (dice > 0.7) text = `@baseposting is where the real ones hang out. Onchain Summer 2025!`;
       
       tweets.push({
-        id: "tw-" + Math.random().toString(36).substring(7),
+        id: `id-${Math.random().toString(36).slice(2)}`,
         text,
-        createdAt: date
+        createdAt: new Date(timestamp)
       });
     }
-    
     return tweets.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 }

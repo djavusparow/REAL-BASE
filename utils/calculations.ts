@@ -29,6 +29,19 @@ export const calculatePoints = (
   return parseFloat(total.toFixed(2));
 };
 
+/**
+ * Calculates the age of an account in days based on its registration/creation date.
+ * @param createdAt The date the account was registered.
+ * @returns Total number of full days since registration.
+ */
+export const calculateAccountAgeDays = (createdAt: Date): number => {
+  const now = new Date();
+  const diffInMs = now.getTime() - createdAt.getTime();
+  // Using 86,400,000ms as a standard day length
+  const days = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+  return Math.max(0, days);
+};
+
 export const getTierFromRank = (rank: number): RankTier => {
   if (rank <= 5) return RankTier.PLATINUM;
   if (rank <= 25) return RankTier.GOLD;

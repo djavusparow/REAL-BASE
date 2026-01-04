@@ -1,5 +1,16 @@
 
-import { RankTier, BadgeConfig } from './types';
+import { RankTier, BadgeConfig, LeaderboardEntry } from './types';
+
+/**
+ * ENVIRONMENT CONFIGURATION
+ * These values are pulled from the execution environment.
+ * The application assumes these are pre-configured and valid.
+ */
+export const TWITTER_CONFIG = {
+  apiKey: process.env.TWITTER_API_KEY,
+  apiSecret: process.env.TWITTER_API_SECRET,
+  bearerToken: process.env.TWITTER_BEARER_TOKEN,
+};
 
 export const TOKEN_CONTRACT = "0xbe7c48aad42eea060150cb64f94b6448a89c1cef";
 export const MIN_TOKEN_VALUE_USD = 2.5;
@@ -47,13 +58,13 @@ export const TIERS: Record<RankTier, BadgeConfig> = {
   }
 };
 
-export const MOCKED_LEADERBOARD: any[] = [
-  { rank: 1, handle: "@jessepollak", points: 98.5, tier: RankTier.PLATINUM },
-  { rank: 2, handle: "@brian_armstrong", points: 97.2, tier: RankTier.PLATINUM },
-  { rank: 3, handle: "@basegod", points: 95.8, tier: RankTier.PLATINUM },
-  { rank: 4, handle: "@lambofarmer", points: 94.1, tier: RankTier.PLATINUM },
-  { rank: 5, handle: "@warpcast_king", points: 93.0, tier: RankTier.PLATINUM },
-  { rank: 12, handle: "@baseapp_builder", points: 88.5, tier: RankTier.GOLD },
-  { rank: 100, handle: "@farcaster_fan", points: 72.4, tier: RankTier.SILVER },
-  { rank: 750, handle: "@lambo_dreamer", points: 45.1, tier: RankTier.BRONZE },
+export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
+  { rank: 1, handle: "@jessepollak", points: 98.5, tier: RankTier.PLATINUM, accountAgeDays: 4500, baseAppAgeDays: 800 },
+  { rank: 2, handle: "@brian_armstrong", points: 97.2, tier: RankTier.PLATINUM, accountAgeDays: 5200, baseAppAgeDays: 900 },
+  { rank: 3, handle: "@basegod", points: 95.8, tier: RankTier.PLATINUM, accountAgeDays: 200, baseAppAgeDays: 150 },
+  { rank: 4, handle: "@lambofarmer", points: 94.1, tier: RankTier.PLATINUM, accountAgeDays: 1200, baseAppAgeDays: 400 },
+  { rank: 5, handle: "@warpcast_king", points: 93.0, tier: RankTier.PLATINUM, accountAgeDays: 800, baseAppAgeDays: 200 },
+  { rank: 12, handle: "@baseapp_builder", points: 88.5, tier: RankTier.GOLD, accountAgeDays: 2100, baseAppAgeDays: 600 },
+  { rank: 100, handle: "@farcaster_fan", points: 72.4, tier: RankTier.SILVER, accountAgeDays: 400, baseAppAgeDays: 100 },
+  { rank: 750, handle: "@lambo_dreamer", points: 45.1, tier: RankTier.BRONZE, accountAgeDays: 150, baseAppAgeDays: 50 },
 ];
