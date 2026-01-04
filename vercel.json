@@ -15,19 +15,6 @@
       ]
     },
     {
-      "source": "/.well-known/(.*)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/json"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        }
-      ]
-    },
-    {
       "source": "/metadata.json",
       "headers": [
         {
@@ -41,9 +28,16 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/.well-known/farcaster.json",
+      "destination": "https://api.farcaster.xyz/miniapps/hosted-manifest/019b88a2-cdb0-8501-384d-0bd99394bbe0",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
-      "source": "/((?!.well-known/|metadata.json).* )",
+      "source": "/((?!.well-known/|metadata.json).*)",
       "destination": "/index.html"
     }
   ]
