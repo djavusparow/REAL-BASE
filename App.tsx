@@ -232,16 +232,21 @@ const App: React.FC = () => {
     await new Promise(r => setTimeout(r, 1000));
     setScanProgress(20);
     addLog("Authenticated @ " + twUser.handle);
-    addLog("Searching for tags: @base, @jessepollak, $LAMBOLESS...");
+    addLog("Fetching account registration metadata...");
 
     const scanResult = await twitterService.scanPosts(twUser.handle);
     
-    setScanProgress(60);
+    setScanProgress(40);
+    addLog(`Account Seniority: ${scanResult.accountAgeDays} days detected.`);
+    addLog(`Searching for tags: @base, @jessepollak, $LAMBOLESS...`);
+    
+    await new Promise(r => setTimeout(r, 800));
+    setScanProgress(70);
     addLog(`Scanning historical posts (Nov 2025 - Jan 2026)...`);
     addLog(`Found ${scanResult.totalValidPosts} posts matching ecosystem tags.`);
     addLog(`Enforcing daily 5-point cap for fair distribution...`);
     
-    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => setTimeout(r, 1000));
     setScanProgress(100);
     addLog("Scan complete. Contribution summary finalized.");
 
@@ -249,8 +254,8 @@ const App: React.FC = () => {
     // BaseApp: days * 0.20
     // Twitter: days * 0.30
     // Contribution: cappedPosts * 0.50
-    const baseAppAge = 145; 
-    const twitterAge = 980; 
+    const baseAppAge = 145 + Math.floor(Math.random() * 50); // Simulating some variation
+    const twitterAge = scanResult.accountAgeDays; // DYNAMIC: Taken from the simulated scan result
     
     const points = calculatePoints(baseAppAge, twitterAge, scanResult.cappedPoints);
     const rank = Math.floor(Math.random() * 900) + 1; // Simulated rank

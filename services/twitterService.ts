@@ -12,6 +12,7 @@ export interface ScanResult {
   cappedPoints: number;
   dailyBreakdown: Record<string, number>;
   foundTweets: Tweet[];
+  accountAgeDays: number; // Added to track account seniority
 }
 
 const REQUIRED_TAGS = [
@@ -39,21 +40,29 @@ export class TwitterService {
   }
 
   /**
-   * Scans a user's timeline for ecosystem contributions.
+   * Scans a user's timeline for ecosystem contributions and fetches account metadata.
    * Logic: 
    * 1. Only posts between Nov 1, 2025 and Jan 15, 2026.
    * 2. Must contain at least one required tag.
    * 3. Max 5 points (1 per valid post) per day.
+   * 4. Calculates account age from registration date.
    */
   async scanPosts(handle: string): Promise<ScanResult> {
     if (!this.accessToken) {
       throw new Error("Twitter access not authorized. Please link your account first.");
     }
 
-    // In production, this would be: 
-    // fetch(`https://api.twitter.com/2/users/by/username/${handle}/tweets?...`, { headers: { Authorization: `Bearer ${this.accessToken}` } })
+    // In production, this would use the users/by/username endpoint to get created_at
+    // fetch(`https://api.twitter.com/2/users/by/username/${handle}?user.fields=created_at`, ...)
     
     await new Promise(resolve => setTimeout(resolve, 3500)); // Simulate intensive historical scan
+
+    // Simulate an account created between 1 and 8 years ago
+    const yearsAgo = 1 + Math.random() * 7;
+    const registrationDate = new Date();
+    registrationDate.setFullYear(registrationDate.getFullYear() - yearsAgo);
+    
+    const accountAgeDays = Math.floor((Date.now() - registrationDate.getTime()) / (1000 * 60 * 60 * 24));
 
     const mockTweets: Tweet[] = this.generateHistoricalMockTweets(handle);
     
@@ -86,7 +95,8 @@ export class TwitterService {
       totalValidPosts: validTweets.length,
       cappedPoints,
       dailyBreakdown: dailyCounts,
-      foundTweets: validTweets
+      foundTweets: validTweets,
+      accountAgeDays
     };
   }
 
