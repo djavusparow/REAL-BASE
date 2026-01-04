@@ -16,6 +16,12 @@ export interface UserStats {
   lambolessBalance: number;
   points: number;
   rank: number;
+  trustScore?: number;
+  recentContributions?: any[];
+  // Farcaster specific fields
+  farcasterId?: number;
+  farcasterUsername?: string;
+  farcasterAgeDays?: number;
 }
 
 export interface LeaderboardEntry {

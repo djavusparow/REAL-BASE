@@ -6,25 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>BASE IMPRESSION</title>
     
-    <!-- Search Engine Meta Tags -->
-    <meta name="description" content="The definitive contribution event for the Base ecosystem. Calculate your impact across Base and social channels to earn exclusive tiered NFT badges." />
+    <meta name="description" content="Calculate your impact across Base and social channels to earn tiered NFT badges." />
     <link rel="canonical" href="https://real-base-2026.vercel.app/" />
 
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://real-base-2026.vercel.app/" />
-    <meta property="og:title" content="BASE IMPRESSION | Onchain Impact" />
-    <meta property="og:description" content="Calculate your impact across Base and social channels to earn tiered NFT badges. Join the top builders." />
-    <meta property="og:image" content="https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=1200&ar=1.91:1" />
-    <meta property="og:site_name" content="BASE IMPRESSION" />
-
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content="https://real-base-2026.vercel.app/" />
-    <meta name="twitter:title" content="BASE IMPRESSION" />
-    <meta name="twitter:description" content="Calculate your impact and earn exclusive tiered NFT badges." />
-    <meta name="twitter:image" content="https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=1200&ar=1.91:1" />
-    
     <!-- Farcaster Frame v2 Meta Tags -->
     <meta name="fc:frame" content='{
       "version": "next",
@@ -57,32 +41,45 @@
         padding-top: var(--safe-area-top);
         padding-bottom: var(--safe-area-bottom);
         overflow-x: hidden;
-        -webkit-tap-highlight-color: transparent;
       }
       .glass-effect {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.1);
       }
+      .blue-glow {
+        box-shadow: 0 0 40px -10px rgba(37, 99, 235, 0.5);
+      }
       ::-webkit-scrollbar { display: none; }
-      body { -ms-overflow-style: none; scrollbar-width: none; }
+      
+      @keyframes float {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0px); }
+      }
+      .float-animation {
+        animation: float 6s ease-in-out infinite;
+      }
     </style>
-  <script type="importmap">
+    <script>window.process = { env: {} };</script>
+    <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "@farcaster/frame-sdk": "https://esm.sh/@farcaster/frame-sdk@^0.0.19",
-    "@coinbase/wallet-sdk": "https://esm.sh/@coinbase/wallet-sdk@3.7.2",
-    "ethers": "https://esm.sh/ethers@^6.13.2",
-    "web3": "https://esm.sh/web3@^4.12.1"
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+    "react/jsx-runtime": "https://esm.sh/react@19.0.0/jsx-runtime",
+    "lucide-react": "https://esm.sh/lucide-react@0.475.0?deps=react@19.0.0",
+    "@farcaster/frame-sdk": "https://esm.sh/@farcaster/frame-sdk@0.0.19?deps=react@19.0.0,react-dom@19.0.0",
+    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
+    "ethers": "https://esm.sh/ethers@6.13.2",
+    "web3": "https://esm.sh/web3@4.16.0",
+    "react/": "https://esm.sh/react@19.0.0/",
+    "react-dom/": "https://esm.sh/react-dom@19.0.0/"
   }
 }
 </script>
-</head>
+  </head>
   <body>
     <div id="root"></div>
     <script type="module" src="index.tsx"></script>

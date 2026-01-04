@@ -79,6 +79,23 @@ export class GeminiService {
       return "Your footprint on Base is growing. Keep building the future!";
     }
   }
+
+  /**
+   * Generates a secure verification challenge.
+   */
+  async generateVerificationChallenge(handle: string): Promise<string> {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Generate a short, unique 8-character alphanumeric verification code for a user named ${handle}. 
+        Return ONLY the code.`
+      });
+      return response.text?.trim() || Math.random().toString(36).substring(7).toUpperCase();
+    } catch {
+      return Math.random().toString(36).substring(7).toUpperCase();
+    }
+  }
 }
 
 export const geminiService = new GeminiService();

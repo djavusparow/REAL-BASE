@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { RankTier } from '../types';
-import { TIERS } from '../constants';
+import { RankTier } from '../types.ts';
+import { TIERS } from '../constants.ts';
 
 interface BadgeDisplayProps {
   tier: RankTier;

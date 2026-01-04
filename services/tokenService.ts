@@ -1,6 +1,6 @@
 
 import { ethers } from 'ethers';
-import { TOKEN_CONTRACT } from '../constants';
+import { TOKEN_CONTRACT } from '../constants.ts';
 
 const MINIMAL_ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -16,9 +16,6 @@ export class TokenService {
     this.provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
   }
 
-  /**
-   * Real-time on-chain balance detection for $LAMBOLESS.
-   */
   async getBalance(address: string): Promise<number> {
     try {
       const contract = new ethers.Contract(TOKEN_CONTRACT, MINIMAL_ERC20_ABI, this.provider);

@@ -1,8 +1,8 @@
-import { RankTier, BadgeConfig, LeaderboardEntry } from './types';
+
+import { RankTier, BadgeConfig, LeaderboardEntry } from './types.ts';
 
 /**
  * CONFIGURATION SECTION
- * Primary application settings and environment variable mappings.
  */
 export const TWITTER_CONFIG = {
   apiKey: process.env.TWITTER_API_KEY,
