@@ -39,7 +39,8 @@ import {
   AlertTriangle,
   LogOut,
   Clock,
-  CircleDollarSign
+  CircleDollarSign,
+  MessageSquareShare
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
@@ -338,7 +339,6 @@ const App: React.FC = () => {
     addLog("Authenticated @ " + twUser.handle);
     addLog("Detecting on-chain $LAMBOLESS assets...");
 
-    // REAL-TIME ON-CHAIN DETECTION
     const rawBalance = await tokenService.getBalance(walletAddress);
     const tokenPrice = await geminiService.getLambolessPrice();
     const usdValue = rawBalance * tokenPrice;
@@ -375,7 +375,7 @@ const App: React.FC = () => {
       baseAppAgeDays: baseAppAge,
       twitterAgeDays: twitterAge,
       validTweetsCount: scanResult.cappedPoints,
-      lambolessBalance: usdValue, // Use real USD value
+      lambolessBalance: usdValue, 
       points: points,
       rank: rank,
       trustScore: scanResult.trustScore
@@ -489,7 +489,7 @@ const App: React.FC = () => {
       {isScanning && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" />
-          <div className="relative w-full max-w-sm space-y-8 animate-in zoom-in-95 duration-500">
+          <div className="relative w-full max-sm space-y-8 animate-in zoom-in-95 duration-500">
             <div className="text-center space-y-3">
               <div className="relative inline-block">
                 <Search className="w-12 h-12 text-blue-500 animate-pulse" />
@@ -558,33 +558,6 @@ const App: React.FC = () => {
                    <p className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] animate-pulse">Awaiting authorization...</p>
                 </div>
               </div>
-            ) : showWalletGuide ? (
-              <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="bg-blue-600/10 border border-blue-500/20 p-4 rounded-2xl space-y-3">
-                   <div className="flex items-center gap-2 text-[10px] font-black text-blue-400 uppercase tracking-widest">
-                     <Lightbulb className="w-3 h-3" /> Requirements Guide
-                   </div>
-                   <div className="space-y-4">
-                     {[
-                       { name: "Coinbase Wallet", desc: "Native Base support. Use for smart wallet features and gasless claims." },
-                       { name: "OKX Wallet", desc: "Top-tier security for ecosystem builders. Fast multichain switching." },
-                       { name: "Zerion Wallet", desc: "Modern social wallet. Track your badges and NFTs visually." },
-                       { name: "Rabby Wallet", desc: "Best for advanced users. Detailed transaction simulations." }
-                     ].map((w, i) => (
-                       <div key={i} className="space-y-1">
-                         <div className="text-[11px] font-black text-white uppercase">{w.name}</div>
-                         <p className="text-[9px] text-gray-500 font-bold leading-relaxed">{w.desc}</p>
-                       </div>
-                     ))}
-                   </div>
-                </div>
-                <button 
-                  onClick={() => setShowWalletGuide(false)}
-                  className="w-full py-4 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors"
-                >
-                  Back to Wallet List
-                </button>
-              </div>
             ) : (
               <div className="space-y-5">
                 {walletError && (
@@ -613,11 +586,8 @@ const App: React.FC = () => {
                       </button>
                     ))
                   ) : (
-                    <div className="space-y-4">
-                      <div className="text-center p-6 border border-dashed border-white/10 rounded-3xl opacity-50 space-y-2">
-                        <Globe className="w-8 h-8 mx-auto text-gray-600" />
+                    <div className="text-center p-6 border border-dashed border-white/10 rounded-3xl opacity-50">
                         <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">No browser wallet detected</p>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -827,11 +797,41 @@ const App: React.FC = () => {
                    )}
                    <div className="grid grid-cols-1 gap-4">
                      <button onClick={handleCheckpoint} disabled={isGenerating} className="w-full py-5 bg-white text-black rounded-[1.5rem] font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl italic"><ShieldCheck className="w-4 h-4" />{isGenerating ? 'Indexing Chain...' : 'Update Snapshot'}</button>
-                      <div className="flex gap-3">
-                        <button onClick={() => handleShare('farcaster')} className="flex-1 py-4 bg-[#8a63d2]/10 hover:bg-[#8a63d2]/20 text-[#8a63d2] border border-[#8a63d2]/30 rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95"><Share2 className="w-3.5 h-3.5" /> Farcaster</button>
-                        <button onClick={() => handleShare('twitter')} className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95"><Twitter className="w-3.5 h-3.5" /> Share X</button>
-                      </div>
                    </div>
+                </div>
+
+                {/* Viral Share Card */}
+                <div className="glass-effect p-6 rounded-[2.5rem] border border-blue-500/20 bg-blue-500/5 space-y-5 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-600/30">
+                            <MessageSquareShare className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="flex flex-col">
+                            <h4 className="text-sm font-black uppercase italic tracking-tighter text-white">Broadcast Your Impact</h4>
+                            <span className="text-[9px] text-blue-400 font-black uppercase tracking-widest opacity-80">One-Click Viral Sharing</span>
+                        </div>
+                    </div>
+                    
+                    <p className="text-[11px] text-gray-400 font-bold uppercase leading-relaxed px-1">
+                        Help build the Base ecosystem by sharing your contribution rank with the global community.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <button 
+                            onClick={() => handleShare('farcaster')} 
+                            className="group py-4 bg-[#8a63d2] hover:bg-[#7a52c2] text-white rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95 shadow-xl shadow-[#8a63d2]/20"
+                        >
+                            <img src="https://warpcast.com/favicon.ico" className="w-3.5 h-3.5 brightness-0 invert" alt="" />
+                            Warpcast
+                        </button>
+                        <button 
+                            onClick={() => handleShare('twitter')} 
+                            className="group py-4 bg-white text-black rounded-2xl font-black text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-2 active:scale-95 shadow-xl shadow-white/10"
+                        >
+                            <Twitter className="w-3.5 h-3.5" />
+                            Post to X
+                        </button>
+                    </div>
                 </div>
 
                 <div className="space-y-4">
