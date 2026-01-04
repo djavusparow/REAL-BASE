@@ -5,7 +5,7 @@ export const TOKEN_CONTRACT = "0xbe7c48aad42eea060150cb64f94b6448a89c1cef";
 export const MIN_TOKEN_VALUE_USD = 2.5;
 
 export const SNAPSHOT_START = new Date("2025-11-01T00:01:00Z");
-export const SNAPSHOT_END = new Date("2026-01-15T23:49:00Z");
+export const SNAPSHOT_END = new Date("2026-01-15T23:59:00Z");
 export const FINAL_SNAPSHOT = new Date("2026-01-16T00:01:00Z");
 export const CLAIM_START = new Date("2026-01-16T02:00:00Z");
 

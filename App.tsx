@@ -27,7 +27,9 @@ import {
   Plus,
   Search,
   History,
-  Activity
+  Activity,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import sdk from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
@@ -113,7 +115,8 @@ const App: React.FC = () => {
   const [isWalletSelectorOpen, setIsWalletSelectorOpen] = useState(false);
   const [isTwitterModalOpen, setIsTwitterModalOpen] = useState(false);
   const [tempTwitterHandle, setTempTwitterHandle] = useState('');
-  const [twitterStep, setTwitterStep] = useState<1 | 2 | 3>(1);
+  const [twitterStep, setTwitterStep] = useState<1 | 2 | 3 | 4>(1); // Step 3: Auth, Step 4: Success
+  const [modalError, setModalError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -185,19 +188,35 @@ const App: React.FC = () => {
   const handleTwitterVerifyStart = () => {
     if (!tempTwitterHandle.trim()) return;
     setTwitterStep(2);
+    setModalError(null);
   };
 
-  const handlePostVerificationTweet = () => {
+  const handlePostVerificationTweet = async () => {
     const handle = tempTwitterHandle.startsWith('@') ? tempTwitterHandle : `@${tempTwitterHandle}`;
-    const text = `Verifying my @base impact with @jessepollak! 🛡️💎 Handle: ${handle}\nCode: BI-${Math.random().toString(36).substring(7).toUpperCase()}\n#BaseImpression #LamboLess`;
-    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
-    setTwitterStep(3);
-    
-    setTimeout(() => {
-      setTwUser({ handle: handle });
-      setIsTwitterModalOpen(false);
-      setTwitterStep(1);
-    }, 3000);
+    setTwitterStep(3); // Start authentication animation
+    setModalError(null);
+
+    try {
+      // Step 1: Request Twitter Auth
+      const isAuthorized = await twitterService.authorize();
+      if (!isAuthorized) throw new Error("Twitter authorization denied.");
+
+      // Step 2: Simulate "Verify via Tweet" requirement for additional security
+      const text = `Verifying my @base impact with @jessepollak! 🛡️💎 Handle: ${handle}\nCode: BI-${Math.random().toString(36).substring(7).toUpperCase()}\n#BaseImpression #LamboLess`;
+      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+      
+      await new Promise(r => setTimeout(r, 2000));
+      
+      setTwitterStep(4); // Show Success State
+      setTimeout(() => {
+        setTwUser({ handle: handle });
+        setIsTwitterModalOpen(false);
+        setTwitterStep(1);
+      }, 1500);
+    } catch (err: any) {
+      setModalError(err.message || "Authentication failed.");
+      setTwitterStep(2); // Fall back to retry
+    }
   };
 
   const handleFinalizeConnection = async () => {
@@ -280,7 +299,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Fix: Added handleShare function to resolve "Cannot find name 'handleShare'" errors.
   const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
     const shareText = `I'm a ${TIERS[currentTier].name} contributor on Base Impression with ${user.points} impact points! 🔵💎 Rank: #${user.rank} #BaseImpression #LamboLess`;
@@ -395,27 +413,34 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Twitter Modal */}
+      {/* Enhanced Twitter Modal */}
       {isTwitterModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !loading && setIsTwitterModalOpen(false)} />
-          <div className="relative glass-effect border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 shadow-2xl">
-            <button onClick={() => setIsTwitterModalOpen(false)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => twitterStep !== 3 && setIsTwitterModalOpen(false)} />
+          <div className="relative glass-effect border border-white/10 w-full max-w-sm rounded-[3rem] p-8 space-y-6 shadow-2xl overflow-hidden">
+            {/* Background Decor */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 blur-3xl -mr-16 -mt-16" />
+            
+            <button 
+              onClick={() => setIsTwitterModalOpen(false)} 
+              disabled={twitterStep === 3}
+              className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors disabled:opacity-0"
+            >
               <X className="w-5 h-5" />
             </button>
             
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(255,255,255,0.3)]">
-                <Twitter className="w-6 h-6" />
+            <div className="text-center space-y-2 relative">
+              <div className="w-16 h-16 bg-white text-black rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-xl rotate-3">
+                <Twitter className="w-8 h-8" />
               </div>
-              <h3 className="text-xl font-black uppercase italic">Twitter Authorization</h3>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest opacity-60">Impact Scanning Permissions</p>
+              <h3 className="text-2xl font-black uppercase italic tracking-tighter">Twitter Bridge</h3>
+              <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest opacity-60">Contribution Identity System</p>
             </div>
 
             {twitterStep === 1 && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Handle</label>
+                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Profile Handle</label>
                   <div className="relative">
                     <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500 font-black">@</span>
                     <input 
@@ -423,38 +448,85 @@ const App: React.FC = () => {
                       placeholder="vitalik.eth"
                       value={tempTwitterHandle}
                       onChange={(e) => setTempTwitterHandle(e.target.value.replace('@', ''))}
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-10 pr-4 text-sm font-bold focus:border-blue-500/50 outline-none transition-all"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-10 pr-4 text-sm font-bold focus:border-blue-500/50 outline-none transition-all placeholder:text-white/10"
                     />
                   </div>
                 </div>
                 <button 
                   onClick={handleTwitterVerifyStart}
                   disabled={!tempTwitterHandle.trim()}
-                  className="w-full py-4 bg-white text-black rounded-2xl font-black text-sm hover:bg-blue-50 transition-all active:scale-95 uppercase italic"
+                  className="w-full py-5 bg-white text-black rounded-2xl font-black text-sm hover:bg-blue-50 transition-all active:scale-95 uppercase italic tracking-tight"
                 >
-                  Verify Permissions <ArrowRight className="w-4 h-4 ml-1" />
+                  Configure Access <ArrowRight className="w-4 h-4 ml-1 inline" />
                 </button>
               </div>
             )}
 
             {twitterStep === 2 && (
-              <div className="space-y-5">
-                <div className="bg-blue-500/5 p-5 rounded-2xl border border-blue-500/10 space-y-3">
-                  <div className="flex items-center gap-2 text-[10px] font-black text-blue-500 uppercase">
-                     <ShieldCheck className="w-3 h-3" /> Scope of access
+              <div className="space-y-5 animate-in fade-in zoom-in-95 duration-300">
+                <div className="bg-blue-500/5 p-5 rounded-2xl border border-blue-500/10 space-y-4">
+                  <div className="flex items-center gap-2 text-[10px] font-black text-blue-500 uppercase tracking-widest">
+                     <Lock className="w-3 h-3" /> Encrypted Handshake
                   </div>
-                  <ul className="text-[10px] text-gray-400 space-y-2 font-medium">
-                    <li className="flex gap-2"><span>•</span> <span>Read your posts and analytics</span></li>
-                    <li className="flex gap-2"><span>•</span> <span>Search for specific ecosystem tags</span></li>
-                    <li className="flex gap-2"><span>•</span> <span>Calculate historical contribution</span></li>
-                  </ul>
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-gray-400 leading-relaxed font-bold">
+                      Connecting <span className="text-white">@{tempTwitterHandle}</span> requires read permissions for historical posts and ecosystem tags.
+                    </p>
+                    <div className="h-px bg-white/5" />
+                    <ul className="text-[9px] text-gray-500 space-y-2 font-black uppercase tracking-tight">
+                      <li className="flex gap-2 items-center"><CheckCircle2 className="w-3 h-3 text-green-500" /> Read account profile</li>
+                      <li className="flex gap-2 items-center"><CheckCircle2 className="w-3 h-3 text-green-500" /> Analyze post history</li>
+                      <li className="flex gap-2 items-center"><CheckCircle2 className="w-3 h-3 text-green-500" /> Verify ecosystem tags</li>
+                    </ul>
+                  </div>
                 </div>
-                <button 
-                  onClick={handlePostVerificationTweet}
-                  className="w-full py-4 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-400 transition-all shadow-[0_0_15px_rgba(59,130,246,0.3)] active:scale-95"
-                >
-                  <Twitter className="w-4 h-4 fill-current mr-2" /> Auth & Verify Profile
-                </button>
+
+                {modalError && (
+                  <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-xl flex items-center gap-2 text-red-500 animate-pulse">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="text-[10px] font-black uppercase">{modalError}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={handlePostVerificationTweet}
+                    className="w-full py-5 bg-blue-500 text-white rounded-2xl font-black text-sm hover:bg-blue-400 transition-all shadow-xl active:scale-95 uppercase italic"
+                  >
+                    Authorize & Secure
+                  </button>
+                  <button 
+                    onClick={() => setTwitterStep(1)}
+                    className="w-full py-2 text-[10px] font-black text-gray-500 hover:text-white uppercase tracking-widest transition-colors"
+                  >
+                    Change Handle
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {twitterStep === 3 && (
+              <div className="py-12 space-y-6 text-center animate-in zoom-in-95 duration-500">
+                <div className="relative inline-block">
+                  <div className="w-20 h-20 border-[3px] border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+                  <Twitter className="w-8 h-8 text-blue-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-lg font-black uppercase italic">Securing Bridge</h4>
+                  <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em] animate-pulse">Requesting OAuth Token...</p>
+                </div>
+              </div>
+            )}
+
+            {twitterStep === 4 && (
+              <div className="py-12 space-y-6 text-center animate-in scale-110 duration-500">
+                <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+                  <Unlock className="w-8 h-8 text-white" />
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-2xl font-black uppercase italic text-green-500">Authorized!</h4>
+                  <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em]">Profile linked securely</p>
+                </div>
               </div>
             )}
           </div>

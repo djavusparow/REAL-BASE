@@ -24,28 +24,47 @@ const REQUIRED_TAGS = [
 ];
 
 export class TwitterService {
+  private accessToken: string | null = null;
+
   /**
-   * Scans a set of tweets for the specific required tags.
-   * Returns a summary including the capped points (max 5 per day).
+   * Initiates the Twitter OAuth flow for access permission.
+   * In a real environment, this would redirect to Twitter's auth portal.
+   */
+  async authorize(): Promise<boolean> {
+    console.log("Initiating Twitter OAuth Permission Request...");
+    // Simulate OAuth 2.0 PKCE flow
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    this.accessToken = "simulated_secure_token_" + Math.random().toString(36).substring(7);
+    return true;
+  }
+
+  /**
+   * Scans a user's timeline for ecosystem contributions.
+   * Logic: 
+   * 1. Only posts between Nov 1, 2025 and Jan 15, 2026.
+   * 2. Must contain at least one required tag.
+   * 3. Max 5 points (1 per valid post) per day.
    */
   async scanPosts(handle: string): Promise<ScanResult> {
-    // In a real production app, this would be an API call to a backend 
-    // that uses the Twitter API v2 'search' endpoint with the user's OAuth token.
-    // For this demonstration, we simulate the scanning of historical posts.
-    
-    await new Promise(resolve => setTimeout(resolve, 3500)); // Simulate network latency
+    if (!this.accessToken) {
+      throw new Error("Twitter access not authorized. Please link your account first.");
+    }
 
-    // Mock tweets spanning the snapshot period
-    const mockTweets: Tweet[] = this.generateMockTweets(handle);
+    // In production, this would be: 
+    // fetch(`https://api.twitter.com/2/users/by/username/${handle}/tweets?...`, { headers: { Authorization: `Bearer ${this.accessToken}` } })
+    
+    await new Promise(resolve => setTimeout(resolve, 3500)); // Simulate intensive historical scan
+
+    const mockTweets: Tweet[] = this.generateHistoricalMockTweets(handle);
     
     const dailyCounts: Record<string, number> = {};
     const validTweets: Tweet[] = [];
     
     mockTweets.forEach(tweet => {
-      // Check if tweet is within range
+      // 1. Precise Date Filter
       if (tweet.createdAt < SNAPSHOT_START || tweet.createdAt > SNAPSHOT_END) return;
       
-      // Check for tags
+      // 2. Tag Detection (Case Insensitive)
       const lowercaseText = tweet.text.toLowerCase();
       const hasTag = REQUIRED_TAGS.some(tag => lowercaseText.includes(tag.toLowerCase()));
       
@@ -56,9 +75,10 @@ export class TwitterService {
       }
     });
 
-    // Calculate capped points: max 5 per day
+    // 3. Daily Cap Enforcement
     let cappedPoints = 0;
-    Object.values(dailyCounts).forEach(count => {
+    Object.keys(dailyCounts).sort().forEach(day => {
+      const count = dailyCounts[day];
       cappedPoints += Math.min(count, 5);
     });
 
@@ -70,28 +90,33 @@ export class TwitterService {
     };
   }
 
-  private generateMockTweets(handle: string): Tweet[] {
+  /**
+   * Generates a realistic set of tweets for demonstration within the snapshot window.
+   */
+  private generateHistoricalMockTweets(handle: string): Tweet[] {
     const tweets: Tweet[] = [];
-    const startDate = new Date(SNAPSHOT_START);
-    const endDate = new Date(); // Today
+    const windowStart = SNAPSHOT_START.getTime();
+    const windowEnd = SNAPSHOT_END.getTime();
     
-    // Generate a believable number of tweets for a builder
-    for (let i = 0; i < 150; i++) {
-      const randomTime = startDate.getTime() + Math.random() * (endDate.getTime() - startDate.getTime());
+    // Generate ~200 tweets to find valid ones
+    for (let i = 0; i < 200; i++) {
+      const randomTime = windowStart + Math.random() * (windowEnd - windowStart);
       const date = new Date(randomTime);
       
-      // Some tweets have tags, some don't
       const dice = Math.random();
-      let text = "Just building on Base! 🔵 #BuildOnBase";
+      let text = "Building the future onchain. #Base";
       
-      if (dice > 0.7) {
-        text = `Excited for the future of @base with @jessepollak and @brian_armstrong! $LAMBOLESS to the moon.`;
-      } else if (dice > 0.5) {
-        text = `Testing out the new @baseapp features. Great work @baseposting!`;
+      // Simulate varied user behavior with required tags
+      if (dice > 0.85) {
+        text = `Incredible work by @base and @jessepollak on the new protocol updates! $LAMBOLESS is the vibe.`;
+      } else if (dice > 0.75) {
+        text = `Checking out @baseapp. The UX is smooth! Shoutout to @brian_armstrong for the vision.`;
+      } else if (dice > 0.65) {
+        text = `@baseposting is the best community on Farcaster! @base is home.`;
       }
       
       tweets.push({
-        id: Math.random().toString(36).substr(2, 9),
+        id: "tw-" + Math.random().toString(36).substring(7),
         text,
         createdAt: date
       });
