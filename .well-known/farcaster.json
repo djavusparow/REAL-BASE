@@ -1,0 +1,18 @@
+
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOiA4ODg4ODgsICJ0eXBlIjogImN1c3RvZHkiLCAia2V5IjogIjB4MDAwIn0",
+    "payload": "eyJkb21haW4iOiAicmVhbC1iYXNlLTIwMjYudmVyY2VsLmFwcCJ9",
+    "signature": "MHgwMDA"
+  },
+  "frame": {
+    "version": "1",
+    "name": "BASE IMPRESSION",
+    "iconUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=128",
+    "imageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=1200&ar=1.91:1",
+    "buttonTitle": "Check My Impact",
+    "splashImageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=200",
+    "splashBackgroundColor": "#000000",
+    "webhookUrl": "https://real-base-2026.vercel.app/api/webhook"
+  }
+}

@@ -114,7 +114,6 @@ const App: React.FC = () => {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [showLogoutNotice, setShowLogoutNotice] = useState(false);
 
-  // CRITICAL: Signal ready to Farcaster as early as possible
   useEffect(() => {
     sdk.actions.ready();
   }, []);
@@ -280,7 +279,7 @@ const App: React.FC = () => {
     if (!user) return;
     const tier = getTierFromRank(user.rank);
     const text = `I'm a ${tier} contributor on Base Impression! 🔵 Rank: #${user.rank} | Points: ${user.points} 💎 #BaseImpression #LamboLess`;
-    const url = "https://base-impression.vercel.app";
+    const url = "https://real-base-2026.vercel.app/";
     if (platform === 'farcaster') {
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}&embeds[]=${encodeURIComponent(url)}`);
     } else {
