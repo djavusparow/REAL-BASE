@@ -7,7 +7,6 @@ export class GeminiService {
    */
   async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
     try {
-      // Correctly initialize GoogleGenAI with the API key from environment variables.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -28,7 +27,6 @@ export class GeminiService {
         }
       });
 
-      // Iterate through parts to find the image part, as it might not be the first part.
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
           return `data:image/png;base64,${part.inlineData.data}`;
@@ -42,11 +40,32 @@ export class GeminiService {
   }
 
   /**
+   * Fetches the real-time price of $LAMBOLESS using Google Search grounding.
+   */
+  async getLambolessPrice(): Promise<number> {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: "What is the current market price of the $LAMBOLESS token on Base (contract 0xbe7c48aad42eea060150cb64f94b6448a89c1cef) in USD? Return only the numerical value.",
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
+      });
+      
+      const priceText = response.text?.replace(/[^0-9.]/g, '') || "0.025"; // Default fallback if grounding fails
+      return parseFloat(priceText) || 0.025;
+    } catch (error) {
+      console.error("Gemini Price Fetch Error:", error);
+      return 0.025; // Safe fallback
+    }
+  }
+
+  /**
    * Generates motivational copy using Gemini 3 Flash Preview.
    */
   async getImpressionAnalysis(points: number, rank: number): Promise<string> {
     try {
-      // Correctly initialize GoogleGenAI with the API key from environment variables.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -54,7 +73,6 @@ export class GeminiService {
         Write a hyper-energetic, punchy motivational message (max 2 sentences). 
         Mention 'Onchain Summer' and my potential as a Base ecosystem builder.`
       });
-      // Use the .text property directly instead of a method call.
       return response.text || "You're carving a path on Base. The snapshot is watching!";
     } catch (error) {
       console.error("Gemini Text Generation Error:", error);
