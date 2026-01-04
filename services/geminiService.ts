@@ -14,7 +14,7 @@ export class GeminiService {
           parts: [
             {
               text: `A cinematic, ultra-high-definition 3D NFT badge for the "BASE IMPRESSION" project. 
-              The badge centerpiece is a sleek, neon-lit purple Lamborghini and a glowing Farcaster logo. 
+              The badge centerpiece is a sleek, neon-lit blue Lamborghini and a glowing Farcaster logo. 
               Tier level: ${tier}. Lighting: ${tier === 'PLATINUM' ? 'Hyper-reflective holographic' : 'Futuristic ambient'}. 
               The text "${handle}" is laser-etched in the base. 4K resolution, Unreal Engine 5 render style.`
             }
@@ -47,17 +47,17 @@ export class GeminiService {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: "What is the current market price of the $LAMBOLESS token on Base (contract 0xbe7c48aad42eea060150cb64f94b6448a89c1cef) in USD? Return only the numerical value.",
+        contents: "What is the current market price of the $LAMBOLESS token on Base network (contract 0xbe7c48aad42eea060150cb64f94b6448a89c1cef) in USD? Return ONLY the numerical price value.",
         config: {
           tools: [{ googleSearch: {} }]
         }
       });
       
-      const priceText = response.text?.replace(/[^0-9.]/g, '') || "0.025"; // Default fallback if grounding fails
-      return parseFloat(priceText) || 0.025;
+      const priceText = response.text?.replace(/[^0-9.]/g, '') || "0.0001"; 
+      return parseFloat(priceText) || 0.0001;
     } catch (error) {
       console.error("Gemini Price Fetch Error:", error);
-      return 0.025; // Safe fallback
+      return 0.0001; 
     }
   }
 
