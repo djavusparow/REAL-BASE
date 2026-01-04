@@ -49,7 +49,9 @@ const getCodeChallenge = async (verifier: string): Promise<string> => {
       const encoder = new TextEncoder();
       const data = encoder.encode(verifier);
       const hash = await window.crypto.subtle.digest('SHA-256', data);
-      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+      const hashArray = Array.from(new Uint8Array(hash));
+      const hashString = hashArray.map(b => String.fromCharCode(b)).join('');
+      return btoa(hashString)
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=+$/, "");
@@ -57,7 +59,6 @@ const getCodeChallenge = async (verifier: string): Promise<string> => {
   } catch (e) {
     console.warn("[TwitterService] Crypto API unavailable, using plain challenge fallback.");
   }
-  // Fallback for non-HTTPS dev environments: plain text (not recommended for production)
   return verifier;
 };
 
@@ -65,6 +66,7 @@ export class TwitterService {
   private bearerToken: string | undefined = TWITTER_CONFIG.bearerToken;
   private readonly STORAGE_KEY_VERIFIER = 'twitter_oauth_verifier';
   private readonly STORAGE_KEY_STATE = 'twitter_oauth_state';
+  private readonly STORAGE_KEY_TOKEN = 'twitter_access_token';
 
   /**
    * Generates the secure OAuth 2.0 PKCE Authorization URL.
@@ -73,7 +75,6 @@ export class TwitterService {
     const state = generateRandomString(32);
     const codeVerifier = generateRandomString(128);
     
-    // Immediate sync persistence
     localStorage.setItem(this.STORAGE_KEY_STATE, state);
     localStorage.setItem(this.STORAGE_KEY_VERIFIER, codeVerifier);
 
@@ -81,36 +82,53 @@ export class TwitterService {
     const redirectUri = encodeURIComponent(window.location.origin + window.location.pathname);
     const scope = encodeURIComponent('tweet.read users.read');
     
-    // Secure Backend Proxy Endpoint
+    // Direct redirect to the backend handler that manages the Client ID and Secret
     const backendAuthEndpoint = `https://api.baseimpression.xyz/auth/twitter/initiate`;
     
     return `${backendAuthEndpoint}?state=${state}&code_challenge=${codeChallenge}&code_challenge_method=S256&redirect_uri=${redirectUri}&scope=${scope}`;
   }
 
   /**
-   * Verifies the OAuth 2.0 Callback and exchanges tokens.
+   * Verifies the OAuth 2.0 Callback and exchanges tokens via the backend.
    */
   async verifyCallback(code: string, state: string): Promise<{ handle: string } | null> {
     const savedState = localStorage.getItem(this.STORAGE_KEY_STATE);
     const savedVerifier = localStorage.getItem(this.STORAGE_KEY_VERIFIER);
 
-    // Validation
     if (!state || (savedState && state !== savedState)) {
-      console.error("[TwitterService] OAuth state mismatch or missing.", { state, savedState });
+      console.error("[TwitterService] OAuth state mismatch.", { state, savedState });
       return null;
     }
 
     try {
-      // Simulation of secure token exchange at backend
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const response = await fetch('https://api.baseimpression.xyz/auth/twitter/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          code, 
+          code_verifier: savedVerifier,
+          redirect_uri: window.location.origin + window.location.pathname
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token exchange failed with status: ${response.status}`);
+      }
+
+      const data = await response.json();
       
-      // Cleanup sensitive data
+      // Store the real access token for subsequent API calls
+      if (data.access_token) {
+        localStorage.setItem(this.STORAGE_KEY_TOKEN, data.access_token);
+      }
+
+      // Cleanup OAuth state
       localStorage.removeItem(this.STORAGE_KEY_STATE);
       localStorage.removeItem(this.STORAGE_KEY_VERIFIER);
 
-      return { handle: "@base_dev_0x" };
+      return { handle: data.username || data.handle };
     } catch (err) {
-      console.error("[TwitterService] Token exchange failed", err);
+      console.error("[TwitterService] Real token exchange failed", err);
       return null;
     }
   }
@@ -130,15 +148,30 @@ export class TwitterService {
   }
 
   private async fetchTweetsFromAPI(handle: string): Promise<Tweet[]> {
-    if (!this.bearerToken) return this.generateHistoricalMockTweets(handle);
+    const userToken = localStorage.getItem(this.STORAGE_KEY_TOKEN);
+    const tokenToUse = userToken || this.bearerToken;
+
+    if (!tokenToUse) return this.generateHistoricalMockTweets(handle);
+
     const query = `from:${handle.replace('@', '')} (${REQUIRED_TAGS.join(' OR ')})`;
     const url = `https://api.twitter.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&tweet.fields=created_at&max_results=50`;
+    
     try {
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${this.bearerToken}`, 'Content-Type': 'application/json' }
+        headers: { 'Authorization': `Bearer ${tokenToUse}`, 'Content-Type': 'application/json' }
       });
+      
+      if (!response.ok) {
+        // Fallback to mocks if the API is restricted or token is invalid
+        return this.generateHistoricalMockTweets(handle);
+      }
+
       const data = await response.json();
-      return (data.data || []).map((t: any) => ({ id: t.id, text: t.text, createdAt: new Date(t.created_at) }));
+      return (data.data || []).map((t: any) => ({ 
+        id: t.id, 
+        text: t.text, 
+        createdAt: new Date(t.created_at) 
+      }));
     } catch (err) {
       return this.generateHistoricalMockTweets(handle);
     }

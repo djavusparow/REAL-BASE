@@ -127,19 +127,21 @@ const App: React.FC = () => {
         setError(null);
         window.history.replaceState({}, document.title, window.location.pathname);
         try {
-          // Verification logic for the callback
+          // Verification logic for the callback calling real backend
           const profile = await twitterService.verifyCallback(code, state || "");
           if (profile) {
             setTwUser(profile);
             setIsTwitterModalOpen(true);
             setTwitterStep(4);
           } else {
-            setError("Social verification mismatch. Please try again.");
+            setError("Social verification failed. The session may have expired.");
             setIsTwitterModalOpen(true);
             setTwitterStep(1);
           }
         } catch (err) {
-          setError("OAuth Handshake Failed.");
+          setError("OAuth Handshake Failed. Connection refused.");
+          setIsTwitterModalOpen(true);
+          setTwitterStep(1);
         } finally { setIsVerifyingSocial(false); }
       };
       verifySocial();
@@ -228,26 +230,16 @@ const App: React.FC = () => {
     setTwitterStep(2);
     try {
       const authUrl = await twitterService.getAuthUrl();
-      const currentState = localStorage.getItem('twitter_oauth_state');
 
-      // Attempt secure redirect via Farcaster SDK or native browser
+      // Initiate real redirect to Twitter Authorization portal
       if (sdk.actions.openUrl) {
          sdk.actions.openUrl(authUrl);
       } else {
          window.location.href = authUrl;
       }
-      
-      // Robust simulation for development/demo environments
-      // We wait for the state to be guaranteed in storage before simulating return
-      const isDemoEnv = window.location.hostname === 'localhost' || window.location.hostname.includes('vercel.app');
-      if (isDemoEnv) {
-        setTimeout(() => {
-          window.location.href = window.location.origin + window.location.pathname + `?code=demo_code_success&state=${currentState}`;
-        }, 1800);
-      }
     } catch (err) {
       console.error(err);
-      setError("Failed to initiate secure handshake.");
+      setError("Failed to reach Authorization portal.");
       setTwitterStep(1);
     }
   };
@@ -470,8 +462,8 @@ const App: React.FC = () => {
                       <Twitter className="absolute inset-0 m-auto w-8 h-8 text-blue-500" />
                    </div>
                    <div className="text-center space-y-1">
-                      <p className="text-xs font-black uppercase italic tracking-tighter">Initiating PKCE Handshake...</p>
-                      <p className="text-[8px] text-gray-500 font-bold uppercase">Redirecting to Authorization Portal</p>
+                      <p className="text-xs font-black uppercase italic tracking-tighter">Redirecting to Twitter...</p>
+                      <p className="text-[8px] text-gray-500 font-bold uppercase">Preparing Secure PKCE Handshake</p>
                    </div>
                 </div>
               )}
