@@ -1,10 +1,8 @@
-
 import { RankTier, BadgeConfig, LeaderboardEntry } from './types';
 
 /**
- * ENVIRONMENT CONFIGURATION
- * These values are pulled from the execution environment.
- * The application assumes these are pre-configured and valid.
+ * CONFIGURATION SECTION
+ * Primary application settings and environment variable mappings.
  */
 export const TWITTER_CONFIG = {
   apiKey: process.env.TWITTER_API_KEY,
@@ -12,14 +10,23 @@ export const TWITTER_CONFIG = {
   bearerToken: process.env.TWITTER_BEARER_TOKEN,
 };
 
+/**
+ * ON-CHAIN CONFIGURATION
+ */
 export const TOKEN_CONTRACT = "0xbe7c48aad42eea060150cb64f94b6448a89c1cef";
 export const MIN_TOKEN_VALUE_USD = 2.5;
 
+/**
+ * EVENT TIMELINE
+ */
 export const SNAPSHOT_START = new Date("2025-11-01T00:01:00Z");
 export const SNAPSHOT_END = new Date("2026-01-15T23:59:00Z");
 export const FINAL_SNAPSHOT = new Date("2026-01-16T00:01:00Z");
 export const CLAIM_START = new Date("2026-01-16T02:00:00Z");
 
+/**
+ * TIER DEFINITIONS
+ */
 export const TIERS: Record<RankTier, BadgeConfig> = {
   [RankTier.PLATINUM]: {
     name: "Platinum",
@@ -58,6 +65,9 @@ export const TIERS: Record<RankTier, BadgeConfig> = {
   }
 };
 
+/**
+ * GLOBAL LEADERBOARD (MOCK DATA)
+ */
 export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
   { rank: 1, handle: "@jessepollak", points: 98.5, tier: RankTier.PLATINUM, accountAgeDays: 4500, baseAppAgeDays: 800 },
   { rank: 2, handle: "@brian_armstrong", points: 97.2, tier: RankTier.PLATINUM, accountAgeDays: 5200, baseAppAgeDays: 900 },

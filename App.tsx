@@ -103,13 +103,16 @@ const App: React.FC = () => {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const scanLogsRef = useRef<HTMLDivElement>(null);
-  const [lbFilter, setLbFilter] = useState<RankTier | 'ALL'>('ALL');
   const [detectedProviders, setDetectedProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [isWalletSelectorOpen, setIsWalletSelectorOpen] = useState(false);
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+  
+  // Twitter Modal States
   const [isTwitterModalOpen, setIsTwitterModalOpen] = useState(false);
   const [tempTwitterHandle, setTempTwitterHandle] = useState('');
   const [twitterStep, setTwitterStep] = useState<1 | 2 | 3 | 4>(1); 
   const [modalError, setModalError] = useState<string | null>(null);
+  
   const [error, setError] = useState<string | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [showLogoutNotice, setShowLogoutNotice] = useState(false);
@@ -218,6 +221,31 @@ const App: React.FC = () => {
     } finally { setLoading(false); }
   };
 
+  const handleTwitterAuth = async () => {
+    if (!tempTwitterHandle.trim()) {
+      setModalError("Please enter a valid handle.");
+      return;
+    }
+    setModalError(null);
+    setTwitterStep(2);
+    try {
+      const success = await twitterService.authorize();
+      if (success) {
+        setTwitterStep(3);
+        // Add a small delay for verification simulation
+        setTimeout(() => setTwitterStep(4), 1500);
+      }
+    } catch (err: any) {
+      setModalError(err.message || "Authentication failed.");
+      setTwitterStep(1);
+    }
+  };
+
+  const finalizeTwitterConnection = () => {
+    setTwUser({ handle: tempTwitterHandle.startsWith('@') ? tempTwitterHandle : `@${tempTwitterHandle}` });
+    setIsTwitterModalOpen(false);
+  };
+
   const handleFinalizeConnection = async () => {
     if (!walletAddress || !twUser) return;
     setIsScanning(true);
@@ -235,7 +263,7 @@ const App: React.FC = () => {
     setScanProgress(40);
     addLog(`Valuation: $${usdValue.toFixed(2)} USD (Verified)`);
 
-    addLog("Analyzing Farcaster social graph...");
+    addLog("Analyzing Social Impact graph...");
     const scanResult = await twitterService.scanPosts(twUser.handle);
     setScanProgress(70);
     addLog(`Contribution check: ${scanResult.totalValidPosts} valid interactions indexed.`);
@@ -304,6 +332,37 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Connection Help Modal */}
+      {isHelpModalOpen && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl">
+           <div className="glass-effect border border-white/10 p-8 rounded-[2.5rem] max-w-sm w-full space-y-6 animate-in zoom-in duration-300">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-black uppercase italic tracking-tighter">Connection Guide</h3>
+                <X onClick={() => setIsHelpModalOpen(false)} className="w-5 h-5 text-gray-500 cursor-pointer" />
+              </div>
+              <div className="space-y-4 text-[10px] font-bold uppercase text-gray-400">
+                <div className="space-y-2">
+                  <p className="text-blue-500">Supported Wallets</p>
+                  <p className="normal-case font-medium">We support all EIP-6963 compatible wallets including Coinbase Wallet, MetaMask, Rainbow, and Rabby. Ensure your wallet is set to the Base network.</p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-blue-500">The Process</p>
+                  <ol className="list-decimal list-inside space-y-1 normal-case font-medium">
+                    <li>Connect: Links your public address to search for $LAMBOLESS holdings.</li>
+                    <li>Sign: A gasless signature proves you own the address. No funds are moved.</li>
+                    <li>Sync: Connect your social handle to index your ecosystem mentions.</li>
+                  </ol>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-blue-500">Security</p>
+                  <p className="normal-case font-medium">Your private keys are never accessed. We only verify public on-chain and social data to calculate your tier.</p>
+                </div>
+              </div>
+              <button onClick={() => setIsHelpModalOpen(false)} className="w-full py-4 bg-white text-black rounded-2xl font-black text-xs uppercase italic">Got it</button>
+           </div>
+        </div>
+      )}
+
       {/* Real-time Scanner */}
       {isScanning && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/95">
@@ -344,6 +403,98 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Enhanced Twitter Modal */}
+      {isTwitterModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md">
+          <div className="glass-effect border border-white/10 w-full max-w-xs rounded-[2.5rem] p-8 space-y-8 animate-in zoom-in duration-300">
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <h3 className="text-xl font-black uppercase italic tracking-tighter">Social Sync</h3>
+                <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest">Verify Contribution Identity</p>
+              </div>
+              <X onClick={() => !loading && setIsTwitterModalOpen(false)} className="w-5 h-5 text-gray-500 cursor-pointer" />
+            </div>
+
+            <div className="space-y-6">
+              {twitterStep === 1 && (
+                <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
+                  <div className="relative">
+                    <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500" />
+                    <input 
+                      type="text" 
+                      placeholder="@handle" 
+                      value={tempTwitterHandle}
+                      onChange={(e) => setTempTwitterHandle(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold focus:outline-none focus:border-blue-500/50 transition-colors"
+                    />
+                  </div>
+                  {modalError && (
+                    <div className="flex items-center gap-2 text-red-500 bg-red-500/10 p-3 rounded-xl border border-red-500/20">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                      <span className="text-[9px] font-bold uppercase">{modalError}</span>
+                    </div>
+                  )}
+                  <button 
+                    onClick={handleTwitterAuth}
+                    className="w-full py-4 bg-blue-600 rounded-2xl font-black text-xs uppercase italic shadow-lg shadow-blue-600/20 active:scale-95 transition-transform"
+                  >
+                    Authenticate Account
+                  </button>
+                </div>
+              )}
+
+              {twitterStep === 2 && (
+                <div className="py-8 flex flex-col items-center gap-6 text-center animate-in fade-in duration-500">
+                  <div className="relative">
+                    <div className="w-16 h-16 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    <Twitter className="absolute inset-0 m-auto w-6 h-6 text-blue-500 animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black uppercase italic">Establishing Secure Bridge</p>
+                    <p className="text-[9px] text-gray-500 font-bold uppercase">Requesting Profile Scopes...</p>
+                  </div>
+                </div>
+              )}
+
+              {twitterStep === 3 && (
+                <div className="py-8 flex flex-col items-center gap-6 text-center animate-in fade-in duration-500">
+                  <div className="relative">
+                    <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center">
+                      <Search className="w-8 h-8 text-blue-500 animate-bounce" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black uppercase italic">Scanning Timeline</p>
+                    <p className="text-[9px] text-gray-500 font-bold uppercase">Indexing Verified Mentions...</p>
+                  </div>
+                </div>
+              )}
+
+              {twitterStep === 4 && (
+                <div className="space-y-6 text-center animate-in zoom-in duration-500">
+                  <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto border border-green-500/30">
+                    <CheckCircle2 className="w-10 h-10 text-green-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-lg font-black uppercase italic">Profile Linked</h4>
+                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10">
+                      <Twitter className="w-3 h-3 text-blue-400" />
+                      <span className="text-xs font-mono font-bold text-blue-100">{tempTwitterHandle}</span>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={finalizeTwitterConnection}
+                    className="w-full py-4 bg-green-600 rounded-2xl font-black text-xs uppercase italic shadow-lg shadow-green-600/20"
+                  >
+                    Continue to Dashboard
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-50 glass-effect border-b border-white/5 px-4 py-3 flex justify-between items-center bg-black/60 backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <BrandIcon size="sm" />
@@ -369,6 +520,10 @@ const App: React.FC = () => {
               <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Powered by Base Mainnet & Farcaster</p>
             </div>
             <div className="space-y-4 max-w-sm mx-auto">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Connect Identity</h3>
+                <HelpCircle className="w-4 h-4 text-gray-500 cursor-pointer hover:text-blue-400 transition-colors" onClick={() => setIsHelpModalOpen(true)} />
+              </div>
               <div className="glass-effect p-6 rounded-[2.5rem] border border-white/10 space-y-4">
                 <button onClick={() => setIsWalletSelectorOpen(true)} className={`w-full py-4 rounded-2xl font-black text-xs flex items-center justify-between px-6 border ${isWalletConnected ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-white/5 border-white/10'}`}>
                   {isWalletConnected ? 'Wallet Linked' : '1. Connect Wallet'}
@@ -378,8 +533,8 @@ const App: React.FC = () => {
                   {isWalletSigned ? 'Identity Proved' : '2. Sign Verification'}
                   <Fingerprint className="w-4 h-4" />
                 </button>
-                <button onClick={() => { setTwUser({ handle: 'user' }); }} className={`w-full py-4 rounded-2xl font-black text-xs flex items-center justify-between px-6 border ${twUser ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-white/5 border-white/10'}`}>
-                  {twUser ? 'Profile Synced' : '3. Link Farcaster'}
+                <button onClick={() => { setTwitterStep(1); setIsTwitterModalOpen(true); }} className={`w-full py-4 rounded-2xl font-black text-xs flex items-center justify-between px-6 border ${twUser ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-white/5 border-white/10'}`}>
+                  {twUser ? 'Profile Synced' : '3. Link Profile'}
                   <Twitter className="w-4 h-4" />
                 </button>
               </div>
