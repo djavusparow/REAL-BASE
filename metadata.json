@@ -1,13 +1,20 @@
 {
   "name": "BASE IMPRESSION",
   "description": "Calculate your impact across Base and social channels to earn tiered NFT badges via BaseApp.",
-  "requestFramePermissions": [],
-  "frame": {
-    "version": "vNext",
-    "imageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=600",
-    "button": "Check My Impact",
-    "splashImageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=200",
-    "splashBackgroundColor": "#000000"
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "version": "next",
+  "imageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=600",
+  "button": {
+    "title": "Check My Impact",
+    "action": {
+      "type": "launch_frame",
+      "name": "Base Impression",
+      "url": "https://base-impression.vercel.app",
+      "splashImageUrl": "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=200",
+      "splashBackgroundColor": "#000000"
+    }
   },
   "baseapp": {
     "type": "miniapp",

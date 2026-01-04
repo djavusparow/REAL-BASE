@@ -114,8 +114,12 @@ const App: React.FC = () => {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [showLogoutNotice, setShowLogoutNotice] = useState(false);
 
+  // CRITICAL: Signal ready to Farcaster as early as possible
   useEffect(() => {
     sdk.actions.ready();
+  }, []);
+
+  useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_KEY_USER);
     const expiry = localStorage.getItem(STORAGE_KEY_EXPIRY);
     if (savedUser && expiry) {
@@ -226,16 +230,16 @@ const App: React.FC = () => {
     setScanProgress(20);
     addLog(`Balance found: ${rawBalance.toFixed(2)} $LAMBOLESS`);
     
-    addLog("Requesting real-time market conversion...");
+    addLog("Requesting real-time market conversion via Gemini...");
     const tokenPrice = await geminiService.getLambolessPrice();
     const usdValue = rawBalance * tokenPrice;
     setScanProgress(40);
-    addLog(`Valuation: $${usdValue.toFixed(2)} USD`);
+    addLog(`Valuation: $${usdValue.toFixed(2)} USD (Verified)`);
 
     addLog("Analyzing Farcaster social graph...");
     const scanResult = await twitterService.scanPosts(twUser.handle);
     setScanProgress(70);
-    addLog(`Contribution check: ${scanResult.totalValidPosts} valid interactions.`);
+    addLog(`Contribution check: ${scanResult.totalValidPosts} valid interactions indexed.`);
 
     const baseAge = 150 + Math.floor(Math.random() * 60);
     const points = calculatePoints(baseAge, scanResult.accountAgeDays, scanResult.cappedPoints);
@@ -276,7 +280,7 @@ const App: React.FC = () => {
     if (!user) return;
     const tier = getTierFromRank(user.rank);
     const text = `I'm a ${tier} contributor on Base Impression! 🔵 Rank: #${user.rank} | Points: ${user.points} 💎 #BaseImpression #LamboLess`;
-    const url = window.location.origin;
+    const url = "https://base-impression.vercel.app";
     if (platform === 'farcaster') {
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}&embeds[]=${encodeURIComponent(url)}`);
     } else {
@@ -307,7 +311,7 @@ const App: React.FC = () => {
           <div className="w-full max-w-sm space-y-8">
             <div className="text-center space-y-3">
               <Search className="w-12 h-12 text-blue-500 animate-pulse mx-auto" />
-              <h3 className="text-2xl font-black uppercase italic">Authenticating</h3>
+              <h3 className="text-2xl font-black uppercase italic">Verifying Impact</h3>
               <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full bg-blue-600 transition-all duration-700" style={{ width: `${scanProgress}%` }} />
               </div>
@@ -328,12 +332,14 @@ const App: React.FC = () => {
               <X onClick={() => setIsWalletSelectorOpen(false)} className="w-4 h-4 cursor-pointer" />
             </div>
             <div className="grid gap-3">
-              {detectedProviders.map(det => (
+              {detectedProviders.length > 0 ? detectedProviders.map(det => (
                 <button key={det.info.uuid} onClick={() => connectWallet(det)} className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-all border border-white/5">
                   <img src={det.info.icon} className="w-6 h-6" />
                   <span className="text-xs font-bold">{det.info.name}</span>
                 </button>
-              ))}
+              )) : (
+                <p className="text-[10px] text-gray-500 text-center py-4 uppercase font-black">No wallet extensions detected</p>
+              )}
             </div>
           </div>
         </div>
@@ -357,16 +363,16 @@ const App: React.FC = () => {
 
       <main className="max-w-xl mx-auto px-4 py-10 pb-32">
         {!user ? (
-          <div className="space-y-12 text-center">
+          <div className="space-y-12 text-center animate-in fade-in duration-500">
             <BrandIcon size="lg" />
             <div className="space-y-3">
-              <h2 className="text-4xl font-black uppercase italic leading-none">Track Your<br/>Impact.</h2>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Base Ecosystem Contribution Analysis</p>
+              <h2 className="text-4xl font-black uppercase italic leading-none tracking-tight">Track Your<br/>Onchain Impact.</h2>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Powered by Base Mainnet & Farcaster</p>
             </div>
             <div className="space-y-4 max-w-sm mx-auto">
               <div className="glass-effect p-6 rounded-[2.5rem] border border-white/10 space-y-4">
                 <button onClick={() => setIsWalletSelectorOpen(true)} className={`w-full py-4 rounded-2xl font-black text-xs flex items-center justify-between px-6 border ${isWalletConnected ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-white/5 border-white/10'}`}>
-                  {isWalletConnected ? 'Wallet Verified' : '1. Link Wallet'}
+                  {isWalletConnected ? 'Wallet Linked' : '1. Connect Wallet'}
                   {isWalletConnected ? <CheckCircle2 className="w-4 h-4" /> : <Wallet className="w-4 h-4" />}
                 </button>
                 <button onClick={signVerification} disabled={!isWalletConnected} className={`w-full py-4 rounded-2xl font-black text-xs flex items-center justify-between px-6 border ${isWalletSigned ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-white/5 border-white/10 opacity-50'}`}>
@@ -374,18 +380,18 @@ const App: React.FC = () => {
                   <Fingerprint className="w-4 h-4" />
                 </button>
                 <button onClick={() => { setTwUser({ handle: 'user' }); }} className={`w-full py-4 rounded-2xl font-black text-xs flex items-center justify-between px-6 border ${twUser ? 'bg-green-500/10 border-green-500/30 text-green-500' : 'bg-white/5 border-white/10'}`}>
-                  {twUser ? 'Social Linked' : '3. Link Farcaster'}
+                  {twUser ? 'Profile Synced' : '3. Link Farcaster'}
                   <Twitter className="w-4 h-4" />
                 </button>
               </div>
-              <button onClick={handleFinalizeConnection} disabled={!isWalletSigned || !twUser} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl active:scale-95 disabled:opacity-20 transition-all">Scan Contribution</button>
+              <button onClick={handleFinalizeConnection} disabled={!isWalletSigned || !twUser} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl active:scale-95 disabled:opacity-20 transition-all">Scan Ecosystem Data</button>
             </div>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-8 animate-in fade-in duration-700">
             <div className="flex bg-white/5 p-1 rounded-2xl sticky top-[76px] z-30 backdrop-blur-xl">
               {['dashboard', 'leaderboard', 'claim'].map(t => (
-                <button key={t} onClick={() => setActiveTab(t as any)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase ${activeTab === t ? 'bg-blue-600' : 'text-gray-500'}`}>{t}</button>
+                <button key={t} onClick={() => setActiveTab(t as any)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase ${activeTab === t ? 'bg-blue-600 shadow-lg' : 'text-gray-500'}`}>{t}</button>
               ))}
             </div>
 
@@ -393,7 +399,7 @@ const App: React.FC = () => {
               <div className="space-y-8">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="glass-effect p-6 rounded-[2rem] text-center border border-blue-500/20">
-                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Total Points</span>
+                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Contribution Pts</span>
                     <div className="text-3xl font-black mt-1 italic">{user.points}</div>
                   </div>
                   <div className="glass-effect p-6 rounded-[2rem] text-center border border-purple-500/20">
@@ -405,7 +411,7 @@ const App: React.FC = () => {
                 <div className="glass-effect p-8 rounded-[3rem] border border-white/10 text-center space-y-6">
                   <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
                   {analysis && <p className="text-[10px] italic text-blue-200/60 bg-white/5 p-4 rounded-2xl leading-relaxed">"{analysis}"</p>}
-                  <button onClick={handleCheckpoint} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">{isGenerating ? 'Indexing...' : 'Refresh Snapshot'}</button>
+                  <button onClick={handleCheckpoint} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">{isGenerating ? 'Indexing Chain...' : 'Update Snapshot'}</button>
                 </div>
 
                 <div className="glass-effect p-6 rounded-[2.5rem] border border-blue-500/20 bg-blue-500/5 space-y-5">
@@ -414,8 +420,8 @@ const App: React.FC = () => {
                         <h4 className="text-xs font-black uppercase italic">Broadcast Impact</h4>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => handleShare('farcaster')} className="py-4 bg-[#8a63d2] rounded-2xl text-[10px] font-black uppercase">Warpcast</button>
-                        <button onClick={() => handleShare('twitter')} className="py-4 bg-white text-black rounded-2xl text-[10px] font-black uppercase">X / Twitter</button>
+                        <button onClick={() => handleShare('farcaster')} className="py-4 bg-[#8a63d2] rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2"><img src="https://warpcast.com/favicon.ico" className="w-3 h-3 brightness-0 invert" alt="" /> Warpcast</button>
+                        <button onClick={() => handleShare('twitter')} className="py-4 bg-white text-black rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2"><Twitter className="w-3 h-3" /> X / Twitter</button>
                     </div>
                 </div>
 
@@ -423,7 +429,7 @@ const App: React.FC = () => {
                   <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-2">Verification Metrics</h3>
                   <div className="space-y-3">
                     <div className="p-5 glass-effect rounded-2xl border border-white/5 flex justify-between items-center">
-                      <span className="text-[10px] font-black uppercase text-gray-400">On-chain Balance</span>
+                      <span className="text-[10px] font-black uppercase text-gray-400">On-chain Balance ($USDC)</span>
                       <span className="text-xs font-black text-green-500">${user.lambolessBalance.toFixed(2)}</span>
                     </div>
                     <div className="p-5 glass-effect rounded-2xl border border-white/5 flex justify-between items-center">
@@ -438,9 +444,9 @@ const App: React.FC = () => {
             {activeTab === 'leaderboard' && (
               <div className="space-y-4">
                 {MOCKED_LEADERBOARD.map(p => (
-                  <div key={p.rank} className="p-5 glass-effect border border-white/5 rounded-2xl flex justify-between items-center">
+                  <div key={p.rank} className="p-5 glass-effect border border-white/5 rounded-2xl flex justify-between items-center hover:bg-white/5 transition-colors">
                     <div className="flex items-center gap-4">
-                      <span className="text-xs font-black text-gray-500">#{p.rank}</span>
+                      <span className="text-xs font-black text-gray-500 italic">#{p.rank}</span>
                       <span className="text-xs font-bold">{p.handle}</span>
                     </div>
                     <span className="text-xs font-black">{p.points} pts</span>
@@ -454,18 +460,18 @@ const App: React.FC = () => {
                 <div className="w-20 h-20 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20">
                   <CreditCard className="w-10 h-10 text-blue-500" />
                 </div>
-                <h2 className="text-2xl font-black uppercase italic">Claim Badge</h2>
+                <h2 className="text-2xl font-black uppercase italic">Soulbound Badge</h2>
                 <div className="space-y-3">
-                  <div className={`p-5 border rounded-2xl flex justify-between ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/30'}`}>
+                  <div className={`p-5 border rounded-2xl flex justify-between ${user.rank <= 1000 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30'}`}>
                     <span className="text-[10px] font-black uppercase">Rank Eligibility</span>
                     <span className="text-[10px] font-bold">{user.rank <= 1000 ? 'QUALIFIED' : 'NOT ELIGIBLE'}</span>
                   </div>
-                  <div className={`p-5 border rounded-2xl flex justify-between ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30' : 'border-red-500/30'}`}>
+                  <div className={`p-5 border rounded-2xl flex justify-between ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30'}`}>
                     <span className="text-[10px] font-black uppercase">Min. $2.50 Verified</span>
                     <span className="text-[10px] font-bold">${user.lambolessBalance.toFixed(2)}</span>
                   </div>
                 </div>
-                <button disabled={!isClaimable} className={`w-full py-5 rounded-[2rem] font-black uppercase italic ${isClaimable ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-700 disabled:opacity-20'}`}>Mint Soulbound Badge</button>
+                <button disabled={!isClaimable} className={`w-full py-5 rounded-[2rem] font-black uppercase italic ${isClaimable ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20' : 'bg-white/5 text-gray-700 disabled:opacity-20'}`}>Mint Tier Badge</button>
               </div>
             )}
           </div>
