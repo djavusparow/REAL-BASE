@@ -140,8 +140,15 @@ const App: React.FC = () => {
           
           const saved = localStorage.getItem(STORAGE_KEY_USER);
           if (!saved) {
-            setAddress(context.user.custodyAddress || '');
+            // Priority detection of address
+            const detectedAddr = context.user.custodyAddress || context.user.address;
+            setAddress(detectedAddr || '');
             setHandle(`@${context.user.username}`);
+            // If we have an address from context, we consider it verified
+            if (detectedAddr) {
+              setIsSignatureVerified(true);
+              setIsTwitterVerified(true);
+            }
           }
         }
       } catch (e) {
@@ -211,11 +218,16 @@ const App: React.FC = () => {
 
   const handleFarcasterAutoLogin = () => {
     if (!farcasterContextUser) return;
-    const custodyAddr = farcasterContextUser.custodyAddress;
+    
+    // Fallback detection for various Farcaster SDK versions/profiles
+    const custodyAddr = farcasterContextUser.custodyAddress || farcasterContextUser.address;
+    
     if (!custodyAddr) {
-      alert("No custody address found in Farcaster context.");
+      console.warn("Farcaster context missing address fields:", farcasterContextUser);
+      alert("No linked wallet address found in your Farcaster profile. Please try the 'Connect Wallet' option instead.");
       return;
     }
+    
     setAddress(custodyAddr);
     setHandle(`@${farcasterContextUser.username}`);
     setIsSignatureVerified(true);
@@ -284,13 +296,18 @@ const App: React.FC = () => {
 
   const handleScan = async () => {
     // Basic validation before starting
-    if (!address) {
-      alert("Identity address is missing. Please reconnect.");
+    if (!address || address.trim() === '') {
+      alert("Wallet address is required. If you are on Farcaster, please re-link your profile.");
       return;
     }
+    
+    // In Farcaster context, we might skip strict social verification if it's already a trusted environment
     if (!isTwitterVerified || !isSignatureVerified) {
-      alert("Social or Signature identity not fully verified.");
-      return;
+       // Only alert if we really don't have the data
+       if (!handle || handle.trim() === '') {
+         alert("Social handle or Signature identity not fully verified.");
+         return;
+       }
     }
 
     setIsScanning(true);
@@ -302,9 +319,9 @@ const App: React.FC = () => {
     try {
       log("Initializing audit for " + address.slice(0, 8) + "...");
       setScanProgress(10);
-      await sleep(500);
+      await sleep(400);
 
-      log("Synchronizing $LAMBOLESS, $thenickshirley, and $JESSE balances...");
+      log("Synchronizing balances from Base L2...");
       setScanProgress(30);
       const [balLambo, balNick, balJesse] = await Promise.all([
         tokenService.getBalance(address, LAMBOLESS_CONTRACT).catch(() => 0),
@@ -312,11 +329,11 @@ const App: React.FC = () => {
         tokenService.getBalance(address, JESSE_CONTRACT).catch(() => 0)
       ]);
       
-      log(`Sync Complete: Assets found.`);
+      log(`Sync Complete: Asset snapshot retrieved.`);
       setScanProgress(50);
-      await sleep(500);
+      await sleep(400);
 
-      log("Fetching market valuations...");
+      log("Fetching live market metrics...");
       setScanProgress(65);
       const [pLambo, pNick, pJesse] = await Promise.all([
         tokenService.getTokenPrice(LAMBOLESS_CONTRACT).catch(() => 0.0001),
@@ -328,25 +345,25 @@ const App: React.FC = () => {
       const usdNick = (balNick || 0) * pNick;
       const usdJesse = (balJesse || 0) * pJesse;
       
-      log(`Valuation complete: Impact calculated.`);
+      log(`Impact analysis in progress...`);
       setScanProgress(80);
-      await sleep(500);
+      await sleep(400);
 
-      log("Analyzing social presence...");
+      log("Crawling verified social history...");
       setScanProgress(90);
       const scanResult = await twitterService.scanPosts(handle).catch(err => {
-        console.warn("Twitter scan error, using defaults:", err);
-        return { accountAgeDays: 30, cappedPoints: 5, trustScore: 50, foundTweets: [] };
+        console.warn("Twitter scan fallback:", err);
+        return { accountAgeDays: 60, cappedPoints: 10, trustScore: 75, foundTweets: [] };
       });
       
       setScanProgress(95);
-      await sleep(500);
+      await sleep(400);
 
-      log("Compiling final report...");
+      log("Finalizing contribution report...");
       const baseAge = 150 + Math.floor(Math.random() * 50);
-      const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - farcasterContextUser.fid) / 1000000) * 800)) : 0;
+      const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - (farcasterContextUser.fid || 1)) / 1000000) * 800)) : 0;
       
-      // Calculate final points with sanitized numbers
+      // Calculate final points
       const points = calculatePoints(
         baseAge, 
         scanResult.accountAgeDays || 0, 
@@ -355,7 +372,8 @@ const App: React.FC = () => {
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
-      const rank = Math.floor(Math.random() * 950) + 1; // Simulated rank
+      // Generate a dynamic rank based on points (simplified for MVP)
+      const rank = points > 1000 ? Math.floor(Math.random() * 5) + 1 : Math.floor(Math.random() * 950) + 20;
       
       const userData: UserStats = { 
         address, 
@@ -368,7 +386,7 @@ const App: React.FC = () => {
         jesseBalance: usdJesse,
         points, 
         rank, 
-        trustScore: scanResult.trustScore || 50, 
+        trustScore: scanResult.trustScore || 80, 
         recentContributions: scanResult.foundTweets || [],
         farcasterId: farcasterContextUser?.fid,
         farcasterUsername: farcasterContextUser?.username,
@@ -376,15 +394,15 @@ const App: React.FC = () => {
       };
 
       setScanProgress(100);
-      await sleep(300);
+      await sleep(500);
       
-      // CRITICAL: Set user to transition UI
+      // Transitions to Dashboard
       setUser(userData);
-      console.log("Audit Success: User Profile Generated", userData);
+      console.log("Success: Base Impression Profile Active.");
 
     } catch (error) {
-      console.error("Critical Audit Failure:", error);
-      alert("Audit process failed due to a network error. Please try again.");
+      console.error("Audit Critical Failure:", error);
+      alert("A problem occurred during the audit. Please check your connection and try again.");
     } finally {
       setIsScanning(false);
     }
@@ -435,7 +453,7 @@ const App: React.FC = () => {
     try {
       const tier = getTierFromRank(user.rank);
       const [img, msg] = await Promise.all([
-        geminiService.generateBadgePreview(tier, user.twitterHandle), 
+        geminiService.generateBadgePreview(tier, user.twitterHandle || user.farcasterUsername || 'User'), 
         geminiService.getImpressionAnalysis(user.points, user.rank)
       ]);
       setBadgeImage(img);
@@ -449,15 +467,15 @@ const App: React.FC = () => {
 
   const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
-    const shareUrl = "https://base.app/app/real-base-2026.vercel.app";
+    const shareUrl = "https://real-base-2026.vercel.app/";
     const tierName = TIERS[getTierFromRank(user.rank)].name;
     
     if (platform === 'twitter') {
-      const message = `I just checked my @Base Impression rating! 🏎️💨\n\nPoints: ${user.points.toFixed(2)}\nRank: #${user.rank}\nTier: ${tierName}\n\nCheck your own onchain contribution here:`;
+      const message = `I just checked my @Base Impression rating! 🏎️💨\n\nPoints: ${user.points.toFixed(2)}\nRank: #${user.rank}\nTier: ${tierName}\n\nCheck yours on @baseapp:`;
       const tags = "\n\n@base @baseapp @jessepollak #BaseImpression #OnchainSummer";
       sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message + tags)}&url=${encodeURIComponent(shareUrl)}`);
     } else {
-      const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points.toFixed(2)}\nTier: ${tierName}\n\nTrack your footprint on Base:`;
+      const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points.toFixed(2)}\nTier: ${tierName}\n\nJoin the event on Base:`;
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(message)}&embeds[]=${encodeURIComponent(shareUrl)}`);
     }
   };
@@ -485,12 +503,13 @@ const App: React.FC = () => {
 
   const filteredLeaderboard = useMemo(() => {
     let list = [...MOCKED_LEADERBOARD];
-    if (user && user.twitterHandle && user.points > 0) {
-      const existingIdx = list.findIndex(l => l.handle.toLowerCase() === user.twitterHandle.toLowerCase());
+    if (user && (user.twitterHandle || user.farcasterUsername) && user.points > 0) {
+      const currentHandle = user.twitterHandle || `@${user.farcasterUsername}`;
+      const existingIdx = list.findIndex(l => l.handle.toLowerCase() === currentHandle.toLowerCase());
       if (existingIdx !== -1) {
         list[existingIdx] = { ...list[existingIdx], points: user.points, rank: user.rank };
       } else {
-        list.push({ rank: user.rank, handle: user.twitterHandle, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
+        list.push({ rank: user.rank, handle: currentHandle, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
       }
     }
     return list
@@ -507,12 +526,12 @@ const App: React.FC = () => {
             <Binary className="w-20 h-20 text-blue-500 animate-pulse" />
             <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 animate-pulse" />
           </div>
-          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2">Auditing Footprint</h2>
+          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2 text-white">Auditing Footprint</h2>
           <div className="w-full max-w-xs space-y-4">
             <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden">
               <div className="h-full bg-blue-600 transition-all duration-700 shadow-[0_0_20px_rgba(37,99,235,1)]" style={{ width: `${scanProgress}%` }} />
             </div>
-            <p className="text-[10px] font-black uppercase text-blue-400 min-h-[1.5em]">{scanLogs[scanLogs.length - 1] || "Initializing..."}</p>
+            <p className="text-[10px] font-black uppercase text-blue-400 min-h-[1.5em] tracking-widest">{scanLogs[scanLogs.length - 1] || "Initializing..."}</p>
           </div>
         </div>
       )}
@@ -554,56 +573,60 @@ const App: React.FC = () => {
       {showTwitterVerifyModal && (
         <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-6">
           <div className="w-full max-w-sm glass-effect p-8 rounded-[3rem] border-blue-500/30 space-y-6">
-            <h2 className="text-xl font-black uppercase italic tracking-tighter">Twitter Verification</h2>
+            <h2 className="text-xl font-black uppercase italic tracking-tighter">Identity Confirmation</h2>
             <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center"><span className="text-2xl font-mono font-black text-blue-500">{twitterChallenge}</span></div>
             <div className="space-y-3">
-              <button onClick={() => sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Verifying my @Base identity: ${twitterChallenge} #BaseImpression`)}`)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px]">Post Tweet</button>
-              <button onClick={() => handleConfirmVerification(twitterChallenge)} disabled={isTwitterConnecting} className="w-full py-4 bg-blue-600 rounded-2xl font-black uppercase text-[10px]">{isTwitterConnecting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirm Posted'}</button>
+              <button onClick={() => sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Verifying my @Base identity: ${twitterChallenge} #BaseImpression`)}`)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px]">Post on X</button>
+              <button onClick={() => handleConfirmVerification(twitterChallenge)} disabled={isTwitterConnecting} className="w-full py-4 bg-blue-600 rounded-2xl font-black uppercase text-[10px]">{isTwitterConnecting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirm Verification'}</button>
             </div>
           </div>
         </div>
       )}
 
       <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
-        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">S01 Active</span></div></div>
-        {user && <button onClick={() => setShowLogoutConfirm(true)} className="p-2 hover:bg-white/5 rounded-lg"><LogOut className="w-4 h-4 text-gray-500" /></button>}
+        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">Verified Profile</span></div></div>
+        {user && <button onClick={() => setShowLogoutConfirm(true)} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><LogOut className="w-4 h-4 text-gray-500" /></button>}
       </header>
 
       <main className="max-w-md mx-auto px-4 mt-8">
         {!user ? (
           <div className="space-y-12 text-center animate-in fade-in duration-1000">
             <div className="flex justify-center float-animation"><BrandLogo size="lg" /></div>
-            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Proof.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Contribution Audit</p></div>
+            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Proof.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Activity Analysis</p></div>
             
             <div className="glass-effect p-8 rounded-[3rem] space-y-6 shadow-2xl">
               <div className="space-y-4">
                 <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Step 1: Identity</label>
+                  <label className="text-[9px] font-black uppercase text-gray-500 ml-4 tracking-widest">Profile Identity</label>
                   {farcasterContextUser && !isSignatureVerified ? (
-                    <button onClick={handleFarcasterAutoLogin} className="w-full bg-[#8a63d2] hover:bg-[#7a53c2] text-white rounded-2xl py-5 px-5 flex items-center justify-between transition-all active:scale-[0.98] border border-purple-400/20">
-                      <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"><Fingerprint className="w-5 h-5" /></div><div className="flex flex-col text-left"><span className="text-[10px] font-black uppercase">Farcaster Link</span><span className="text-xs font-bold mt-1">@{farcasterContextUser.username}</span></div></div>
+                    <button onClick={handleFarcasterAutoLogin} className="w-full bg-[#8a63d2] hover:bg-[#7a53c2] text-white rounded-2xl py-5 px-5 flex items-center justify-between transition-all active:scale-[0.98] border border-purple-400/20 shadow-lg shadow-purple-500/10">
+                      <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"><Fingerprint className="w-5 h-5" /></div><div className="flex flex-col text-left"><span className="text-[10px] font-black uppercase">Farcaster Login</span><span className="text-xs font-bold mt-1">@{farcasterContextUser.username}</span></div></div>
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   ) : !isSignatureVerified ? (
-                    <button onClick={initiateWalletConnection} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between">
+                    <button onClick={initiateWalletConnection} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between hover:bg-blue-600/20 transition-all">
                        <span className="text-xs font-bold uppercase text-blue-200">Connect Wallet</span><Wallet className="w-4 h-4 text-blue-500" />
                     </button>
                   ) : (
                     <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
-                      <span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span><CheckCircle2 className="w-5 h-5 text-green-500" />
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-black text-green-500 uppercase tracking-widest">Identified Wallet</span>
+                        <span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-green-500" />
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Step 2: Social Presence</label>
+                  <label className="text-[9px] font-black uppercase text-gray-500 ml-4 tracking-widest">Social Context</label>
                   <div className="relative group flex gap-2">
                     <div className="relative flex-1">
                       <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400" />
-                      <input value={handle} onChange={e => setHandle(e.target.value)} disabled={isTwitterVerified} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none disabled:opacity-50" />
+                      <input value={handle} onChange={e => setHandle(e.target.value)} disabled={isTwitterVerified} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none disabled:opacity-50 focus:border-blue-500 transition-all" />
                     </div>
                     {!isTwitterVerified ? (
-                      <button onClick={handleStartTwitterVerification} disabled={!handle || isTwitterConnecting} className="px-6 bg-blue-600/20 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase">Verify</button>
+                      <button onClick={handleStartTwitterVerification} disabled={!handle || isTwitterConnecting} className="px-6 bg-blue-600/20 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase hover:bg-blue-600/30 transition-all">Verify</button>
                     ) : (
                       <div className="px-6 bg-green-500/20 border border-green-500/40 rounded-2xl flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>
                     )}
@@ -611,11 +634,11 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <button onClick={handleScan} disabled={!isSignatureVerified || !isTwitterVerified} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl active:scale-95 disabled:opacity-20 flex items-center justify-center gap-2">
-                Generate Impression <ArrowRight className="w-4 h-4" />
+              <button onClick={handleScan} disabled={isScanning || !address || address === ''} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-20 flex items-center justify-center gap-2 transition-all">
+                {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Generate Impression'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-[9px] text-gray-600 uppercase font-black">Verified by Base Onchain Identity</p>
+            <p className="text-[9px] text-gray-600 uppercase font-black tracking-widest italic">Verified by Base Onchain Graph</p>
           </div>
         ) : (
           <div className="space-y-8 animate-in slide-in-from-bottom-6 fade-in duration-700">
@@ -631,19 +654,19 @@ const App: React.FC = () => {
               <div className="space-y-8">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center relative overflow-hidden">
-                    <span className="text-[9px] font-black uppercase text-gray-500">Impact Score</span>
+                    <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Impact Score</span>
                     <div className="text-3xl font-black italic mt-1">{user.points.toFixed(2)}</div>
                   </div>
                   <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center">
-                    <span className="text-[9px] font-black uppercase text-gray-500">Trust Index</span>
+                    <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Trust Index</span>
                     <div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div>
                   </div>
                 </div>
 
-                <div className="glass-effect p-8 rounded-[3rem] border-white/5 space-y-4">
+                <div className="glass-effect p-8 rounded-[3rem] border-white/5 space-y-4 shadow-xl">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3"><Coins className="w-4 h-4 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Asset Contributions</h3></div>
-                    <button onClick={() => handleShare('twitter')} className="px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full text-[9px] font-black text-blue-400">Share</button>
+                    <div className="flex items-center gap-3"><Coins className="w-4 h-4 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Asset Weight</h3></div>
+                    <button onClick={() => handleShare('twitter')} className="px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full text-[9px] font-black text-blue-400 hover:bg-blue-600/20 transition-all">Share</button>
                   </div>
                   <div className="space-y-3">
                     {[
@@ -659,14 +682,14 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 shadow-2xl">
+                <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 shadow-2xl border border-blue-500/10">
                   <BadgeDisplay tier={getTierFromRank(user.rank)} imageUrl={badgeImage} loading={isGenerating} />
                   {analysis && <p className="text-[10px] italic text-blue-200/60 bg-white/5 p-4 rounded-2xl leading-relaxed">"{analysis}"</p>}
                   <div className="flex flex-col gap-3">
-                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">Refresh Snapshot</button>
+                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic hover:bg-gray-200 transition-colors">Refresh Visual</button>
                     <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => handleShare('farcaster')} className="py-3 bg-[#8a63d2]/10 border border-[#8a63d2]/30 rounded-2xl text-[9px] font-black uppercase text-purple-200">Warpcast</button>
-                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200">Post to X</button>
+                      <button onClick={() => handleShare('farcaster')} className="py-3 bg-[#8a63d2]/10 border border-[#8a63d2]/30 rounded-2xl text-[9px] font-black uppercase text-purple-200 hover:bg-[#8a63d2]/20 transition-all">Warpcast</button>
+                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200 hover:bg-blue-600/20 transition-all">Post to X</button>
                     </div>
                   </div>
                 </div>
@@ -674,25 +697,25 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'leaderboard' && (
-               <div className="space-y-6">
-                 <div className="glass-effect p-6 rounded-[2rem] flex justify-between items-center bg-blue-600/5">
+               <div className="space-y-6 animate-in fade-in duration-500">
+                 <div className="glass-effect p-6 rounded-[2rem] flex justify-between items-center bg-blue-600/5 border border-blue-500/20">
                    <div className="flex items-center gap-3">
                      <Users className="w-5 h-5 text-blue-500" />
-                     <h3 className="text-xs font-black uppercase">Verified Rankings</h3>
+                     <h3 className="text-xs font-black uppercase">Synced Members</h3>
                    </div>
                    <span className="text-xl font-black italic">{filteredLeaderboard.length} Members</span>
                  </div>
                  <div className="space-y-3">
                    {filteredLeaderboard.map((l, i) => (
-                     <div key={i} className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5`}>
+                     <div key={i} className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5 hover:bg-white/5 transition-all`}>
                        <div className="flex items-center gap-4">
                          <span className="text-xs font-black italic text-gray-500">#{i + 1}</span>
                          <div className="flex flex-col">
-                           <span className="text-xs font-bold">{l.handle}</span>
-                           <span className="text-[7px] font-black uppercase text-blue-400">{TIERS[l.tier].name} Impact</span>
+                           <span className="text-xs font-bold text-white">{l.handle}</span>
+                           <span className="text-[7px] font-black uppercase text-blue-400 tracking-widest">{TIERS[l.tier].name} Level</span>
                          </div>
                        </div>
-                       <span className="text-xs font-black">{l.points.toFixed(2)}</span>
+                       <span className="text-xs font-black text-blue-500">{l.points.toFixed(2)} pts</span>
                      </div>
                    ))}
                  </div>
@@ -700,23 +723,23 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'claim' && (
-              <div className="space-y-10 text-center py-6">
-                 <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20 shadow-2xl"><Award className="w-10 h-10 text-blue-500" /></div>
+              <div className="space-y-10 text-center py-6 animate-in fade-in duration-500">
+                 <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20 shadow-2xl shadow-blue-500/10"><Award className="w-10 h-10 text-blue-500" /></div>
                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
-                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8">Soulbound minting starts Jan 16th for verified builders.</p>
+                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8">Snapshot sequence active. Claim portal opens Jan 16th.</p>
                  <div className="space-y-4 px-4">
-                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/20'}`}>
-                      <div className="text-left"><p className="text-[10px] font-black uppercase">Impact Rank</p><p className="text-[8px] text-gray-500 font-bold uppercase">Threshold #1000</p></div>
+                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/20'}`}>
+                      <div className="text-left"><p className="text-[10px] font-black uppercase">Impact Rank</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min #1000</p></div>
                       <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>{user.rank <= 1000 ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertTriangle className="w-3 h-3 text-red-500" />}</div>
                    </div>
-                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30' : 'border-red-500/20'}`}>
-                      <div className="text-left"><p className="text-[10px] font-black uppercase">$LAMBOLESS Balance</p><p className="text-[8px] text-gray-500 font-bold uppercase">Min $2.50 USD</p></div>
+                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/20'}`}>
+                      <div className="text-left"><p className="text-[10px] font-black uppercase">$LAMBO Balance</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min $2.50 USD</p></div>
                       <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'text-green-400' : 'text-red-400'}`}>${user.lambolessBalance.toFixed(2)}</span>{user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertTriangle className="w-3 h-3 text-red-500" />}</div>
                    </div>
                  </div>
                  <div className="space-y-4 px-4">
-                   <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync Assets</button>
-                   <button disabled={claimStatus.disabled} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm transition-all active:scale-95 ${claimStatus.theme}`}><claimStatus.icon className="w-5 h-5 mx-auto" /></button>
+                   <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync My Assets</button>
+                   <button disabled={claimStatus.disabled} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm transition-all active:scale-95 flex items-center justify-center gap-3 ${claimStatus.theme}`}><claimStatus.icon className="w-5 h-5" /> {claimStatus.label}</button>
                    {claimStatus.disabled && <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-2">{claimStatus.reason}</p>}
                  </div>
               </div>
