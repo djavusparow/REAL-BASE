@@ -132,16 +132,15 @@ const App: React.FC = () => {
 
     const init = async () => {
       try {
-        // Critical: Frame SDK ready signal
         await sdk.actions.ready();
-        
         const context = await sdk.context;
         if (context?.user) {
           console.log("Farcaster Context Detected:", context.user);
           setFarcasterContextUser(context.user);
-          // Auto-detect Farcaster account for login if no user is saved
+          
           const saved = localStorage.getItem(STORAGE_KEY_USER);
           if (!saved) {
+            // Priority setup: Auto-populate if Farcaster is detected
             setAddress(context.user.custodyAddress || '');
             setHandle(`@${context.user.username}`);
           }
@@ -215,13 +214,12 @@ const App: React.FC = () => {
     setAddress(farcasterContextUser.custodyAddress || '');
     setHandle(`@${farcasterContextUser.username}`);
     setIsSignatureVerified(true);
-    setIsTwitterVerified(true); // Farcaster is a verified social identity
+    setIsTwitterVerified(true); 
+    setShowWalletSelector(false);
   };
 
   const initiateWalletConnection = () => {
-    if (discoveredProviders.length > 1) setShowWalletSelector(true);
-    else if (discoveredProviders.length === 1) handleConnectAndSign(discoveredProviders[0].provider);
-    else alert("No Web3 wallet detected.");
+    setShowWalletSelector(true);
   };
 
   const handleConnectAndSign = async (provider: any) => {
@@ -291,7 +289,7 @@ const App: React.FC = () => {
     setScanProgress(45);
     await sleep(600);
 
-    log("Fetching real-time asset market values...");
+    log("Fetching real-time market values...");
     setScanProgress(60);
     const [pLambo, pNick, pJesse] = await Promise.all([
       tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
@@ -302,17 +300,17 @@ const App: React.FC = () => {
     const usdNick = balNick * pNick;
     const usdJesse = balJesse * pJesse;
     
-    log(`Impact Valuation: Total ~$${(usdLambo + usdNick + usdJesse).toFixed(2)} USD`);
+    log(`Impact Valuation: ~$${(usdLambo + usdNick + usdJesse).toFixed(2)} USD`);
     setScanProgress(75);
     await sleep(600);
 
-    log("Analyzing social footprint and verified contributions...");
+    log("Analyzing social footprint...");
     setScanProgress(85);
     const scanResult = await twitterService.scanPosts(handle);
     setScanProgress(95);
     await sleep(600);
 
-    log("Generating final BASE IMPRESSION profile...");
+    log("Generating final profile...");
     const baseAge = 150 + Math.floor(Math.random() * 50);
     const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - farcasterContextUser.fid) / 1000000) * 800)) : (user?.farcasterAgeDays || 0);
     
@@ -394,66 +392,20 @@ const App: React.FC = () => {
     const now = new Date();
     const isClaimOpen = now >= CLAIM_START;
     
-    if (!user) {
-      return { 
-        disabled: true, 
-        label: 'Locked', 
-        theme: 'bg-gray-800 text-gray-500 cursor-not-allowed', 
-        icon: Lock, 
-        reason: 'Connect your identity to check eligibility.' 
-      };
-    }
+    if (!user) return { disabled: true, label: 'Locked', theme: 'bg-gray-800 text-gray-500', icon: Lock, reason: 'Connect identity first.' };
 
     const isRankEligible = user.rank <= 1000;
     const isAssetEligible = user.lambolessBalance >= MIN_TOKEN_VALUE_USD;
     
-    if (!isClaimOpen) {
-      return {
-        disabled: true,
-        label: 'Awaiting Snapshot',
-        theme: 'bg-blue-900/40 text-blue-400 cursor-not-allowed border border-blue-500/20',
-        icon: Clock,
-        reason: `Claims open on ${CLAIM_START.toLocaleDateString()} at 02:00 UTC.`
-      };
-    }
+    if (!isClaimOpen) return { disabled: true, label: 'Awaiting Snapshot', theme: 'bg-blue-900/40 text-blue-400', icon: Clock, reason: `Claims open ${CLAIM_START.toLocaleDateString()}` };
 
-    if (!isRankEligible && !isAssetEligible) {
-      return {
-        disabled: true,
-        label: 'Ineligible',
-        theme: 'bg-red-900/20 text-red-400 cursor-not-allowed border border-red-500/20',
-        icon: AlertCircle,
-        reason: 'Minimum rank (#1000) and $LAMBOLESS balance ($2.50) not met.'
-      };
-    }
+    if (!isRankEligible && !isAssetEligible) return { disabled: true, label: 'Ineligible', theme: 'bg-red-900/20 text-red-400', icon: AlertCircle, reason: 'Rank and Balance thresholds not met.' };
+    
+    if (!isRankEligible) return { disabled: true, label: 'Rank Too Low', theme: 'bg-orange-900/20 text-orange-400', icon: TrendingUp, reason: 'Rank must be #1000 or better.' };
 
-    if (!isRankEligible) {
-      return {
-        disabled: true,
-        label: 'Rank Too Low',
-        theme: 'bg-orange-900/20 text-orange-400 cursor-not-allowed border border-orange-500/20',
-        icon: TrendingUp,
-        reason: 'Your impact rank must be #1000 or better to qualify for the Soulbound badge.'
-      };
-    }
+    if (!isAssetEligible) return { disabled: true, label: 'Balance Low', theme: 'bg-orange-900/20 text-orange-400', icon: Coins, reason: `$LAMBOLESS balance must exceed $${MIN_TOKEN_VALUE_USD}.` };
 
-    if (!isAssetEligible) {
-      return {
-        disabled: true,
-        label: 'Not enough $LAMBOLESS',
-        theme: 'bg-orange-900/20 text-orange-400 cursor-not-allowed border border-orange-500/20',
-        icon: Coins,
-        reason: `Hold at least $${MIN_TOKEN_VALUE_USD} worth of $LAMBOLESS to verify your contribution.`
-      };
-    }
-
-    return {
-      disabled: false,
-      label: 'Mint Soulbound Impression',
-      theme: 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-[1.02] shadow-lg shadow-blue-500/25 text-white',
-      icon: Award,
-      reason: 'Verified. You are eligible to mint the Season 01 Soulbound NFT.'
-    };
+    return { disabled: false, label: 'Mint Soulbound NFT', theme: 'bg-blue-600 hover:scale-[1.02] shadow-lg shadow-blue-500/25 text-white', icon: Award, reason: 'Eligible for minting.' };
   }, [user]);
 
   const filteredLeaderboard = useMemo(() => {
@@ -474,43 +426,59 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
-      {/* WALLET SELECTOR MODAL */}
+      {/* WALLET SELECTOR MODAL - Connect Menu */}
       {showWalletSelector && (
         <div className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
           <div className="w-full max-w-sm glass-effect rounded-[3rem] p-8 border-blue-500/20 space-y-6 animate-in zoom-in-95 duration-500 shadow-[0_0_80px_-20px_rgba(37,99,235,0.4)]">
             <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3"><Cpu className="w-5 h-5 text-blue-500" /><h3 className="text-xl font-black uppercase italic tracking-tighter">Choose Provider</h3></div>
+              <div className="flex items-center gap-3"><Cpu className="w-5 h-5 text-blue-500" /><h3 className="text-xl font-black uppercase italic tracking-tighter">Identity Source</h3></div>
               <button onClick={() => setShowWalletSelector(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button>
             </div>
+            
             <div className="grid gap-4 max-h-[60vh] overflow-y-auto px-1 py-1">
-              {/* Prioritize Farcaster if available in menu */}
-              {farcasterContextUser && (
+              {/* Priority Option: Farcaster Account */}
+              {farcasterContextUser ? (
                 <div 
                   onClick={handleFarcasterAutoLogin} 
-                  className="glass-effect p-5 rounded-[2rem] flex flex-col gap-4 border border-purple-500/30 bg-purple-900/10 hover:border-purple-500 transition-all cursor-pointer group"
+                  className="glass-effect p-6 rounded-[2rem] flex flex-col gap-4 border border-purple-500/60 bg-purple-950/20 hover:bg-purple-900/40 hover:scale-[1.02] transition-all cursor-pointer group shadow-lg shadow-purple-500/10"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-[#8a63d2] rounded-2xl flex items-center justify-center text-xs font-black shadow-lg shadow-purple-900/20">
-                      <Fingerprint className="w-6 h-6 text-white" />
+                    <div className="w-12 h-12 bg-[#8a63d2] rounded-2xl flex items-center justify-center text-xs font-black shadow-lg shadow-purple-900/40 ring-2 ring-purple-400/30">
+                      <Fingerprint className="w-7 h-7 text-white" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-sm font-black uppercase tracking-tight">Farcaster Account</span>
-                      <span className="text-[8px] text-purple-400 font-bold uppercase tracking-widest">@{farcasterContextUser.username}</span>
+                      <span className="text-sm font-black uppercase tracking-tight text-purple-100">Connect Farcaster</span>
+                      <span className="text-[9px] text-purple-400 font-bold uppercase tracking-widest mt-0.5">@{farcasterContextUser.username} (Detected)</span>
                     </div>
                   </div>
-                  <div className="w-full py-3 bg-[#8a63d2] text-white rounded-xl font-black uppercase italic text-[10px] text-center">Connect This Account</div>
+                  <div className="w-full py-3 bg-[#8a63d2] text-white rounded-xl font-black uppercase italic text-[10px] text-center shadow-lg shadow-purple-500/20">Link Profile Now</div>
+                </div>
+              ) : (
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl text-center">
+                   <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Open in Warpcast to auto-detect Farcaster account</p>
                 </div>
               )}
               
+              <div className="h-[1px] bg-white/5 my-2" />
+              <label className="text-[9px] font-black uppercase tracking-widest text-gray-600 text-center mb-2 block">External Providers</label>
+
               {discoveredProviders.map((dp) => (
-                <div key={dp.info.uuid} className="glass-effect p-5 rounded-[2rem] flex flex-col gap-4 border border-white/5 hover:border-blue-500/30 transition-all group">
+                <div key={dp.info.uuid} className="glass-effect p-5 rounded-[2rem] flex flex-col gap-4 border border-white/10 hover:border-blue-500/30 transition-all group cursor-pointer" onClick={() => handleConnectAndSign(dp.provider)}>
                   <div className="flex items-center gap-4">
-                    {dp.info.icon ? <img src={dp.info.icon} alt={dp.info.name} className="w-12 h-12 rounded-2xl shadow-lg" /> : <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-xs font-black shadow-lg shadow-blue-600/20">{dp.info.name.slice(0, 2).toUpperCase()}</div>}
-                    <div className="flex flex-col"><span className="text-sm font-black uppercase tracking-tight">{dp.info.name}</span><span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">EIP-6963 Compatible</span></div>
+                    {dp.info.icon ? <img src={dp.info.icon} alt={dp.info.name} className="w-10 h-10 rounded-xl shadow-lg" /> : <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-xs font-black shadow-lg shadow-blue-600/20">{dp.info.name.slice(0, 2).toUpperCase()}</div>}
+                    <div className="flex flex-col"><span className="text-xs font-black uppercase tracking-tight">{dp.info.name}</span><span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">EIP-6963 Compatible</span></div>
                   </div>
-                  <button onClick={() => handleConnectAndSign(dp.provider)} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase italic text-[10px] tracking-[0.1em] shadow-lg shadow-blue-600/10 flex items-center justify-center gap-2 group/btn">Connect Wallet<ArrowRight className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" /></button>
+                  <button className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase italic text-[10px] tracking-[0.1em] border border-white/5 transition-all">Select Provider</button>
                 </div>
               ))}
+              
+              {discoveredProviders.length === 0 && (
+                <div className="p-6 bg-red-500/5 border border-red-500/10 rounded-2xl text-center space-y-2">
+                  <AlertCircle className="w-5 h-5 text-red-500 mx-auto" />
+                  <p className="text-[10px] font-black uppercase text-red-200">No Wallets Found</p>
+                  <p className="text-[8px] text-gray-500 font-bold uppercase leading-relaxed">Please ensure you have a browser extension installed (e.g. Coinbase Wallet, MetaMask).</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -518,17 +486,17 @@ const App: React.FC = () => {
 
       {showLogoutConfirm && (
         <div className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
-          <div className="w-full max-w-sm glass-effect p-10 rounded-[4rem] border-red-500/20 text-center space-y-8 animate-in zoom-in-95 duration-300">
+          <div className="w-full max-w-sm glass-effect p-10 rounded-[4rem] border-red-500/20 text-center space-y-8">
             <div className="w-20 h-20 bg-red-600/10 rounded-full flex items-center justify-center mx-auto border border-red-500/30">
               <AlertTriangle className="w-10 h-10 text-red-500" />
             </div>
             <div className="space-y-3">
-              <h2 className="text-2xl font-black uppercase italic tracking-tighter">Disconnect Profile?</h2>
-              <p className="text-[10px] text-gray-500 font-bold uppercase leading-relaxed tracking-widest">Are you sure you want to disconnect? Your session and progress will be reset.</p>
+              <h2 className="text-2xl font-black uppercase italic tracking-tighter">Disconnect?</h2>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Your session and points progress will be cleared.</p>
             </div>
             <div className="flex flex-col gap-3">
-              <button onClick={handleLogout} className="w-full py-5 bg-red-600 hover:bg-red-500 rounded-2xl font-black uppercase italic text-xs tracking-widest transition-all">Disconnect Now</button>
-              <button onClick={() => setShowLogoutConfirm(false)} className="w-full py-5 bg-white/5 hover:bg-white/10 rounded-2xl font-black uppercase text-xs tracking-widest transition-all">Cancel</button>
+              <button onClick={handleLogout} className="w-full py-5 bg-red-600 rounded-2xl font-black uppercase text-xs tracking-widest">Disconnect</button>
+              <button onClick={() => setShowLogoutConfirm(false)} className="w-full py-5 bg-white/5 rounded-2xl font-black uppercase text-xs tracking-widest">Cancel</button>
             </div>
           </div>
         </div>
@@ -548,9 +516,9 @@ const App: React.FC = () => {
             <div className="glass-effect p-8 rounded-[3rem] space-y-6 shadow-[0_0_50px_-20px_rgba(37,99,235,0.4)]">
               <div className="space-y-4">
                 <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Identity Auth Flow</label>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Identity Authentication</label>
                   
-                  {/* PRIORITIZE FARCASTER AUTO-LOGIN */}
+                  {/* Primary Connection Path: Farcaster Priority */}
                   {farcasterContextUser && !isSignatureVerified ? (
                     <button 
                       onClick={handleFarcasterAutoLogin} 
@@ -561,7 +529,7 @@ const App: React.FC = () => {
                           <Fingerprint className="w-5 h-5" />
                         </div>
                         <div className="flex flex-col text-left">
-                          <span className="text-[10px] font-black uppercase tracking-widest leading-none">Continue with Farcaster</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest leading-none">Connect with Farcaster</span>
                           <span className="text-xs font-bold opacity-90 mt-1">@{farcasterContextUser.username}</span>
                         </div>
                       </div>
@@ -598,7 +566,7 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Social Handle</label>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Social Presence</label>
                   <div className="relative group flex gap-2">
                     <div className="relative flex-1">
                       <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 group-focus-within:text-blue-500 transition-colors" />
@@ -686,11 +654,6 @@ const App: React.FC = () => {
                       </div>
                     ))}
                   </div>
-                  <div className="p-3 bg-blue-500/5 rounded-2xl border border-blue-500/10">
-                    <p className="text-[8px] text-blue-200/60 uppercase font-black leading-relaxed">
-                      🔥 Holders of $jesse, $thenickshirley & $LAMBOLESS accumulate extra points every hour based on USD value.
-                    </p>
-                  </div>
                 </div>
 
                 <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 border border-white/5 shadow-2xl">
@@ -698,18 +661,17 @@ const App: React.FC = () => {
                   {analysis && <p className="text-[10px] italic text-blue-200/60 bg-white/5 p-4 rounded-2xl leading-relaxed">"{analysis}"</p>}
                   
                   <div className="flex flex-col gap-3">
-                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic tracking-widest hover:bg-gray-200 transition-colors shadow-lg">{isGenerating ? 'Analyzing...' : 'Refresh Impact snapshot'}</button>
+                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic tracking-widest hover:bg-gray-200 transition-colors shadow-lg">{isGenerating ? 'Analyzing...' : 'Refresh Snapshot'}</button>
                     
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => handleShare('farcaster')} className="py-3 bg-[#8a63d2]/10 border border-[#8a63d2]/30 rounded-2xl text-[9px] font-black uppercase text-purple-200 flex items-center justify-center gap-2 hover:bg-[#8a63d2]/20 transition-all"><Send className="w-3 h-3" /> Warpcast</button>
-                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all active:scale-95"><Twitter className="w-3 h-3" /> Post to X</button>
+                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all active:scale-95"><Twitter className="w-3 h-3" /> Share to X</button>
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* LEADERBOARD & CLAIM TABS REMAIN SAME AS PREVIOUS ROBUST VERSION */}
             {activeTab === 'leaderboard' && (
                <div className="space-y-6 animate-in fade-in duration-500">
                <div className="flex flex-col gap-4">
@@ -717,8 +679,8 @@ const App: React.FC = () => {
                    <div className="flex items-center gap-3">
                      <Users className="w-5 h-5 text-blue-500" />
                      <div>
-                       <h3 className="text-xs font-black uppercase tracking-tighter leading-none">Verified Impressions</h3>
-                       <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest mt-1">Live Synced Members Only</p>
+                       <h3 className="text-xs font-black uppercase tracking-tighter leading-none">Verified Rankings</h3>
+                       <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest mt-1">Live Onchain Data</p>
                      </div>
                    </div>
                    <div className="text-right">
@@ -729,14 +691,14 @@ const App: React.FC = () => {
                  <div className="space-y-3">
                    <div className="relative group">
                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
-                     <input type="text" placeholder="Search verified members..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
+                     <input type="text" placeholder="Search handles..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
                    </div>
                  </div>
                </div>
 
                <div className="space-y-3">
                  {filteredLeaderboard.map((l, i) => (
-                   <div key={i} className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5`}>
+                   <div key={i} className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5 transition-all hover:bg-white/5`}>
                      <div className="flex items-center gap-4">
                        <span className={`text-xs font-black italic text-gray-500`}>#{i + 1}</span>
                        <div className="flex flex-col">
@@ -756,22 +718,22 @@ const App: React.FC = () => {
             {activeTab === 'claim' && (
               <div className="space-y-10 text-center py-6">
                  <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20 shadow-2xl"><Award className="w-10 h-10 text-blue-500" /></div>
-                 <h2 className="text-3xl font-black uppercase italic tracking-tighter">Soulbound Mint</h2>
-                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8">Final snapshot on Jan 16th. Ensure your verified holdings are synced.</p>
+                 <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
+                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8">Snapshots occurring daily. Soulbound mint starts Jan 16th.</p>
                  <div className="space-y-4 px-4">
                    <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/20'}`}>
-                      <div className="text-left"><p className="text-[10px] font-black uppercase">Impact Rank</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min #1000</p></div>
+                      <div className="text-left"><p className="text-[10px] font-black uppercase">Impact Rank</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Threshold #1000</p></div>
                       <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>{user.rank <= 1000 ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertTriangle className="w-3 h-3 text-red-500" />}</div>
                    </div>
                    <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30' : 'border-red-500/20'}`}>
-                      <div className="text-left"><p className="text-[10px] font-black uppercase">$LAMBOLESS Balance</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min $2.50 USD</p></div>
+                      <div className="text-left"><p className="text-[10px] font-black uppercase">$LAMBOLESS Balance</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Threshold $2.50 USD</p></div>
                       <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'text-green-400' : 'text-red-400'}`}>${user.lambolessBalance.toFixed(2)}</span>{user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertTriangle className="w-3 h-3 text-red-500" />}</div>
                    </div>
                  </div>
                  <div className="space-y-4 px-4">
-                   <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync My Assets</button>
+                   <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync Assets</button>
                    <button disabled={claimStatus.disabled} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 ${claimStatus.theme}`}><claimStatus.icon className="w-5 h-5" />{claimStatus.label}</button>
-                   {claimStatus.disabled && <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-2">{claimStatus.reason}</p>}
+                   {claimStatus.disabled && <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-2 px-6">{claimStatus.reason}</p>}
                  </div>
               </div>
             )}
