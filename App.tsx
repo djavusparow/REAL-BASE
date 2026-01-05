@@ -34,11 +34,13 @@ import {
   AlertTriangle,
   Filter,
   Copy,
-  ShoppingCart
+  ShoppingCart,
+  ChevronLeft,
+  ChevronRightSquare
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
-import { UserStats, RankTier } from './types.ts';
+import { UserStats, RankTier, LeaderboardEntry } from './types.ts';
 import { 
   TIERS, 
   MOCKED_LEADERBOARD,
@@ -89,6 +91,27 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   );
 };
 
+// Helper to generate 1000 mock users for the leaderboard
+const generateFullLeaderboard = (existing: LeaderboardEntry[]): LeaderboardEntry[] => {
+  const fullList = [...existing];
+  const handles = ['alpha_builder', 'base_maxi', 'onchain_dev', 'lambo_hunter', 'jesse_fan', 'brian_p', 'crypto_coder', 'web3_wizard', 'base_god_jr', 'warp_native'];
+  
+  for (let i = fullList.length + 1; i <= 1000; i++) {
+    const handle = `@${handles[Math.floor(Math.random() * handles.length)]}_${i}`;
+    const points = parseFloat((1200 - (i * 1.1) + Math.random() * 5).toFixed(2));
+    const tier = getTierFromRank(i);
+    fullList.push({
+      rank: i,
+      handle,
+      points,
+      tier,
+      accountAgeDays: Math.floor(Math.random() * 1000) + 100,
+      baseAppAgeDays: Math.floor(Math.random() * 300) + 10
+    });
+  }
+  return fullList;
+};
+
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [user, setUser] = useState<UserStats | null>(null);
@@ -98,26 +121,28 @@ const App: React.FC = () => {
   const [handle, setHandle] = useState('');
   const [discoveredProviders, setDiscoveredProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [showWalletSelector, setShowWalletSelector] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
+  
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [isSignatureVerified, setIsSignatureVerified] = useState(false);
-
-  const [isTwitterConnecting, setIsTwitterConnecting] = useState(false);
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
-  const [twitterChallenge, setTwitterChallenge] = useState('');
-  const [showTwitterVerifyModal, setShowTwitterVerifyModal] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'leaderboard' | 'claim'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
-  const [isSyncingFarcaster, setIsSyncingFarcaster] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [badgeImage, setBadgeImage] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
+
+  // Leaderboard states
+  const [lbPage, setLbPage] = useState(1);
+  const [lbSortOrder, setLbSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [lbSearch, setLbSearch] = useState('');
+  const [lbTierFilter, setLbTierFilter] = useState<RankTier | 'ALL'>('ALL');
+
+  const fullMockLeaderboard = useMemo(() => generateFullLeaderboard(MOCKED_LEADERBOARD), []);
 
   const getFarcasterAddress = (ctx: any) => {
     if (!ctx) return null;
@@ -145,7 +170,6 @@ const App: React.FC = () => {
         const context = await sdk.context;
         if (context?.user) {
           setFarcasterContextUser(context.user);
-          
           const saved = localStorage.getItem(STORAGE_KEY_USER);
           if (!saved) {
             const detectedAddr = getFarcasterAddress(context.user);
@@ -153,7 +177,6 @@ const App: React.FC = () => {
               setAddress(detectedAddr);
               setIsSignatureVerified(true);
             }
-            
             const detectedHandle = context.user.username ? `@${context.user.username}` : '';
             if (detectedHandle) {
               setHandle(detectedHandle);
@@ -161,9 +184,7 @@ const App: React.FC = () => {
             }
           }
         }
-      } catch (e) {
-        console.warn("Farcaster SDK init failed:", e);
-      } finally {
+      } catch (e) { console.warn(e); } finally {
         loadUserDataFromStorage();
         setIsReady(true);
       }
@@ -184,11 +205,7 @@ const App: React.FC = () => {
             prev.twitterAgeDays || 0,
             prev.validTweetsCount || 0,
             prev.farcasterAgeDays || 0,
-            { 
-              lambo: prev.lambolessBalance || 0, 
-              nick: prev.nickBalance || 0, 
-              jesse: prev.jesseBalance || 0 
-            }
+            { lambo: prev.lambolessBalance || 0, nick: prev.nickBalance || 0, jesse: prev.jesseBalance || 0 }
           );
           if (total !== prev.points) return { ...prev, points: total, pointsBreakdown: breakdown };
           return prev;
@@ -199,11 +216,8 @@ const App: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    if (user) {
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(STORAGE_KEY_USER);
-    }
+    if (user) localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+    else localStorage.removeItem(STORAGE_KEY_USER);
   }, [user]);
 
   const loadUserDataFromStorage = () => {
@@ -212,32 +226,19 @@ const App: React.FC = () => {
       try {
         const data = JSON.parse(saved) as UserStats;
         setUser(data);
-        if (data.twitterHandle) {
-          setHandle(data.twitterHandle);
-          setIsTwitterVerified(true);
-        }
-        if (data.address) {
-          setAddress(data.address);
-          setIsSignatureVerified(true);
-        }
-      } catch (e) { console.error("Failed to load user data:", e); }
+        if (data.twitterHandle) { setHandle(data.twitterHandle); setIsTwitterVerified(true); }
+        if (data.address) { setAddress(data.address); setIsSignatureVerified(true); }
+      } catch (e) { console.error(e); }
     }
   };
 
   const connectWallet = async () => {
     const fcAddr = getFarcasterAddress(farcasterContextUser);
-    const hasDetectedWallets = discoveredProviders.length > 0;
-    if (!hasDetectedWallets && !fcAddr) {
-      alert("No wallets detected.");
-      return;
-    }
-    const totalOptions = (fcAddr ? 1 : 0) + discoveredProviders.length;
-    if (totalOptions === 1) {
+    if (!discoveredProviders.length && !fcAddr) { alert("No wallets detected."); return; }
+    if ((fcAddr ? 1 : 0) + discoveredProviders.length === 1) {
       if (fcAddr) handleFarcasterAutoLogin();
       else handleConnectAndSign(discoveredProviders[0].provider);
-    } else {
-      setShowWalletSelector(true);
-    }
+    } else { setShowWalletSelector(true); }
   };
 
   const handleFarcasterAutoLogin = () => {
@@ -273,40 +274,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSyncFarcaster = async () => {
-    if (!user) return;
-    setIsSyncingFarcaster(true);
-    try {
-      const context = await sdk.context;
-      if (context?.user) {
-        const fid = context.user.fid;
-        const username = context.user.username;
-        const ageDays = Math.max(1, Math.floor(((1000000 - fid) / 1000000) * 1200));
-        const createdAt = new Date(Date.now() - (ageDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
-
-        setUser(prev => {
-          if (!prev) return null;
-          const { total, breakdown } = calculateDetailedPoints(
-            prev.baseAppAgeDays || 0,
-            prev.twitterAgeDays || 0,
-            prev.validTweetsCount || 0,
-            ageDays,
-            { lambo: prev.lambolessBalance || 0, nick: prev.nickBalance || 0, jesse: prev.jesseBalance || 0 }
-          );
-          return {
-            ...prev,
-            farcasterId: fid,
-            farcasterUsername: username,
-            farcasterAgeDays: ageDays,
-            farcasterCreatedAt: createdAt,
-            points: total,
-            pointsBreakdown: breakdown
-          };
-        });
-      }
-    } catch (e) { console.error(e); } finally { setIsSyncingFarcaster(false); }
-  };
-
   const handleScan = async () => {
     const currentAddress = address || getFarcasterAddress(farcasterContextUser);
     const currentHandle = handle || (farcasterContextUser?.username ? `@${farcasterContextUser.username}` : '');
@@ -321,7 +288,7 @@ const App: React.FC = () => {
     try {
       log("Analyzing footprint...");
       setScanProgress(10);
-      await sleep(400);
+      await sleep(600);
 
       log("Checking token balances on Base...");
       const [amtLambo, amtNick, amtJesse] = await Promise.all([
@@ -329,7 +296,7 @@ const App: React.FC = () => {
         tokenService.getBalance(currentAddress, NICK_CONTRACT),
         tokenService.getBalance(currentAddress, JESSE_CONTRACT)
       ]);
-      setScanProgress(50);
+      setScanProgress(30);
       
       log("Syncing market values...");
       const [pLambo, pNick, pJesse] = await Promise.all([
@@ -341,44 +308,35 @@ const App: React.FC = () => {
       const usdLambo = amtLambo * pLambo;
       const usdNick = amtNick * pNick;
       const usdJesse = amtJesse * pJesse;
-      setScanProgress(75);
+      setScanProgress(50);
 
-      log("Gathering social impact data...");
+      log("Authenticating with Twitter...");
+      await sleep(800);
+      setScanProgress(65);
+
+      log("Verifying your tweets...");
       const scanResult = await twitterService.scanPosts(currentHandle);
+      setScanProgress(85);
+      
+      log("Gathering final social data...");
+      await sleep(400);
       
       const baseAge = 150 + Math.floor(Math.random() * 50);
       const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - (farcasterContextUser.fid || 1)) / 1000000) * 800)) : 0;
       
       const { total, breakdown } = calculateDetailedPoints(
-        baseAge, 
-        scanResult.accountAgeDays, 
-        scanResult.cappedPoints, 
-        fidAge, 
+        baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fidAge, 
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
       const rank = total > 1000 ? Math.floor(Math.random() * 5) + 1 : Math.floor(Math.random() * 950) + 25;
       
       setUser({ 
-        address: currentAddress, 
-        twitterHandle: currentHandle, 
-        baseAppAgeDays: baseAge, 
-        twitterAgeDays: scanResult.accountAgeDays, 
-        validTweetsCount: scanResult.cappedPoints, 
-        lambolessBalance: usdLambo, 
-        nickBalance: usdNick, 
-        jesseBalance: usdJesse,
-        lambolessAmount: amtLambo,
-        nickAmount: amtNick,
-        jesseAmount: amtJesse,
-        points: total, 
-        pointsBreakdown: breakdown,
-        rank, 
-        trustScore: scanResult.trustScore, 
-        recentContributions: scanResult.foundTweets,
-        farcasterId: farcasterContextUser?.fid,
-        farcasterUsername: farcasterContextUser?.username,
-        farcasterAgeDays: fidAge,
+        address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
+        validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
+        lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
+        rank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
+        farcasterId: farcasterContextUser?.fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
         farcasterCreatedAt: farcasterContextUser?.fid ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
       });
 
@@ -402,22 +360,12 @@ const App: React.FC = () => {
         tokenService.getTokenPrice(JESSE_CONTRACT)
       ]);
       const { total, breakdown } = calculateDetailedPoints(
-        user.baseAppAgeDays, 
-        user.twitterAgeDays, 
-        user.validTweetsCount, 
-        user.farcasterAgeDays, 
+        user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterAgeDays, 
         { lambo: amtLambo * pLambo, nick: amtNick * pNick, jesse: amtJesse * pJesse }
       );
       setUser({ 
-        ...user, 
-        lambolessBalance: amtLambo * pLambo, 
-        nickBalance: amtNick * pNick, 
-        jesseBalance: amtJesse * pJesse,
-        lambolessAmount: amtLambo,
-        nickAmount: amtNick,
-        jesseAmount: amtJesse,
-        points: total,
-        pointsBreakdown: breakdown
+        ...user, lambolessBalance: amtLambo * pLambo, nickBalance: amtNick * pNick, jesseBalance: amtJesse * pJesse,
+        lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown
       });
     } catch (e) { console.error(e); } finally { setIsRefreshingAssets(false); }
   };
@@ -451,21 +399,46 @@ const App: React.FC = () => {
   };
 
   const handleBuyToken = (tokenAddress: string) => {
-    // Direct user to Uniswap on Base for the specified token
     const uniswapUrl = `https://app.uniswap.org/explore/tokens/base/${tokenAddress}`;
     sdk.actions.openUrl(uniswapUrl);
   };
 
-  const filteredLeaderboard = useMemo(() => {
-    let list = [...MOCKED_LEADERBOARD];
+  // --- Advanced Leaderboard Logic ---
+  const filteredAndSortedLeaderboard = useMemo(() => {
+    let list = [...fullMockLeaderboard];
+    
+    // Integrate current user if exists
     if (user && user.points > 0) {
       const hStr = user.twitterHandle || `@${user.farcasterUsername}`;
       const idx = list.findIndex(l => l.handle === hStr);
       if (idx !== -1) list[idx] = { ...list[idx], points: user.points, rank: user.rank };
       else list.push({ rank: user.rank, handle: hStr, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
     }
-    return list.sort((a, b) => b.points - a.points);
-  }, [user]);
+
+    // Filter by search
+    if (lbSearch) {
+      list = list.filter(l => l.handle.toLowerCase().includes(lbSearch.toLowerCase()));
+    }
+
+    // Filter by tier
+    if (lbTierFilter !== 'ALL') {
+      list = list.filter(l => l.tier === lbTierFilter);
+    }
+
+    // Sort
+    list.sort((a, b) => lbSortOrder === 'desc' ? b.points - a.points : a.points - b.points);
+
+    return list;
+  }, [user, fullMockLeaderboard, lbSearch, lbTierFilter, lbSortOrder]);
+
+  const lbTotalPages = Math.ceil(filteredAndSortedLeaderboard.length / 10);
+  const currentLbPageData = useMemo(() => {
+    const start = (lbPage - 1) * 10;
+    return filteredAndSortedLeaderboard.slice(start, start + 10);
+  }, [filteredAndSortedLeaderboard, lbPage]);
+
+  // Reset page when search or filters change
+  useEffect(() => { setLbPage(1); }, [lbSearch, lbTierFilter, lbSortOrder]);
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
@@ -566,7 +539,6 @@ const App: React.FC = () => {
                   <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">Social Points</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.pointsBreakdown?.social.toFixed(2)}</div></div>
                 </div>
 
-                {/* Holding Rewards Section with Contract Addresses and Buy Button */}
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
                    <div className="flex items-center justify-between">
                      <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Holding Rewards (Since Jan 5)</h3></div>
@@ -616,16 +588,92 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'leaderboard' && (
-               <div className="space-y-4">
-                 {filteredLeaderboard.slice(0, 50).map((l, i) => (
-                   <div key={i} className="p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5">
-                     <div className="flex items-center gap-4">
-                       <span className="text-xs font-black italic text-gray-500">#{i + 1}</span>
-                       <div className="flex flex-col"><span className="text-xs font-bold">{l.handle}</span><span className="text-[7px] font-black uppercase text-blue-400">{TIERS[l.tier].name}</span></div>
-                     </div>
-                     <span className="text-xs font-black text-blue-500">{l.points.toFixed(2)} pts</span>
+               <div className="space-y-6 pb-12">
+                 {/* Leaderboard Controls */}
+                 <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 space-y-4">
+                   <div className="relative">
+                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                     <input 
+                       value={lbSearch} 
+                       onChange={e => setLbSearch(e.target.value)} 
+                       placeholder="Search handle..." 
+                       className="w-full bg-black/40 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500/50"
+                     />
                    </div>
-                 ))}
+                   
+                   <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                     {(['ALL', RankTier.PLATINUM, RankTier.GOLD, RankTier.SILVER, RankTier.BRONZE] as const).map(t => (
+                       <button 
+                        key={t} 
+                        onClick={() => setLbTierFilter(t)} 
+                        className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase border transition-all whitespace-nowrap ${lbTierFilter === t ? 'bg-blue-600 border-blue-400' : 'bg-white/5 border-white/10 text-gray-500'}`}
+                       >
+                         {t === 'ALL' ? 'Everyone' : TIERS[t].name}
+                       </button>
+                     ))}
+                   </div>
+
+                   <div className="flex justify-between items-center">
+                     <button 
+                        onClick={() => setLbSortOrder(lbSortOrder === 'desc' ? 'asc' : 'desc')} 
+                        className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl border border-white/10 text-[9px] font-black uppercase"
+                     >
+                       <ArrowUpDown className="w-3 h-3 text-blue-500" />
+                       Points {lbSortOrder === 'desc' ? 'High → Low' : 'Low → High'}
+                     </button>
+                     <span className="text-[8px] font-black text-gray-600 uppercase">{filteredAndSortedLeaderboard.length} BUILDERS</span>
+                   </div>
+                 </div>
+
+                 {/* Leaderboard Rows */}
+                 <div className="space-y-3">
+                   {currentLbPageData.length > 0 ? currentLbPageData.map((l, i) => (
+                     <div key={l.handle} className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border border-white/5 ${user && (user.twitterHandle === l.handle || `@${user.farcasterUsername}` === l.handle) ? 'border-blue-500/40 bg-blue-600/5' : ''}`}>
+                       <div className="flex items-center gap-4">
+                         <span className="text-[10px] font-black italic text-gray-500 w-8">#{l.rank}</span>
+                         <div className="flex flex-col">
+                           <span className="text-xs font-bold truncate max-w-[120px]">{l.handle}</span>
+                           <span className={`text-[7px] font-black uppercase ${TIERS[l.tier].color.includes('from-indigo') ? 'text-purple-400' : TIERS[l.tier].color.includes('yellow') ? 'text-yellow-500' : TIERS[l.tier].color.includes('gray') ? 'text-gray-400' : 'text-purple-500'}`}>
+                             {TIERS[l.tier].name}
+                           </span>
+                         </div>
+                       </div>
+                       <div className="flex flex-col items-end">
+                         <span className="text-[11px] font-black text-blue-500">{l.points.toFixed(2)}</span>
+                         <span className="text-[7px] font-black text-gray-600 uppercase">IMPRESSION</span>
+                       </div>
+                     </div>
+                   )) : (
+                     <div className="py-20 text-center glass-effect rounded-[3rem] border-white/5">
+                        <Filter className="w-12 h-12 text-gray-800 mx-auto mb-4" />
+                        <p className="text-[10px] font-black uppercase text-gray-600">No builders found matching criteria</p>
+                     </div>
+                   )}
+                 </div>
+
+                 {/* Pagination */}
+                 {lbTotalPages > 1 && (
+                   <div className="flex items-center justify-center gap-6 pt-4">
+                     <button 
+                        disabled={lbPage === 1} 
+                        onClick={() => setLbPage(lbPage - 1)} 
+                        className={`p-3 rounded-2xl border transition-all ${lbPage === 1 ? 'border-white/5 text-gray-800' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                     >
+                       <ChevronLeft className="w-5 h-5" />
+                     </button>
+                     <div className="flex flex-col items-center">
+                       <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">PAGE</span>
+                       <span className="text-xl font-black italic">{lbPage} <span className="text-gray-700 font-normal">/ {lbTotalPages}</span></span>
+                     </div>
+                     <button 
+                        disabled={lbPage === lbTotalPages} 
+                        onClick={() => setLbPage(lbPage + 1)} 
+                        className={`p-3 rounded-2xl border transition-all ${lbPage === lbTotalPages ? 'border-white/5 text-gray-800' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
+                     >
+                       <ChevronRight className="w-5 h-5" />
+                     </button>
+                   </div>
+                 )}
                </div>
             )}
 
