@@ -83,12 +83,14 @@ export const TIERS: Record<RankTier, BadgeConfig> = {
 };
 
 /**
- * GLOBAL LEADERBOARD (MOCK DATA)
+ * VERIFIED SYNCED MEMBERS (Simulated participants who already checked)
  */
 export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
-  { rank: 1, handle: "@jessepollak", points: 98.5, tier: RankTier.PLATINUM, accountAgeDays: 4500, baseAppAgeDays: 800 },
-  { rank: 2, handle: "@brian_armstrong", points: 97.2, tier: RankTier.PLATINUM, accountAgeDays: 5200, baseAppAgeDays: 900 },
-  { rank: 3, handle: "@basegod", points: 95.8, tier: RankTier.PLATINUM, accountAgeDays: 200, baseAppAgeDays: 150 },
-  { rank: 4, handle: "@lambofarmer", points: 94.1, tier: RankTier.PLATINUM, accountAgeDays: 1200, baseAppAgeDays: 400 },
-  { rank: 5, handle: "@warpcast_king", points: 93.0, tier: RankTier.PLATINUM, accountAgeDays: 800, baseAppAgeDays: 200 },
+  { rank: 1, handle: "@jessepollak", points: 1540.25, tier: RankTier.PLATINUM, accountAgeDays: 4500, baseAppAgeDays: 800 },
+  { rank: 2, handle: "@brian_armstrong", points: 1422.80, tier: RankTier.PLATINUM, accountAgeDays: 5200, baseAppAgeDays: 900 },
+  { rank: 3, handle: "@basegod", points: 1105.12, tier: RankTier.PLATINUM, accountAgeDays: 200, baseAppAgeDays: 150 },
+  { rank: 4, handle: "@lambofarmer", points: 980.45, tier: RankTier.PLATINUM, accountAgeDays: 1200, baseAppAgeDays: 400 },
+  { rank: 5, handle: "@warpcast_king", points: 855.90, tier: RankTier.PLATINUM, accountAgeDays: 800, baseAppAgeDays: 200 },
+  { rank: 6, handle: "@onchainsummer", points: 720.15, tier: RankTier.GOLD, accountAgeDays: 365, baseAppAgeDays: 180 },
+  { rank: 7, handle: "@basebuilder", points: 645.30, tier: RankTier.GOLD, accountAgeDays: 500, baseAppAgeDays: 220 },
 ];

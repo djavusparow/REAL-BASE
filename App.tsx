@@ -28,7 +28,8 @@ import {
   Coins,
   Cpu,
   Binary,
-  Send
+  Send,
+  Users
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -443,13 +444,22 @@ const App: React.FC = () => {
   }, [user]);
 
   const filteredLeaderboard = useMemo(() => {
+    // Hanya tampilkan yang sudah "verified" atau member simulasi yang dianggap sudah login
     let list = [...MOCKED_LEADERBOARD];
-    if (user && user.twitterHandle) {
-      if (!list.some(l => l.handle.toLowerCase() === user.twitterHandle.toLowerCase())) {
+    
+    // Jika user saat ini sudah scan, masukkan ke list
+    if (user && user.twitterHandle && user.points > 0) {
+      const existingIdx = list.findIndex(l => l.handle.toLowerCase() === user.twitterHandle.toLowerCase());
+      if (existingIdx !== -1) {
+        list[existingIdx] = { ...list[existingIdx], points: user.points, rank: user.rank };
+      } else {
         list.push({ rank: user.rank, handle: user.twitterHandle, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
       }
     }
-    return list.filter(l => l.handle.toLowerCase().includes(leaderboardSearch.toLowerCase())).sort((a, b) => leaderboardSort === 'desc' ? b.points - a.points : a.points - b.points);
+
+    return list
+      .filter(l => l.handle.toLowerCase().includes(leaderboardSearch.toLowerCase()))
+      .sort((a, b) => leaderboardSort === 'desc' ? b.points - a.points : a.points - b.points);
   }, [leaderboardSearch, leaderboardSort, user]);
 
   return (
@@ -563,7 +573,7 @@ const App: React.FC = () => {
             {activeTab === 'dashboard' && (
               <div className="space-y-8">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><TrendingUp className="w-8 h-8 text-blue-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points}</div></div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><TrendingUp className="w-8 h-8 text-blue-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(3)}</div></div>
                   <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><ShieldCheck className="w-8 h-8 text-purple-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Trust Index</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div></div>
                 </div>
 
@@ -610,23 +620,59 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'leaderboard' && (
-              <div className="space-y-6">
-                <div className="flex flex-col gap-3">
+              <div className="space-y-6 animate-in fade-in duration-500">
+                <div className="flex flex-col gap-4">
+                  <div className="glass-effect p-6 rounded-[2rem] border-blue-500/20 flex items-center justify-between bg-blue-600/5">
+                    <div className="flex items-center gap-3">
+                      <Users className="w-5 h-5 text-blue-500" />
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-tighter leading-none">Verified Impressions</h3>
+                        <p className="text-[8px] font-bold text-gray-500 uppercase tracking-widest mt-1">Live Synced Members Only</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[8px] font-black uppercase text-blue-400 block tracking-widest">Total Synced</span>
+                      <span className="text-xl font-black italic">{filteredLeaderboard.length} Members</span>
+                    </div>
+                  </div>
+
                   <div className="relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
-                    <input type="text" placeholder="Search handles..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
+                    <input type="text" placeholder="Search verified members..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
                   </div>
                   <div className="flex justify-between items-center px-2">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Showing {filteredLeaderboard.length} entries</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Ranked by contribution</span>
                     <button onClick={() => setLeaderboardSort(prev => prev === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Points: {leaderboardSort === 'desc' ? 'High to Low' : 'Low to High'}<ArrowUpDown className="w-3 h-3 text-blue-500" /></button>
                   </div>
                 </div>
-                <div className="space-y-3">{filteredLeaderboard.length > 0 ? filteredLeaderboard.map((l, i) => (
-                  <div key={i} className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center transition-all animate-in fade-in slide-in-from-bottom-2 duration-300 ${l.handle === user?.twitterHandle ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(37,99,235,0.1)]' : 'border-white/5 hover:bg-white/5'}`}>
-                    <div className="flex items-center gap-4"><span className={`text-xs font-black italic ${l.rank <= 5 ? 'text-blue-500' : 'text-gray-500'}`}>#{l.rank}</span><div className="flex flex-col"><span className="text-xs font-bold">{l.handle}</span><span className="text-[7px] text-gray-500 font-black uppercase tracking-widest">{getTierFromRank(l.rank)} Contributor</span></div></div>
-                    <div className="text-right"><div className="text-xs font-black">{l.points}</div><span className="text-[8px] text-gray-500 uppercase font-bold tracking-widest">Points</span></div>
-                  </div>
-                )) : <div className="py-20 text-center glass-effect rounded-[2rem] border-white/5"><Search className="w-8 h-8 text-gray-700 mx-auto mb-3" /><p className="text-xs font-black uppercase text-gray-600 italic">No matches found</p></div>}</div>
+
+                <div className="space-y-3">
+                  {filteredLeaderboard.length > 0 ? filteredLeaderboard.map((l, i) => (
+                    <div key={i} className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center transition-all animate-in fade-in slide-in-from-bottom-2 duration-300 ${l.handle.toLowerCase() === user?.twitterHandle.toLowerCase() ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(37,99,235,0.1)]' : 'border-white/5 hover:bg-white/5'}`}>
+                      <div className="flex items-center gap-4">
+                        <span className={`text-xs font-black italic ${l.rank <= 5 ? 'text-blue-500' : 'text-gray-500'}`}>#{i + 1}</span>
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold">{l.handle}</span>
+                            <div className="flex items-center gap-1 bg-green-500/10 border border-green-500/30 px-1.5 py-0.5 rounded text-[6px] font-black text-green-400 uppercase tracking-tighter">
+                              <CheckCircle2 className="w-1.5 h-1.5" /> Synced
+                            </div>
+                          </div>
+                          <span className="text-[7px] text-gray-500 font-black uppercase tracking-widest">{l.tier} Impact</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-black">{typeof l.points === 'number' ? l.points.toFixed(2) : l.points}</div>
+                        <span className="text-[8px] text-gray-500 uppercase font-bold tracking-widest">Points</span>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="py-20 text-center glass-effect rounded-[2rem] border-white/5">
+                      <Search className="w-8 h-8 text-gray-700 mx-auto mb-3" />
+                      <p className="text-xs font-black uppercase text-gray-600 italic">No verified members found</p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
