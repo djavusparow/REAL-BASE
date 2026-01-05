@@ -1,4 +1,3 @@
-
 import { TWITTER_CONFIG, SNAPSHOT_START, SNAPSHOT_END } from '../constants.ts';
 import { calculateAccountAgeDays } from '../utils/calculations.ts';
 
@@ -21,6 +20,38 @@ export interface ScanResult {
 export class TwitterService {
   private activeBearerToken: string | undefined = TWITTER_CONFIG.bearerToken;
 
+  constructor() {
+    this.verifyAndInitialize();
+  }
+
+  /**
+   * Internal mechanism to verify Twitter API credentials during service startup.
+   */
+  private async verifyAndInitialize() {
+    console.debug("[TwitterService] Initializing with configuration:", {
+      hasApiKey: !!TWITTER_CONFIG.apiKey,
+      hasApiSecret: !!TWITTER_CONFIG.apiSecret,
+      hasStaticBearer: !!TWITTER_CONFIG.bearerToken
+    });
+
+    if (TWITTER_CONFIG.apiKey && TWITTER_CONFIG.apiSecret) {
+      try {
+        const token = await this.refreshBearerToken();
+        if (token) {
+          console.log("[TwitterService] API Credentials verified successfully. Bearer token is active.");
+        } else {
+          console.error("[TwitterService] Credential verification failed: API Key/Secret accepted but token exchange returned null.");
+        }
+      } catch (error) {
+        console.error("[TwitterService] Critical error during API credential verification:", error);
+      }
+    } else if (!this.activeBearerToken) {
+      console.warn("[TwitterService] No valid Twitter API credentials (API_KEY/SECRET or BEARER_TOKEN) found in environment. Defaulting to simulation mode.");
+    } else {
+      console.log("[TwitterService] Initialized using static Bearer Token from environment.");
+    }
+  }
+
   /**
    * Exchanges API Key and Secret for an OAuth2 Bearer Token.
    */
@@ -38,13 +69,18 @@ export class TwitterService {
         body: 'grant_type=client_credentials',
       });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Twitter OAuth2 Error: ${errorData.errors?.[0]?.message || response.statusText}`);
+      }
+
       const data = await response.json();
       if (data.access_token) {
         this.activeBearerToken = data.access_token;
         return data.access_token;
       }
     } catch (error) {
-      console.error("Failed to exchange Twitter credentials for Bearer Token:", error);
+      console.error("[TwitterService] Failed to exchange Twitter credentials for Bearer Token:", error);
     }
     return undefined;
   }
