@@ -257,19 +257,22 @@ const App: React.FC = () => {
     await sleep(800);
 
     // Step 2: Fetch Balances
-    log("Querying Base Mainnet for $LAMBOLESS, $thenickshirley, $jesse balances...");
+    log("Reading $LAMBOLESS & $NICK balance on Base...");
     setScanProgress(15);
-    const [balLambo, balNick, balJesse] = await Promise.all([
+    const [balLambo, balNick] = await Promise.all([
       tokenService.getBalance(address, LAMBOLESS_CONTRACT),
-      tokenService.getBalance(address, NICK_CONTRACT),
-      tokenService.getBalance(address, JESSE_CONTRACT)
+      tokenService.getBalance(address, NICK_CONTRACT)
     ]);
+    
+    log("Reading $JESSE (0x50f8...) balance on Base...");
+    const balJesse = await tokenService.getBalance(address, JESSE_CONTRACT);
+    
     log("Retrieved balances: " + balLambo.toFixed(2) + " $LAMBO, " + balNick.toFixed(2) + " $NICK, " + balJesse.toFixed(2) + " $JESSE");
     setScanProgress(30);
     await sleep(600);
 
     // Step 3: DeFi API Price Fetching
-    log("Fetching real-time price feeds via DexScreener DeFi Protocol...");
+    log("Fetching real-time price feeds via DexScreener...");
     setScanProgress(40);
     const [pLambo, pNick, pJesse] = await Promise.all([
       tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
@@ -279,7 +282,8 @@ const App: React.FC = () => {
     const usdLambo = balLambo * pLambo;
     const usdNick = balNick * pNick;
     const usdJesse = balJesse * pJesse;
-    log("Live market valuation: $LAMBO: $" + pLambo.toFixed(6) + " | $NICK: $" + pNick.toFixed(6));
+    
+    log(`Valuation: $LAMBO: $${pLambo.toFixed(6)} | $NICK: $${pNick.toFixed(6)} | $JESSE: $${pJesse.toFixed(6)}`);
     setScanProgress(55);
     await sleep(600);
 

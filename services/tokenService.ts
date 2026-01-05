@@ -17,9 +17,13 @@ export class TokenService {
 
   async getBalance(walletAddress: string, tokenContractAddress: string): Promise<number> {
     try {
-      const contract = new ethers.Contract(tokenContractAddress, MINIMAL_ERC20_ABI, this.provider);
+      // Normalize addresses
+      const normalizedWallet = ethers.getAddress(walletAddress);
+      const normalizedToken = ethers.getAddress(tokenContractAddress);
+      
+      const contract = new ethers.Contract(normalizedToken, MINIMAL_ERC20_ABI, this.provider);
       const [balance, decimals] = await Promise.all([
-        contract.balanceOf(walletAddress),
+        contract.balanceOf(normalizedWallet),
         contract.decimals()
       ]);
       
@@ -35,20 +39,30 @@ export class TokenService {
    */
   async getTokenPrice(contractAddress: string): Promise<number> {
     try {
-      const response = await fetch(`${DEXSCREENER_API}${contractAddress}`);
+      const normalizedAddress = contractAddress.toLowerCase();
+      const response = await fetch(`${DEXSCREENER_API}${normalizedAddress}`);
       const data = await response.json();
       
-      // DexScreener returns an array of pairs. We look for the most liquid one on Base.
       if (data.pairs && data.pairs.length > 0) {
-        // Filter for Base network and sort by liquidity if multiple pairs exist
+        // Find the best pair on Base network
         const basePairs = data.pairs.filter((p: any) => p.chainId === 'base');
-        const bestPair = basePairs.sort((a: any, b: any) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
         
-        if (bestPair && bestPair.priceUsd) {
-          return parseFloat(bestPair.priceUsd);
+        if (basePairs.length > 0) {
+          // Sort by liquidity to get the most accurate price
+          const bestPair = basePairs.sort((a: any, b: any) => 
+            (parseFloat(b.liquidity?.usd || "0")) - (parseFloat(a.liquidity?.usd || "0"))
+          )[0];
+          
+          if (bestPair && bestPair.priceUsd) {
+            const price = parseFloat(bestPair.priceUsd);
+            console.log(`Price for ${contractAddress}: $${price}`);
+            return price;
+          }
         }
       }
-      return 0.0001; // Fallback
+      
+      console.warn(`No active Base pairs found for ${contractAddress}. Using safety fallback.`);
+      return 0.0001; 
     } catch (error) {
       console.error(`DexScreener Price Fetch Error for ${contractAddress}:`, error);
       return 0.0001;
