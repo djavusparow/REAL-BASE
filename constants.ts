@@ -1,10 +1,7 @@
-
 import { RankTier, BadgeConfig, LeaderboardEntry } from './types.ts';
 
 /**
  * CONFIGURATION SECTION
- * These values are pulled from the environment. 
- * Ensure TWITTER_API_KEY, TWITTER_API_SECRET, and TWITTER_BEARER_TOKEN are set.
  */
 export const TWITTER_CONFIG = {
   apiKey: process.env.TWITTER_API_KEY,
@@ -22,17 +19,23 @@ export const JESSE_CONTRACT = "0x50f88fe97f72cd3e75b9eb4f747f59bceba80d59";
 export const MIN_TOKEN_VALUE_USD = 2.5;
 
 /**
- * POINT MULTIPLIERS (Per $1 per 24 hours)
+ * POINT MULTIPLIERS (Per $1 per 1 jam)
+ * Diperbarui sesuai instruksi: 
+ * LAMBO: 0.025/jam
+ * NICK/JESSE: 0.001/jam
  */
 export const MULTIPLIERS = {
-  LAMBOLESS: 2.5,
-  NICK: 0.1,
-  JESSE: 0.1
+  LAMBOLESS: 0.025,
+  NICK: 0.001,
+  JESSE: 0.001
 };
 
 /**
- * EVENT TIMELINE
+ * EVENT TIMELINE & HOURLY WINDOW
  */
+export const HOURLY_WINDOW_START = new Date("2026-01-05T07:00:00Z");
+export const HOURLY_WINDOW_END = new Date("2026-01-15T23:59:00Z");
+
 export const SNAPSHOT_START = new Date("2025-11-01T00:01:00Z");
 export const SNAPSHOT_END = new Date("2026-01-15T23:59:00Z");
 export const FINAL_SNAPSHOT = new Date("2026-01-16T00:01:00Z");
@@ -88,7 +91,4 @@ export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
   { rank: 3, handle: "@basegod", points: 95.8, tier: RankTier.PLATINUM, accountAgeDays: 200, baseAppAgeDays: 150 },
   { rank: 4, handle: "@lambofarmer", points: 94.1, tier: RankTier.PLATINUM, accountAgeDays: 1200, baseAppAgeDays: 400 },
   { rank: 5, handle: "@warpcast_king", points: 93.0, tier: RankTier.PLATINUM, accountAgeDays: 800, baseAppAgeDays: 200 },
-  { rank: 12, handle: "@baseapp_builder", points: 88.5, tier: RankTier.GOLD, accountAgeDays: 2100, baseAppAgeDays: 600 },
-  { rank: 100, handle: "@farcaster_fan", points: 72.4, tier: RankTier.SILVER, accountAgeDays: 400, baseAppAgeDays: 100 },
-  { rank: 750, handle: "@lambo_dreamer", points: 45.1, tier: RankTier.BRONZE, accountAgeDays: 150, baseAppAgeDays: 50 },
 ];

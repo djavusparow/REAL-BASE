@@ -40,7 +40,9 @@ import {
   CLAIM_START,
   LAMBOLESS_CONTRACT,
   NICK_CONTRACT,
-  JESSE_CONTRACT
+  JESSE_CONTRACT,
+  HOURLY_WINDOW_START,
+  HOURLY_WINDOW_END
 } from './constants.ts';
 import { calculatePoints, getTierFromRank } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
@@ -144,6 +146,35 @@ const App: React.FC = () => {
     init();
     return () => window.removeEventListener("eip6963:announceProvider", onAnnouncement);
   }, []);
+
+  // REAL-TIME AUTO-UPDATE EFFECT
+  useEffect(() => {
+    if (!user) return;
+    
+    // Update poin setiap menit jika berada dalam jendela waktu akumulasi
+    const interval = setInterval(() => {
+      const now = new Date();
+      if (now >= HOURLY_WINDOW_START && now <= HOURLY_WINDOW_END) {
+        setUser(prev => {
+          if (!prev) return null;
+          const newPoints = calculatePoints(
+            prev.baseAppAgeDays,
+            prev.twitterAgeDays,
+            prev.validTweetsCount,
+            prev.farcasterAgeDays,
+            { lambo: prev.lambolessBalance, nick: prev.nickBalance || 0, jesse: prev.jesseBalance || 0 }
+          );
+          // Hanya update jika poin berubah (presisi jam)
+          if (newPoints !== prev.points) {
+            return { ...prev, points: newPoints };
+          }
+          return prev;
+        });
+      }
+    }, 60000); // 1 menit
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -543,9 +574,9 @@ const App: React.FC = () => {
                   </div>
                   <div className="space-y-3">
                     {[
-                      { name: '$LAMBOLESS', bal: user.lambolessBalance, mult: '2.5 pts/d', color: 'text-blue-400' },
-                      { name: '$thenickshirley', bal: user.nickBalance || 0, mult: '0.1 pts/d', color: 'text-purple-400' },
-                      { name: '$jesse', bal: user.jesseBalance || 0, mult: '0.1 pts/d', color: 'text-green-400' },
+                      { name: '$LAMBOLESS', bal: user.lambolessBalance, mult: '0.025 pts/hr', color: 'text-blue-400' },
+                      { name: '$thenickshirley', bal: user.nickBalance || 0, mult: '0.001 pts/hr', color: 'text-purple-400' },
+                      { name: '$jesse', bal: user.jesseBalance || 0, mult: '0.001 pts/hr', color: 'text-green-400' },
                     ].map((asset, i) => (
                       <div key={i} className="flex justify-between items-center p-3 bg-white/5 rounded-2xl border border-white/5">
                         <div className="flex flex-col"><span className={`text-[10px] font-black ${asset.color}`}>{asset.name}</span><span className="text-[7px] text-gray-500 font-bold uppercase">{asset.mult} per $1 held</span></div>

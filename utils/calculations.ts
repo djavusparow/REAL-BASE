@@ -1,11 +1,9 @@
-
 import { RankTier } from '../types.ts';
-import { MULTIPLIERS, SNAPSHOT_END } from '../constants.ts';
+import { MULTIPLIERS, HOURLY_WINDOW_START, HOURLY_WINDOW_END } from '../constants.ts';
 
 /**
  * Points Calculation Formula
- * Now includes cumulative holding points for $LAMBOLESS, $thenickshirley, and $jesse.
- * holdingPoints = (USD_Value) * (Multiplier) * (Days_Held_Until_Snapshot)
+ * Poin aset dihitung per jam berdasarkan durasi dalam jendela waktu 5 - 15 Jan 2026.
  */
 export const calculatePoints = (
   baseAppAgeDays: number, 
@@ -14,27 +12,36 @@ export const calculatePoints = (
   farcasterAgeDays: number = 0,
   tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
 ): number => {
-  // 1. Social & Seniority Base Points
-  const baseAgePoints = baseAppAgeDays * 0.10; // Reduced weight to shift to assets
+  // 1. Social & Seniority Base Points (Statik)
+  const baseAgePoints = baseAppAgeDays * 0.10;
   const twitterAgePoints = twitterAgeDays * 0.15;
   const contributionPoints = cappedContributionPoints * 0.30;
   const farcasterAgePoints = farcasterAgeDays * 0.20;
   
-  // 2. Asset Holding Points (Cumulative)
-  // Calculate how many days they have left until snapshot from their join date, or just use baseAppAgeDays as hold duration
+  // 2. Real-time Hourly Asset Points
   const now = new Date();
-  const daysHeld = Math.min(baseAppAgeDays, Math.ceil((SNAPSHOT_END.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
-  // If we are past snapshot, use 0 for future projections but assume they held it for their baseAppAgeDays up to the snapshot.
-  const effectiveHoldDays = baseAppAgeDays;
+  
+  // Menghitung berapa jam user berada dalam jendela akumulasi
+  // Start: Max(Kapan jendela dimulai, Kapan user mulai berpartisipasi)
+  // End: Min(Sekarang, Kapan jendela berakhir)
+  
+  const userStartDate = new Date(now.getTime() - (baseAppAgeDays * 24 * 60 * 60 * 1000));
+  const effectiveStart = new Date(Math.max(HOURLY_WINDOW_START.getTime(), userStartDate.getTime()));
+  const effectiveEnd = new Date(Math.min(HOURLY_WINDOW_END.getTime(), now.getTime()));
+  
+  let hoursElapsed = 0;
+  if (effectiveEnd > effectiveStart) {
+    hoursElapsed = (effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60);
+  }
 
-  const lamboPoints = tokenUSDValues.lambo * MULTIPLIERS.LAMBOLESS * effectiveHoldDays;
-  const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * effectiveHoldDays;
-  const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * effectiveHoldDays;
+  // Akumulasi poin per jam
+  const lamboPoints = tokenUSDValues.lambo * MULTIPLIERS.LAMBOLESS * hoursElapsed;
+  const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * hoursElapsed;
+  const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * hoursElapsed;
   
   const total = baseAgePoints + twitterAgePoints + contributionPoints + farcasterAgePoints + lamboPoints + nickPoints + jessePoints;
   
-  // Normalize if values get too extreme for UI, but keep it realistic for the prompt
-  return parseFloat(total.toFixed(2));
+  return parseFloat(total.toFixed(3)); // Menggunakan 3 desimal untuk presisi akumulasi per jam
 };
 
 export const calculateAccountAgeDays = (createdAt: Date): number => {
