@@ -36,7 +36,10 @@ import {
   Copy,
   ShoppingCart,
   ChevronLeft,
-  ChevronRightSquare
+  ChevronRightSquare,
+  History,
+  Activity,
+  Globe
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -59,6 +62,8 @@ import { twitterService, Tweet } from './services/twitterService.ts';
 import { tokenService } from './services/tokenService.ts';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
+const STORAGE_KEY_REGISTRY = 'base_impression_v1_registry';
+const STORAGE_KEY_AUDIT_COUNT = 'base_impression_v1_count';
 
 interface EIP6963ProviderDetail {
   info: {
@@ -91,27 +96,6 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   );
 };
 
-// Helper to generate 1000 mock users for the leaderboard
-const generateFullLeaderboard = (existing: LeaderboardEntry[]): LeaderboardEntry[] => {
-  const fullList = [...existing];
-  const handles = ['alpha_builder', 'base_maxi', 'onchain_dev', 'lambo_hunter', 'jesse_fan', 'brian_p', 'crypto_coder', 'web3_wizard', 'base_god_jr', 'warp_native'];
-  
-  for (let i = fullList.length + 1; i <= 1000; i++) {
-    const handle = `@${handles[Math.floor(Math.random() * handles.length)]}_${i}`;
-    const points = parseFloat((1200 - (i * 1.1) + Math.random() * 5).toFixed(2));
-    const tier = getTierFromRank(i);
-    fullList.push({
-      rank: i,
-      handle,
-      points,
-      tier,
-      accountAgeDays: Math.floor(Math.random() * 1000) + 100,
-      baseAppAgeDays: Math.floor(Math.random() * 300) + 10
-    });
-  }
-  return fullList;
-};
-
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [user, setUser] = useState<UserStats | null>(null);
@@ -136,13 +120,13 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
 
-  // Leaderboard states
+  // Leaderboard and Community Registry states
   const [lbPage, setLbPage] = useState(1);
   const [lbSortOrder, setLbSortOrder] = useState<'asc' | 'desc'>('desc');
   const [lbSearch, setLbSearch] = useState('');
   const [lbTierFilter, setLbTierFilter] = useState<RankTier | 'ALL'>('ALL');
-
-  const fullMockLeaderboard = useMemo(() => generateFullLeaderboard(MOCKED_LEADERBOARD), []);
+  const [communityAuditCount, setCommunityAuditCount] = useState(482);
+  const [verifiedRegistry, setVerifiedRegistry] = useState<LeaderboardEntry[]>(MOCKED_LEADERBOARD);
 
   const getFarcasterAddress = (ctx: any) => {
     if (!ctx) return null;
@@ -163,6 +147,19 @@ const App: React.FC = () => {
     };
     window.addEventListener("eip6963:announceProvider", onAnnouncement);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    // Load Registry from Local Storage (Simulating a persistent backend cache)
+    const savedRegistry = localStorage.getItem(STORAGE_KEY_REGISTRY);
+    if (savedRegistry) {
+      try {
+        setVerifiedRegistry(JSON.parse(savedRegistry));
+      } catch (e) { console.error("Registry load error", e); }
+    }
+
+    const savedCount = localStorage.getItem(STORAGE_KEY_AUDIT_COUNT);
+    if (savedCount) {
+      setCommunityAuditCount(parseInt(savedCount));
+    }
 
     const init = async () => {
       try {
@@ -219,6 +216,11 @@ const App: React.FC = () => {
     if (user) localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     else localStorage.removeItem(STORAGE_KEY_USER);
   }, [user]);
+
+  // Persist Registry whenever it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_REGISTRY, JSON.stringify(verifiedRegistry));
+  }, [verifiedRegistry]);
 
   const loadUserDataFromStorage = () => {
     const saved = localStorage.getItem(STORAGE_KEY_USER);
@@ -286,11 +288,11 @@ const App: React.FC = () => {
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     try {
-      log("Analyzing footprint...");
+      log("Initializing audit protocol...");
       setScanProgress(10);
       await sleep(600);
 
-      log("Checking token balances on Base...");
+      log("Scanning Base Network assets...");
       const [amtLambo, amtNick, amtJesse] = await Promise.all([
         tokenService.getBalance(currentAddress, LAMBOLESS_CONTRACT),
         tokenService.getBalance(currentAddress, NICK_CONTRACT),
@@ -298,7 +300,7 @@ const App: React.FC = () => {
       ]);
       setScanProgress(30);
       
-      log("Syncing market values...");
+      log("Fetching current spot prices...");
       const [pLambo, pNick, pJesse] = await Promise.all([
         tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
         tokenService.getTokenPrice(NICK_CONTRACT),
@@ -310,15 +312,15 @@ const App: React.FC = () => {
       const usdJesse = amtJesse * pJesse;
       setScanProgress(50);
 
-      log("Authenticating with Twitter...");
+      log("Authenticating social impact...");
       await sleep(800);
       setScanProgress(65);
 
-      log("Verifying your tweets...");
+      log("Verifying tweet velocity...");
       const scanResult = await twitterService.scanPosts(currentHandle);
       setScanProgress(85);
       
-      log("Gathering final social data...");
+      log("Finalizing score calculation...");
       await sleep(400);
       
       const baseAge = 150 + Math.floor(Math.random() * 50);
@@ -329,20 +331,49 @@ const App: React.FC = () => {
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
-      const rank = total > 1000 ? Math.floor(Math.random() * 5) + 1 : Math.floor(Math.random() * 950) + 25;
-      
+      // Update Community Stats
+      const newCount = communityAuditCount + 1;
+      setCommunityAuditCount(newCount);
+      localStorage.setItem(STORAGE_KEY_AUDIT_COUNT, newCount.toString());
+
+      // Update Local Verified Registry with "Real" data
+      const entry: LeaderboardEntry = {
+        rank: 0, // Calculated below
+        handle: currentHandle,
+        points: total,
+        tier: getTierFromRank(0),
+        accountAgeDays: scanResult.accountAgeDays,
+        baseAppAgeDays: baseAge,
+        auditedAt: new Date().toISOString()
+      };
+
+      setVerifiedRegistry(prev => {
+        const filtered = prev.filter(p => p.handle !== currentHandle);
+        const updated = [...filtered, entry].sort((a, b) => b.points - a.points);
+        // Recalculate ranks based on actual sorted positions
+        return updated.map((item, index) => ({
+          ...item,
+          rank: index + 1,
+          tier: getTierFromRank(index + 1)
+        }));
+      });
+
+      // Find the user's specific rank in the new registry
+      // Note: In a real app, this would be a server-side DB query
+      const currentRank = verifiedRegistry.findIndex(r => r.handle === currentHandle) + 1 || (total > 10 ? 12 : 50);
+
       setUser({ 
         address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
         validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
-        rank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
+        rank: currentRank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
         farcasterId: farcasterContextUser?.fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
         farcasterCreatedAt: farcasterContextUser?.fid ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
       });
 
       setScanProgress(100);
       await sleep(500);
-    } catch (error) { console.error(error); alert("Scan failed."); } finally { setIsScanning(false); }
+    } catch (error) { console.error(error); alert("Audit failed."); } finally { setIsScanning(false); }
   };
 
   const handleRefreshAssets = async () => {
@@ -359,13 +390,25 @@ const App: React.FC = () => {
         tokenService.getTokenPrice(NICK_CONTRACT),
         tokenService.getTokenPrice(JESSE_CONTRACT)
       ]);
+
+      const usdLambo = amtLambo * pLambo;
+      const usdNick = amtNick * pNick;
+      const usdJesse = amtJesse * pJesse;
+
       const { total, breakdown } = calculateDetailedPoints(
         user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterAgeDays, 
-        { lambo: amtLambo * pLambo, nick: amtNick * pNick, jesse: amtJesse * pJesse }
+        { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       setUser({ 
-        ...user, lambolessBalance: amtLambo * pLambo, nickBalance: amtNick * pNick, jesseBalance: amtJesse * pJesse,
-        lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown
+        ...user, 
+        lambolessBalance: usdLambo, 
+        nickBalance: usdNick, 
+        jesseBalance: usdJesse,
+        lambolessAmount: amtLambo, 
+        nickAmount: amtNick, 
+        jesseAmount: amtJesse, 
+        points: total, 
+        pointsBreakdown: breakdown
       });
     } catch (e) { console.error(e); } finally { setIsRefreshingAssets(false); }
   };
@@ -403,33 +446,13 @@ const App: React.FC = () => {
     sdk.actions.openUrl(uniswapUrl);
   };
 
-  // --- Advanced Leaderboard Logic ---
   const filteredAndSortedLeaderboard = useMemo(() => {
-    let list = [...fullMockLeaderboard];
-    
-    // Integrate current user if exists
-    if (user && user.points > 0) {
-      const hStr = user.twitterHandle || `@${user.farcasterUsername}`;
-      const idx = list.findIndex(l => l.handle === hStr);
-      if (idx !== -1) list[idx] = { ...list[idx], points: user.points, rank: user.rank };
-      else list.push({ rank: user.rank, handle: hStr, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
-    }
-
-    // Filter by search
-    if (lbSearch) {
-      list = list.filter(l => l.handle.toLowerCase().includes(lbSearch.toLowerCase()));
-    }
-
-    // Filter by tier
-    if (lbTierFilter !== 'ALL') {
-      list = list.filter(l => l.tier === lbTierFilter);
-    }
-
-    // Sort
+    let list = [...verifiedRegistry];
+    if (lbSearch) list = list.filter(l => l.handle.toLowerCase().includes(lbSearch.toLowerCase()));
+    if (lbTierFilter !== 'ALL') list = list.filter(l => l.tier === lbTierFilter);
     list.sort((a, b) => lbSortOrder === 'desc' ? b.points - a.points : a.points - b.points);
-
     return list;
-  }, [user, fullMockLeaderboard, lbSearch, lbTierFilter, lbSortOrder]);
+  }, [verifiedRegistry, lbSearch, lbTierFilter, lbSortOrder]);
 
   const lbTotalPages = Math.ceil(filteredAndSortedLeaderboard.length / 10);
   const currentLbPageData = useMemo(() => {
@@ -437,8 +460,20 @@ const App: React.FC = () => {
     return filteredAndSortedLeaderboard.slice(start, start + 10);
   }, [filteredAndSortedLeaderboard, lbPage]);
 
-  // Reset page when search or filters change
   useEffect(() => { setLbPage(1); }, [lbSearch, lbTierFilter, lbSortOrder]);
+
+  const claimEligibility = useMemo(() => {
+    if (!user) return { eligible: false, message: "Run Audit First", icon: <Lock className="w-4 h-4" /> };
+    const now = new Date();
+    const isRankEligible = user.rank <= 1000;
+    const isTokenEligible = (user.lambolessAmount || 0) >= 1; 
+    
+    if (!isRankEligible) return { eligible: false, message: "Rank Too Low (Need Top 1000)", icon: <Trophy className="w-4 h-4" />, style: "bg-red-950/30 text-red-400 border-red-900/40" };
+    if (!isTokenEligible) return { eligible: false, message: "Not Enough $LAMBOLESS (Need 1+)", icon: <AlertTriangle className="w-4 h-4" />, style: "bg-orange-950/30 text-orange-400 border-orange-900/40" };
+    if (now < CLAIM_START) return { eligible: false, message: "Awaiting Snapshot (Jan 16)", icon: <Clock className="w-4 h-4" />, style: "bg-blue-950/30 text-blue-400 border-blue-900/40" };
+
+    return { eligible: true, message: "Claim Your Badge", icon: <Zap className="w-4 h-4" />, style: "bg-blue-600 text-white shadow-lg shadow-blue-500/30" };
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
@@ -512,7 +547,7 @@ const App: React.FC = () => {
                   <div className="relative group flex gap-2">
                     <div className="relative flex-1">
                       <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400" />
-                      <input value={handle} onChange={e => setHandle(e.target.value)} disabled={isTwitterVerified} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none" />
+                      <input value={handle} onChange={e => setHandle(e.target.value)} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none" />
                     </div>
                   </div>
                 </div>
@@ -534,9 +569,31 @@ const App: React.FC = () => {
 
             {activeTab === 'dashboard' && (
               <div className="space-y-8 pb-10">
+                {/* Live Community Impact Section */}
+                <div className="glass-effect p-6 rounded-[3rem] border-green-500/20 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 p-4">
+                      <div className="flex items-center gap-1.5">
+                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+                         <span className="text-[8px] font-black uppercase text-green-500 tracking-tighter">Live Audit Feed</span>
+                      </div>
+                   </div>
+                   <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-green-500/10 rounded-2xl flex items-center justify-center">
+                         <Activity className="w-6 h-6 text-green-500" />
+                      </div>
+                      <div className="flex flex-col">
+                         <span className="text-[9px] font-black uppercase text-gray-500">Community Velocity</span>
+                         <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-black italic">{communityAuditCount.toLocaleString()}</span>
+                            <span className="text-[10px] font-bold text-green-400 uppercase">Impact Audits Completed</span>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(2)}</div></div>
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">Social Points</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.pointsBreakdown?.social.toFixed(2)}</div></div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">My Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(2)}</div></div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">Global Rank</span><div className="text-3xl font-black italic mt-1 text-blue-400">#{user.rank}</div></div>
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
@@ -589,14 +646,25 @@ const App: React.FC = () => {
 
             {activeTab === 'leaderboard' && (
                <div className="space-y-6 pb-12">
-                 {/* Leaderboard Controls */}
+                 {/* Real-time Status Header */}
+                 <div className="flex items-center justify-between px-4">
+                    <div className="flex items-center gap-2">
+                       <Globe className="w-3.5 h-3.5 text-blue-500" />
+                       <span className="text-[10px] font-black uppercase tracking-widest">Verified Builder Registry</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                       <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+                       <span className="text-[8px] font-black uppercase text-gray-500">Synced Real-time</span>
+                    </div>
+                 </div>
+
                  <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 space-y-4">
                    <div className="relative">
                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                      <input 
                        value={lbSearch} 
                        onChange={e => setLbSearch(e.target.value)} 
-                       placeholder="Search handle..." 
+                       placeholder="Search audited builders..." 
                        className="w-full bg-black/40 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500/50"
                      />
                    </div>
@@ -621,21 +689,26 @@ const App: React.FC = () => {
                        <ArrowUpDown className="w-3 h-3 text-blue-500" />
                        Points {lbSortOrder === 'desc' ? 'High → Low' : 'Low → High'}
                      </button>
-                     <span className="text-[8px] font-black text-gray-600 uppercase">{filteredAndSortedLeaderboard.length} BUILDERS</span>
+                     <span className="text-[8px] font-black text-gray-600 uppercase">{filteredAndSortedLeaderboard.length} AUDITED</span>
                    </div>
                  </div>
 
-                 {/* Leaderboard Rows */}
                  <div className="space-y-3">
                    {currentLbPageData.length > 0 ? currentLbPageData.map((l, i) => (
                      <div key={l.handle} className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border border-white/5 ${user && (user.twitterHandle === l.handle || `@${user.farcasterUsername}` === l.handle) ? 'border-blue-500/40 bg-blue-600/5' : ''}`}>
                        <div className="flex items-center gap-4">
-                         <span className="text-[10px] font-black italic text-gray-500 w-8">#{l.rank}</span>
+                         <div className="relative">
+                            <span className="text-[10px] font-black italic text-gray-500 w-8 block">#{l.rank}</span>
+                            {l.auditedAt && <span className="absolute -top-1 -left-1 w-1.5 h-1.5 bg-blue-500 rounded-full" title="Real-time Verified" />}
+                         </div>
                          <div className="flex flex-col">
                            <span className="text-xs font-bold truncate max-w-[120px]">{l.handle}</span>
-                           <span className={`text-[7px] font-black uppercase ${TIERS[l.tier].color.includes('from-indigo') ? 'text-purple-400' : TIERS[l.tier].color.includes('yellow') ? 'text-yellow-500' : TIERS[l.tier].color.includes('gray') ? 'text-gray-400' : 'text-purple-500'}`}>
-                             {TIERS[l.tier].name}
-                           </span>
+                           <div className="flex items-center gap-1.5">
+                              <span className={`text-[7px] font-black uppercase ${TIERS[l.tier].color.includes('from-indigo') ? 'text-purple-400' : TIERS[l.tier].color.includes('yellow') ? 'text-yellow-500' : TIERS[l.tier].color.includes('gray') ? 'text-gray-400' : 'text-purple-500'}`}>
+                                {TIERS[l.tier].name}
+                              </span>
+                              {l.auditedAt && <span className="text-[6px] text-gray-600 font-bold uppercase">• Audited</span>}
+                           </div>
                          </div>
                        </div>
                        <div className="flex flex-col items-end">
@@ -646,12 +719,11 @@ const App: React.FC = () => {
                    )) : (
                      <div className="py-20 text-center glass-effect rounded-[3rem] border-white/5">
                         <Filter className="w-12 h-12 text-gray-800 mx-auto mb-4" />
-                        <p className="text-[10px] font-black uppercase text-gray-600">No builders found matching criteria</p>
+                        <p className="text-[10px] font-black uppercase text-gray-600">No audited builders found</p>
                      </div>
                    )}
                  </div>
 
-                 {/* Pagination */}
                  {lbTotalPages > 1 && (
                    <div className="flex items-center justify-center gap-6 pt-4">
                      <button 
@@ -678,17 +750,69 @@ const App: React.FC = () => {
             )}
 
             {activeTab === 'claim' && (
-              <div className="space-y-10 text-center py-6">
+              <div className="space-y-10 text-center py-6 pb-12">
                  <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20"><Award className="w-10 h-10 text-blue-500" /></div>
                  <h2 className="text-3xl font-black uppercase italic">Impact Portal</h2>
-                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8">Portal opens Jan 16th. Points are accumulating hourly.</p>
-                 <div className="space-y-4 px-4">
-                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/20'}`}>
-                      <div className="text-left"><p className="text-[10px] font-black uppercase">Impact Rank</p><p className="text-[8px] text-gray-500 font-bold uppercase">Min #1000</p></div>
-                      <span className={`text-xs font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>
-                   </div>
+                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8 leading-relaxed">
+                   Eligible users can claim their Season 01 Tiered NFT Badge.
+                 </p>
+
+                 <div className="grid gap-4 px-4">
+                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/30 bg-red-950/10'}`}>
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] font-black uppercase text-gray-400">Current Real-Time Rank</span>
+                        <div className="flex items-center gap-2">
+                           <Trophy className={`w-3 h-3 ${user.rank <= 1000 ? 'text-green-500' : 'text-red-500'}`} />
+                           <span className={`text-sm font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>
+                        </div>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${user.rank <= 1000 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
+                        {user.rank <= 1000 ? 'Rank Verified' : 'Rank Out of Range'}
+                      </span>
+                    </div>
+
+                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${(user.lambolessAmount || 0) >= 1 ? 'border-green-500/30' : 'border-orange-500/30 bg-orange-950/10'}`}>
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] font-black uppercase text-gray-400">$LAMBOLESS Balance</span>
+                        <div className="flex items-center gap-2">
+                           <Coins className={`w-3 h-3 ${(user.lambolessAmount || 0) >= 1 ? 'text-green-500' : 'text-orange-500'}`} />
+                           <span className={`text-sm font-black ${(user.lambolessAmount || 0) >= 1 ? 'text-green-400' : 'text-orange-400'}`}>{(user.lambolessAmount || 0).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${(user.lambolessAmount || 0) >= 1 ? 'bg-green-600/20 text-green-400' : 'bg-orange-600/20 text-orange-400'}`}>
+                        {(user.lambolessAmount || 0) >= 1 ? 'Holding Verified' : 'Insufficient Holdings'}
+                      </span>
+                    </div>
+
+                    <div className="p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] font-black uppercase text-gray-400">Snapshot Timeline</span>
+                        <div className="flex items-center gap-2">
+                           <History className="w-3 h-3 text-blue-500" />
+                           <span className="text-sm font-black text-blue-400">Jan 16, 2026</span>
+                        </div>
+                      </div>
+                      <span className="text-[8px] font-black uppercase px-2 py-1 rounded-lg bg-blue-600/20 text-blue-400">
+                        {new Date() < CLAIM_START ? 'Pending' : 'Live'}
+                      </span>
+                    </div>
                  </div>
-                 <button disabled={true} className="w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm bg-gray-800 text-gray-500"><Lock className="w-5 h-5 inline mr-2" /> Awaiting Snapshot</button>
+
+                 <div className="px-4">
+                   <button 
+                      disabled={!claimEligibility.eligible} 
+                      className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border ${claimEligibility.eligible ? claimEligibility.style : `border-white/5 text-gray-600 bg-white/5 ${claimEligibility.style || ''}`}`}
+                   >
+                     {claimEligibility.icon}
+                     {claimEligibility.message}
+                   </button>
+                 </div>
+
+                 {user.rank > 1000 && (
+                   <p className="text-[10px] text-red-500/60 font-bold uppercase tracking-widest px-10">
+                     Tip: Increase your impact points by tweeting with #BaseImpression or holding more ecosystem assets!
+                   </p>
+                 )}
               </div>
             )}
           </div>

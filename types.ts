@@ -49,8 +49,9 @@ export interface LeaderboardEntry {
   handle: string;
   points: number;
   tier: RankTier;
-  accountAgeDays: number; // Twitter age
-  baseAppAgeDays: number; // Baseapp age
+  accountAgeDays: number;
+  baseAppAgeDays: number;
+  auditedAt?: string; // New field for real-time tracking
 }
 
 export interface BadgeConfig {
