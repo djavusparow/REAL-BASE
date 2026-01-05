@@ -13,18 +13,35 @@ export interface UserStats {
   baseAppAgeDays: number;
   twitterAgeDays: number;
   validTweetsCount: number;
-  lambolessBalance: number; // USD Value
-  nickBalance?: number;     // USD Value
-  jesseBalance?: number;    // USD Value
+  
+  // USD Values for logic
+  lambolessBalance: number; 
+  nickBalance?: number;     
+  jesseBalance?: number;    
+
+  // Actual Token Quantities for UI
+  lambolessAmount?: number;
+  nickAmount?: number;
+  jesseAmount?: number;
+
   points: number;
   rank: number;
   trustScore?: number;
   recentContributions?: any[];
+  
   // Farcaster specific fields
   farcasterId?: number;
   farcasterUsername?: string;
   farcasterAgeDays?: number;
   farcasterCreatedAt?: string;
+
+  // Breakdown for Dashboard UI
+  pointsBreakdown?: {
+    social: number;
+    lambo: number;
+    nick: number;
+    jesse: number;
+  };
 }
 
 export interface LeaderboardEntry {

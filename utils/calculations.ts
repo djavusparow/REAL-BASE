@@ -1,10 +1,65 @@
 
-import { RankTier } from '../types.ts';
+import { RankTier, UserStats } from '../types.ts';
 import { MULTIPLIERS, HOURLY_WINDOW_START, HOURLY_WINDOW_END } from '../constants.ts';
+
+// Add the missing calculateAccountAgeDays utility function
+/**
+ * Calculates the number of days between the registration date and now.
+ */
+export const calculateAccountAgeDays = (registrationDate: Date): number => {
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - registrationDate.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+};
 
 /**
  * Points Calculation Formula
- * Points accrue hourly based on USD value of holdings.
+ * Returns total points and a breakdown for display.
+ */
+export const calculateDetailedPoints = (
+  baseAppAgeDays: number, 
+  twitterAgeDays: number, 
+  cappedContributionPoints: number,
+  farcasterAgeDays: number = 0,
+  tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
+): { total: number; breakdown: any } => {
+  // 1. Social & Seniority Base Points
+  const socialPoints = 
+    (baseAppAgeDays * 0.10) + 
+    (twitterAgeDays * 0.15) + 
+    (cappedContributionPoints * 0.30) + 
+    (farcasterAgeDays * 0.20);
+  
+  // 2. Real-time Hourly Asset Points
+  const now = new Date();
+  const effectiveStart = new Date(HOURLY_WINDOW_START);
+  const effectiveEnd = new Date(Math.min(HOURLY_WINDOW_END.getTime(), now.getTime()));
+  
+  let hoursElapsed = 0;
+  if (effectiveEnd > effectiveStart) {
+    hoursElapsed = (effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60);
+  }
+
+  const lamboPoints = tokenUSDValues.lambo * MULTIPLIERS.LAMBOLESS * hoursElapsed;
+  const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * hoursElapsed;
+  const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * hoursElapsed;
+  
+  const total = socialPoints + lamboPoints + nickPoints + jessePoints;
+  
+  return {
+    total: parseFloat(total.toFixed(4)),
+    breakdown: {
+      social: parseFloat(socialPoints.toFixed(4)),
+      lambo: parseFloat(lamboPoints.toFixed(4)),
+      nick: parseFloat(nickPoints.toFixed(4)),
+      jesse: parseFloat(jessePoints.toFixed(4))
+    }
+  };
+};
+
+/**
+ * Legacy compatibility wrapper
  */
 export const calculatePoints = (
   baseAppAgeDays: number, 
@@ -13,39 +68,7 @@ export const calculatePoints = (
   farcasterAgeDays: number = 0,
   tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
 ): number => {
-  // 1. Social & Seniority Base Points
-  const baseAgePoints = baseAppAgeDays * 0.10;
-  const twitterAgePoints = twitterAgeDays * 0.15;
-  const contributionPoints = cappedContributionPoints * 0.30;
-  const farcasterAgePoints = farcasterAgeDays * 0.20;
-  
-  // 2. Real-time Hourly Asset Points
-  const now = new Date();
-  
-  const userStartDate = new Date(now.getTime() - (baseAppAgeDays * 24 * 60 * 60 * 1000));
-  const effectiveStart = new Date(Math.max(HOURLY_WINDOW_START.getTime(), userStartDate.getTime()));
-  const effectiveEnd = new Date(Math.min(HOURLY_WINDOW_END.getTime(), now.getTime()));
-  
-  let hoursElapsed = 0;
-  if (effectiveEnd > effectiveStart) {
-    hoursElapsed = (effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60);
-  }
-
-  // Akumulasi poin per jam sesuai instruksi baru
-  const lamboPoints = tokenUSDValues.lambo * MULTIPLIERS.LAMBOLESS * hoursElapsed;
-  const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * hoursElapsed;
-  const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * hoursElapsed;
-  
-  const total = baseAgePoints + twitterAgePoints + contributionPoints + farcasterAgePoints + lamboPoints + nickPoints + jessePoints;
-  
-  return parseFloat(total.toFixed(4)); 
-};
-
-export const calculateAccountAgeDays = (createdAt: Date): number => {
-  const now = new Date();
-  const diffInMs = now.getTime() - createdAt.getTime();
-  const days = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-  return Math.max(0, days);
+  return calculateDetailedPoints(baseAppAgeDays, twitterAgeDays, cappedContributionPoints, farcasterAgeDays, tokenUSDValues).total;
 };
 
 export const getTierFromRank = (rank: number): RankTier => {
