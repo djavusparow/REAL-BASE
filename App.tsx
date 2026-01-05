@@ -27,7 +27,8 @@ import {
   ArrowUpDown,
   Coins,
   Cpu,
-  Binary
+  Binary,
+  Send
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -348,6 +349,22 @@ const App: React.FC = () => {
     setIsGenerating(false);
   };
 
+  const handleShare = (platform: 'farcaster' | 'twitter') => {
+    if (!user) return;
+    const tier = getTierFromRank(user.rank);
+    // Specific pre-filled message as requested
+    const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
+    const shareUrl = "https://base.app/app/real-base-2026.vercel.app";
+    const tags = "\n\n@base @baseapp @jessepollak @LAMB0LESS #BaseImpression #OnchainSummer";
+    const fullText = `${message}${tags}`;
+    
+    if (platform === 'farcaster') {
+      sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(fullText)}&embeds[]=${encodeURIComponent(shareUrl)}`);
+    } else {
+      sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(fullText)}&url=${encodeURIComponent(shareUrl)}`);
+    }
+  };
+
   const claimStatus = useMemo(() => {
     const now = new Date();
     const isClaimOpen = now >= CLAIM_START;
@@ -520,7 +537,10 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-4">
-                  <div className="flex items-center gap-3 mb-2"><Coins className="w-4 h-4 text-blue-500" /><h3 className="text-xs font-black uppercase italic tracking-widest">Asset Contributions</h3></div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3"><Coins className="w-4 h-4 text-blue-500" /><h3 className="text-xs font-black uppercase italic tracking-widest">Asset Contributions</h3></div>
+                    <button onClick={handleShare.bind(null, 'twitter')} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full text-[9px] font-black uppercase text-blue-400 hover:bg-blue-600/20 transition-all active:scale-95"><Twitter className="w-3 h-3" /> Share to X</button>
+                  </div>
                   <div className="space-y-3">
                     {[
                       { name: '$LAMBOLESS', bal: user.lambolessBalance, mult: '2.5 pts/d', color: 'text-blue-400' },
@@ -545,7 +565,15 @@ const App: React.FC = () => {
                 <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 border border-white/5 shadow-2xl">
                   <BadgeDisplay tier={getTierFromRank(user.rank)} imageUrl={badgeImage} loading={isGenerating} />
                   {analysis && <p className="text-[10px] italic text-blue-200/60 bg-white/5 p-4 rounded-2xl leading-relaxed border border-white/5">"{analysis}"</p>}
-                  <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic tracking-widest hover:bg-gray-200 transition-colors shadow-lg">{isGenerating ? 'Analyzing...' : 'Refresh Impact snapshot'}</button>
+                  
+                  <div className="flex flex-col gap-3">
+                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic tracking-widest hover:bg-gray-200 transition-colors shadow-lg">{isGenerating ? 'Analyzing...' : 'Refresh Impact snapshot'}</button>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => handleShare('farcaster')} className="py-3 bg-[#8a63d2]/10 border border-[#8a63d2]/30 rounded-2xl text-[9px] font-black uppercase text-purple-200 flex items-center justify-center gap-2 hover:bg-[#8a63d2]/20 transition-all"><Send className="w-3 h-3" /> Warpcast</button>
+                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all"><Twitter className="w-3 h-3" /> Share to X</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
