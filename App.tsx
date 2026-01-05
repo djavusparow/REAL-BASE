@@ -136,22 +136,25 @@ const App: React.FC = () => {
         await sdk.actions.ready();
         const context = await sdk.context;
         if (context?.user) {
-          console.log("Farcaster Context User Object:", context.user);
+          console.log("Farcaster Context Initialized:", context.user);
           setFarcasterContextUser(context.user);
           
           const saved = localStorage.getItem(STORAGE_KEY_USER);
           if (!saved) {
+            // Priority address detection
             const detectedAddr = 
-              context.user.custodyAddress || 
               context.user.address || 
-              (Array.isArray(context.user.verifiedAddresses) && context.user.verifiedAddresses[0]) ||
-              '';
+              context.user.custodyAddress || 
+              (context.user.verifiedAddresses && context.user.verifiedAddresses.length > 0 ? context.user.verifiedAddresses[0] : '');
               
-            setAddress(detectedAddr);
-            setHandle(`@${context.user.username}`);
-            
             if (detectedAddr) {
+              setAddress(detectedAddr);
               setIsSignatureVerified(true);
+            }
+            
+            const detectedHandle = context.user.username ? `@${context.user.username}` : '';
+            if (detectedHandle) {
+              setHandle(detectedHandle);
               setIsTwitterVerified(true);
             }
           }
@@ -222,15 +225,19 @@ const App: React.FC = () => {
   };
 
   const handleFarcasterAutoLogin = () => {
-    if (!farcasterContextUser) return;
+    if (!farcasterContextUser) {
+        alert("Farcaster profile not loaded yet. Please wait a moment.");
+        return;
+    }
     
+    // Comprehensive fallback for addresses
     const custodyAddr = 
-      farcasterContextUser.custodyAddress || 
       farcasterContextUser.address || 
-      (Array.isArray(farcasterContextUser.verifiedAddresses) && farcasterContextUser.verifiedAddresses[0]);
+      farcasterContextUser.custodyAddress || 
+      (farcasterContextUser.verifiedAddresses && farcasterContextUser.verifiedAddresses.length > 0 ? farcasterContextUser.verifiedAddresses[0] : null);
     
     if (!custodyAddr) {
-      console.error("Farcaster context missing address fields. Full context:", farcasterContextUser);
+      console.error("Farcaster context debug:", farcasterContextUser);
       alert("No linked wallet address found in your Farcaster profile. Please connect your wallet manually using the 'Connect Wallet' menu.");
       return;
     }
@@ -240,7 +247,7 @@ const App: React.FC = () => {
     setIsSignatureVerified(true);
     setIsTwitterVerified(true); 
     setShowWalletSelector(false);
-    console.log("Farcaster Auto-Login Successful. Address:", custodyAddr);
+    console.log("Farcaster Identity Verified:", custodyAddr);
   };
 
   const handleSyncFarcaster = async () => {
@@ -251,7 +258,6 @@ const App: React.FC = () => {
       if (context?.user) {
         const fid = context.user.fid;
         const username = context.user.username;
-        // Logic: Lower FID = older account. Max FID 1M for age calculation.
         const ageDays = Math.max(1, Math.floor(((1000000 - fid) / 1000000) * 1200));
         const createdAt = new Date(Date.now() - (ageDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
 
@@ -277,9 +283,8 @@ const App: React.FC = () => {
           );
           return updated;
         });
-        console.log("Farcaster profile synced:", { fid, username, ageDays });
       } else {
-        alert("Farcaster context unavailable. Please open this frame in Warpcast.");
+        alert("Farcaster profile sync failed. Make sure you are using Warpcast.");
       }
     } catch (e) {
       console.error("Sync error:", e);
@@ -348,19 +353,13 @@ const App: React.FC = () => {
   };
 
   const handleScan = async () => {
-    const currentAddress = address || (farcasterContextUser?.custodyAddress || farcasterContextUser?.address);
+    // Robust detection during scan process
+    const currentAddress = address || (farcasterContextUser?.address || farcasterContextUser?.custodyAddress || (farcasterContextUser?.verifiedAddresses?.[0]));
     const currentHandle = handle || (farcasterContextUser?.username ? `@${farcasterContextUser.username}` : '');
 
     if (!currentAddress || currentAddress.trim() === '') {
-      alert("Wallet address is required. Please re-connect your identity.");
+      alert("No linked wallet address found. If you are on Farcaster, please try the 'Connect Wallet' option.");
       return;
-    }
-    
-    if (!farcasterContextUser) {
-      if (!isTwitterVerified || !isSignatureVerified) {
-         alert("Please complete both Wallet Connection and Social Verification steps first.");
-         return;
-      }
     }
 
     setIsScanning(true);
@@ -370,11 +369,11 @@ const App: React.FC = () => {
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     try {
-      log("Initializing audit for " + currentAddress.slice(0, 8) + "...");
+      log("Analyzing Onchain footprint: " + currentAddress.slice(0, 8) + "...");
       setScanProgress(10);
       await sleep(400);
 
-      log("Synchronizing balances from Base L2...");
+      log("Syncing assets from Base L2...");
       setScanProgress(30);
       const [balLambo, balNick, balJesse] = await Promise.all([
         tokenService.getBalance(currentAddress, LAMBOLESS_CONTRACT).catch(() => 0),
@@ -382,11 +381,11 @@ const App: React.FC = () => {
         tokenService.getBalance(currentAddress, JESSE_CONTRACT).catch(() => 0)
       ]);
       
-      log(`Sync Complete: Assets indexed.`);
+      log(`Success: Assets indexed.`);
       setScanProgress(50);
       await sleep(400);
 
-      log("Fetching live market metrics...");
+      log("Calculating market impact...");
       setScanProgress(65);
       const [pLambo, pNick, pJesse] = await Promise.all([
         tokenService.getTokenPrice(LAMBOLESS_CONTRACT).catch(() => 0.0001),
@@ -398,21 +397,21 @@ const App: React.FC = () => {
       const usdNick = (balNick || 0) * pNick;
       const usdJesse = (balJesse || 0) * pJesse;
       
-      log(`Calculating impact velocity...`);
+      log(`Processing social contributions...`);
       setScanProgress(80);
       await sleep(400);
 
-      log("Scanning social contribution history...");
+      log("Crawling social activity history...");
       setScanProgress(90);
       const scanResult = await twitterService.scanPosts(currentHandle).catch(err => {
-        console.warn("Twitter scan fallback:", err);
+        console.warn("Scan fallback:", err);
         return { accountAgeDays: 60, cappedPoints: 10, trustScore: 75, foundTweets: [] };
       });
       
       setScanProgress(95);
       await sleep(400);
 
-      log("Synthesizing final Impression Report...");
+      log("Compiling Base Impression profile...");
       const baseAge = 150 + Math.floor(Math.random() * 50);
       const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - (farcasterContextUser.fid || 1)) / 1000000) * 800)) : 0;
       
@@ -449,11 +448,10 @@ const App: React.FC = () => {
       await sleep(500);
       
       setUser(userData);
-      console.log("Impression Profile Generated Successfully:", userData);
 
     } catch (error) {
-      console.error("Audit Critical Failure:", error);
-      alert("An error occurred during the audit. Please check your connection and try again.");
+      console.error("Audit error:", error);
+      alert("A problem occurred during the audit. Please try again.");
     } finally {
       setIsScanning(false);
     }
