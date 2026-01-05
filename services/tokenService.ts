@@ -1,6 +1,5 @@
 
 import { ethers } from 'ethers';
-import { TOKEN_CONTRACT } from '../constants.ts';
 
 const MINIMAL_ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -16,17 +15,17 @@ export class TokenService {
     this.provider = new ethers.JsonRpcProvider(BASE_RPC_URL);
   }
 
-  async getBalance(address: string): Promise<number> {
+  async getBalance(walletAddress: string, tokenContractAddress: string): Promise<number> {
     try {
-      const contract = new ethers.Contract(TOKEN_CONTRACT, MINIMAL_ERC20_ABI, this.provider);
+      const contract = new ethers.Contract(tokenContractAddress, MINIMAL_ERC20_ABI, this.provider);
       const [balance, decimals] = await Promise.all([
-        contract.balanceOf(address),
+        contract.balanceOf(walletAddress),
         contract.decimals()
       ]);
       
       return parseFloat(ethers.formatUnits(balance, decimals));
     } catch (error) {
-      console.error("Token Balance Fetch Error:", error);
+      console.error(`Token Balance Fetch Error for ${tokenContractAddress}:`, error);
       return 0;
     }
   }

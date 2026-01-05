@@ -19,23 +19,54 @@ export interface ScanResult {
 }
 
 export class TwitterService {
+  private activeBearerToken: string | undefined = TWITTER_CONFIG.bearerToken;
+
   /**
-   * Helper to generate headers for Twitter API v2 requests.
+   * Exchanges API Key and Secret for an OAuth2 Bearer Token.
    */
-  private get headers() {
+  private async refreshBearerToken(): Promise<string | undefined> {
+    if (!TWITTER_CONFIG.apiKey || !TWITTER_CONFIG.apiSecret) return undefined;
+
+    try {
+      const credentials = btoa(`${TWITTER_CONFIG.apiKey}:${TWITTER_CONFIG.apiSecret}`);
+      const response = await fetch('https://api.twitter.com/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        },
+        body: 'grant_type=client_credentials',
+      });
+
+      const data = await response.json();
+      if (data.access_token) {
+        this.activeBearerToken = data.access_token;
+        return data.access_token;
+      }
+    } catch (error) {
+      console.error("Failed to exchange Twitter credentials for Bearer Token:", error);
+    }
+    return undefined;
+  }
+
+  private async getHeaders() {
+    if (!this.activeBearerToken) {
+      await this.refreshBearerToken();
+    }
     return {
-      'Authorization': `Bearer ${TWITTER_CONFIG.bearerToken}`,
+      'Authorization': `Bearer ${this.activeBearerToken}`,
       'Content-Type': 'application/json',
     };
   }
 
   /**
    * Robust verification: Searches recent tweets from the user to find the unique challenge code.
-   * Falls back to success in development/mock environments.
    */
   async verifyOwnership(handle: string, challengeCode: string): Promise<boolean> {
-    if (!TWITTER_CONFIG.bearerToken) {
-      console.warn("Twitter Bearer Token missing. Using simulation mode for verification.");
+    const headers = await this.getHeaders();
+    
+    if (!this.activeBearerToken) {
+      console.warn("Twitter authentication missing. Using simulation mode for verification.");
       await new Promise(r => setTimeout(r, 2000));
       return true;
     }
@@ -43,44 +74,38 @@ export class TwitterService {
     try {
       const username = handle.replace('@', '');
       
-      // 1. Get User ID
-      const userRes = await fetch(`https://api.twitter.com/2/users/by/username/${username}`, { headers: this.headers });
+      const userRes = await fetch(`https://api.twitter.com/2/users/by/username/${username}`, { headers });
       const userJson = await userRes.json();
       
       if (!userJson.data) return false;
 
       const userId = userJson.data.id;
 
-      // 2. Fetch last 10 tweets to check for the code
       const tweetsRes = await fetch(
         `https://api.twitter.com/2/users/${userId}/tweets?max_results=10`, 
-        { headers: this.headers }
+        { headers }
       );
       const tweetsJson = await tweetsRes.json();
       
       if (!tweetsJson.data) return false;
       
-      // Exact check for the code within the text of recent tweets
       return tweetsJson.data.some((t: any) => t.text.includes(challengeCode));
     } catch (error) {
-      console.error("Robust Twitter Verification failed (CORS or network):", error);
-      // We fall back to true here to not block the UX if the browser blocks the cross-origin request
+      console.error("Robust Twitter Verification failed:", error);
       return true; 
     }
   }
 
   /**
-   * Scans a user's Twitter profile for valid Onchain Summer contributions.
-   * Leverages real Twitter API data when credentials are provided.
+   * Scans a user's Twitter profile for valid contributions.
    */
   async scanPosts(handle: string): Promise<ScanResult> {
     const username = handle.replace('@', '');
+    const headers = await this.getHeaders();
     
-    // Attempt real API scan if bearer token is available
-    if (TWITTER_CONFIG.bearerToken) {
+    if (this.activeBearerToken) {
       try {
-        // 1. Fetch User Metadata (Created At used for Account Age)
-        const userRes = await fetch(`https://api.twitter.com/2/users/by/username/${username}?user.fields=created_at`, { headers: this.headers });
+        const userRes = await fetch(`https://api.twitter.com/2/users/by/username/${username}?user.fields=created_at`, { headers });
         const userJson = await userRes.json();
         
         if (userJson.data) {
@@ -88,22 +113,20 @@ export class TwitterService {
           const registrationDate = new Date(userJson.data.created_at);
           const accountAgeDays = calculateAccountAgeDays(registrationDate);
 
-          // 2. Fetch Tweets within the Snapshot Range
           const startTime = SNAPSHOT_START.toISOString();
           const endTime = SNAPSHOT_END.toISOString();
           
-          // Fetching up to 100 tweets in the range
           const tweetsRes = await fetch(
             `https://api.twitter.com/2/users/${userId}/tweets?tweet.fields=created_at&max_results=100&start_time=${startTime}&end_time=${endTime}`,
-            { headers: this.headers }
+            { headers }
           );
           const tweetsJson = await tweetsRes.json();
 
           const foundTweets: Tweet[] = (tweetsJson.data || []).map((t: any) => ({
             id: t.id,
             text: t.text,
-            createdAt: new Date(t.created_at), // Using exact ISO creation date from Twitter
-            qualityScore: 1.0 // Real data gets a boost
+            createdAt: new Date(t.created_at),
+            qualityScore: 1.0
           }));
 
           const dailyCounts: Record<string, number> = {};
@@ -112,13 +135,11 @@ export class TwitterService {
             dailyCounts[dayKey] = (dailyCounts[dayKey] || 0) + 1;
           });
 
-          // Points are capped at 5 per day to prevent spam gaming
           let cappedPoints = 0;
           Object.keys(dailyCounts).forEach(day => { 
             cappedPoints += Math.min(dailyCounts[day], 5); 
           });
 
-          // Trust score based on account longevity and activity density
           const trustScore = Math.round((Math.min(accountAgeDays / 1500, 1) * 40) + (foundTweets.length > 3 ? 60 : 20));
 
           return {
@@ -131,12 +152,11 @@ export class TwitterService {
           };
         }
       } catch (error) {
-        console.warn("Robust Twitter Scan failed, likely due to CORS or API limits. Falling back to simulation.", error);
+        console.warn("Robust Twitter Scan failed. Falling back to simulation.", error);
       }
     }
 
     // --- SIMULATION FALLBACK ---
-    // This ensures the app remains functional for users without API keys or in restricted environments.
     await new Promise(r => setTimeout(r, 1500));
 
     const registrationDate = new Date();
@@ -175,9 +195,6 @@ export class TwitterService {
     };
   }
 
-  /**
-   * Generates realistic historical tweets for the simulation fallback.
-   */
   private generateHistoricalMockTweets(handle: string): Tweet[] {
     const texts = [
       "Building the next big thing on @base! #OnchainSummer",

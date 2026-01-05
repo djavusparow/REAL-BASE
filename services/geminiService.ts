@@ -40,14 +40,14 @@ export class GeminiService {
   }
 
   /**
-   * Fetches the real-time price of $LAMBOLESS using Google Search grounding.
+   * Fetches the real-time price of a token on Base using Google Search grounding.
    */
-  async getLambolessPrice(): Promise<number> {
+  async getTokenPrice(tokenName: string, contract: string): Promise<number> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: "What is the current market price of the $LAMBOLESS token on Base network (contract 0xbe7c48aad42eea060150cb64f94b6448a89c1cef) in USD? Return ONLY the numerical price value.",
+        contents: `What is the current market price of the ${tokenName} token on Base network (contract ${contract}) in USD? Return ONLY the numerical price value. If unknown, return 0.0001.`,
         config: {
           tools: [{ googleSearch: {} }]
         }
@@ -56,7 +56,7 @@ export class GeminiService {
       const priceText = response.text?.replace(/[^0-9.]/g, '') || "0.0001"; 
       return parseFloat(priceText) || 0.0001;
     } catch (error) {
-      console.error("Gemini Price Fetch Error:", error);
+      console.error(`Gemini Price Fetch Error for ${tokenName}:`, error);
       return 0.0001; 
     }
   }

@@ -13,7 +13,9 @@ export interface UserStats {
   baseAppAgeDays: number;
   twitterAgeDays: number;
   validTweetsCount: number;
-  lambolessBalance: number;
+  lambolessBalance: number; // USD Value
+  nickBalance?: number;     // USD Value
+  jesseBalance?: number;    // USD Value
   points: number;
   rank: number;
   trustScore?: number;

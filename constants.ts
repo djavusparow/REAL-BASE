@@ -3,6 +3,8 @@ import { RankTier, BadgeConfig, LeaderboardEntry } from './types.ts';
 
 /**
  * CONFIGURATION SECTION
+ * These values are pulled from the environment. 
+ * Ensure TWITTER_API_KEY, TWITTER_API_SECRET, and TWITTER_BEARER_TOKEN are set.
  */
 export const TWITTER_CONFIG = {
   apiKey: process.env.TWITTER_API_KEY,
@@ -13,8 +15,20 @@ export const TWITTER_CONFIG = {
 /**
  * ON-CHAIN CONFIGURATION
  */
-export const TOKEN_CONTRACT = "0xbe7c48aad42eea060150cb64f94b6448a89c1cef";
+export const LAMBOLESS_CONTRACT = "0xbe7c48aad42eea060150cb64f94b6448a89c1cef";
+export const NICK_CONTRACT = "0x9F62B62CF8cC3aea56A3CE8808Cf13503D1131e7";
+export const JESSE_CONTRACT = "0x50f88fe97f72cd3e75b9eb4f747f59bceba80d59";
+
 export const MIN_TOKEN_VALUE_USD = 2.5;
+
+/**
+ * POINT MULTIPLIERS (Per $1 per 24 hours)
+ */
+export const MULTIPLIERS = {
+  LAMBOLESS: 2.5,
+  NICK: 0.1,
+  JESSE: 0.1
+};
 
 /**
  * EVENT TIMELINE
