@@ -29,7 +29,9 @@ import {
   Cpu,
   Binary,
   Send,
-  Users
+  Users,
+  AlertTriangle,
+  Filter
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -92,6 +94,7 @@ const App: React.FC = () => {
   const [handle, setHandle] = useState('');
   const [discoveredProviders, setDiscoveredProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [showWalletSelector, setShowWalletSelector] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
@@ -115,6 +118,7 @@ const App: React.FC = () => {
 
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [leaderboardSort, setLeaderboardSort] = useState<'desc' | 'asc'>('desc');
+  const [leaderboardTierFilter, setLeaderboardTierFilter] = useState<RankTier | 'ALL'>('ALL');
 
   useEffect(() => {
     const onAnnouncement = (event: any) => {
@@ -289,25 +293,22 @@ const App: React.FC = () => {
     setScanProgress(5);
     await sleep(800);
 
-    // Step 2: Fetch Balances
-    log("Reading $LAMBOLESS & $NICK balance on Base...");
-    setScanProgress(15);
-    const [balLambo, balNick] = await Promise.all([
+    // Step 2: Fetch Balances (Improved: Paralel untuk semua token termasuk $JESSE)
+    log("Auditing $LAMBOLESS, $NICK, and $JESSE balances on Base...");
+    setScanProgress(25);
+    const [balLambo, balNick, balJesse] = await Promise.all([
       tokenService.getBalance(address, LAMBOLESS_CONTRACT),
-      tokenService.getBalance(address, NICK_CONTRACT)
+      tokenService.getBalance(address, NICK_CONTRACT),
+      tokenService.getBalance(address, JESSE_CONTRACT)
     ]);
     
-    // Perbaikan Audit Token $Jesse khusus
-    log("Reading $JESSE (0x50f8...) on Base Network...");
-    const balJesse = await tokenService.getBalance(address, JESSE_CONTRACT);
-    
     log(`Confirmed Balances: ${balLambo.toFixed(2)} $LAMBO, ${balNick.toFixed(2)} $NICK, ${balJesse.toFixed(2)} $JESSE`);
-    setScanProgress(30);
+    setScanProgress(40);
     await sleep(600);
 
     // Step 3: DeFi API Price Fetching
     log("Synchronizing real-time market valuations...");
-    setScanProgress(40);
+    setScanProgress(55);
     const [pLambo, pNick, pJesse] = await Promise.all([
       tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
       tokenService.getTokenPrice(NICK_CONTRACT),
@@ -317,25 +318,24 @@ const App: React.FC = () => {
     const usdNick = balNick * pNick;
     const usdJesse = balJesse * pJesse;
     
-    log(`Impact Valuation: $LAMBO: $${usdLambo.toFixed(2)} | $JESSE: $${usdJesse.toFixed(2)}`);
-    setScanProgress(55);
+    log(`Valuation: $LAMBO: $${usdLambo.toFixed(2)} | $JESSE: $${usdJesse.toFixed(2)}`);
+    setScanProgress(70);
     await sleep(600);
 
     // Step 4: Social Graph
-    log("Performing semantic analysis of @" + handle.replace('@', '') + "'s social footprint...");
-    setScanProgress(65);
-    const scanResult = await twitterService.scanPosts(handle);
-    log("Extracted " + scanResult.totalValidPosts + " verified contribution events.");
+    log("Performing semantic analysis of social footprint...");
     setScanProgress(80);
+    const scanResult = await twitterService.scanPosts(handle);
+    log("Extracted verified contribution events.");
+    setScanProgress(90);
     await sleep(600);
 
     // Step 5: Calculation
-    log("Compiling cumulative impact score based on seniority and holding duration...");
-    setScanProgress(90);
+    log("Compiling cumulative impact score...");
+    setScanProgress(95);
     const baseAge = 150 + Math.floor(Math.random() * 50);
     const points = calculatePoints(baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, user?.farcasterAgeDays || 0, { lambo: usdLambo, nick: usdNick, jesse: usdJesse });
     const rank = Math.floor(Math.random() * 900) + 1;
-    setScanProgress(95);
     await sleep(800);
 
     const userData: UserStats = { 
@@ -385,16 +385,24 @@ const App: React.FC = () => {
   const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
     const tier = getTierFromRank(user.rank);
-    const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
     const shareUrl = "https://base.app/app/real-base-2026.vercel.app";
-    const tags = "\n\n@base @baseapp @jessepollak @LAMB0LESS #BaseImpression #OnchainSummer";
-    const fullText = `${message}${tags}`;
     
-    if (platform === 'farcaster') {
-      sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(fullText)}&embeds[]=${encodeURIComponent(shareUrl)}`);
+    if (platform === 'twitter') {
+      const message = `Check out my @Base Impression rating! 🏎️💨\n\nPoints: ${user.points}\nRank: #${user.rank}\n\nHolders of $LAMBOLESS, $thenickshirley, and $jesse get more points every hour! 🔥\n\nTrack your onchain footprint here:`;
+      const tags = "\n\n@base @baseapp @jessepollak @nickshirleyy #BaseImpression #OnchainSummer";
+      sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message + tags)}&url=${encodeURIComponent(shareUrl)}`);
     } else {
-      sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(fullText)}&url=${encodeURIComponent(shareUrl)}`);
+      const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
+      const tags = "\n\n@base @baseapp @jessepollak @LAMB0LESS #BaseImpression #OnchainSummer";
+      sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(message + tags)}&embeds[]=${encodeURIComponent(shareUrl)}`);
     }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setIsTwitterVerified(false);
+    setIsSignatureVerified(false);
+    setShowLogoutConfirm(false);
   };
 
   const claimStatus = useMemo(() => {
@@ -444,10 +452,7 @@ const App: React.FC = () => {
   }, [user]);
 
   const filteredLeaderboard = useMemo(() => {
-    // Hanya tampilkan yang sudah "verified" atau member simulasi yang dianggap sudah login
     let list = [...MOCKED_LEADERBOARD];
-    
-    // Jika user saat ini sudah scan, masukkan ke list
     if (user && user.twitterHandle && user.points > 0) {
       const existingIdx = list.findIndex(l => l.handle.toLowerCase() === user.twitterHandle.toLowerCase());
       if (existingIdx !== -1) {
@@ -456,11 +461,11 @@ const App: React.FC = () => {
         list.push({ rank: user.rank, handle: user.twitterHandle, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
       }
     }
-
     return list
       .filter(l => l.handle.toLowerCase().includes(leaderboardSearch.toLowerCase()))
+      .filter(l => leaderboardTierFilter === 'ALL' || l.tier === leaderboardTierFilter)
       .sort((a, b) => leaderboardSort === 'desc' ? b.points - a.points : a.points - b.points);
-  }, [leaderboardSearch, leaderboardSort, user]);
+  }, [leaderboardSearch, leaderboardSort, leaderboardTierFilter, user]);
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
@@ -475,6 +480,24 @@ const App: React.FC = () => {
               </div>
             ))}</div>
             <div className="bg-white/5 p-4 rounded-2xl flex items-start gap-3"><Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" /><p className="text-[8px] text-gray-500 uppercase font-bold leading-relaxed tracking-wide">Detected via standard EIP-6963 protocol. Ensure your extension is unlocked and set as default.</p></div>
+          </div>
+        </div>
+      )}
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[80] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
+          <div className="w-full max-w-sm glass-effect p-10 rounded-[4rem] border-red-500/20 text-center space-y-8 animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-red-600/10 rounded-full flex items-center justify-center mx-auto border border-red-500/30">
+              <AlertTriangle className="w-10 h-10 text-red-500" />
+            </div>
+            <div className="space-y-3">
+              <h2 className="text-2xl font-black uppercase italic tracking-tighter">Disconnect Profile?</h2>
+              <p className="text-[10px] text-gray-500 font-bold uppercase leading-relaxed tracking-widest">Are you sure you want to disconnect? Your session and unsynced local impact score progress will be reset.</p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <button onClick={handleLogout} className="w-full py-5 bg-red-600 hover:bg-red-500 rounded-2xl font-black uppercase italic text-xs tracking-widest transition-all">Disconnect Now</button>
+              <button onClick={() => setShowLogoutConfirm(false)} className="w-full py-5 bg-white/5 hover:bg-white/10 rounded-2xl font-black uppercase text-xs tracking-widest transition-all">Cancel</button>
+            </div>
           </div>
         </div>
       )}
@@ -533,7 +556,7 @@ const App: React.FC = () => {
 
       <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
         <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">Verified Contributor</span></div></div>
-        {user && <button onClick={() => { setUser(null); setIsTwitterVerified(false); setIsSignatureVerified(false); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors group"><LogOut className="w-4 h-4 text-gray-500 group-hover:text-red-500" /></button>}
+        {user && <button onClick={() => setShowLogoutConfirm(true)} className="p-2 hover:bg-white/5 rounded-lg transition-colors group"><LogOut className="w-4 h-4 text-gray-500 group-hover:text-red-500" /></button>}
       </header>
 
       <main className="max-w-md mx-auto px-4 mt-8">
@@ -636,13 +659,35 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="relative group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
-                    <input type="text" placeholder="Search verified members..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
+                  <div className="space-y-3">
+                    <div className="relative group">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
+                      <input type="text" placeholder="Search verified members..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
+                    </div>
+                    
+                    {/* TIER FILTERS */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 px-1 scrollbar-hide no-scrollbar">
+                      <button 
+                        onClick={() => setLeaderboardTierFilter('ALL')} 
+                        className={`shrink-0 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${leaderboardTierFilter === 'ALL' ? 'bg-white text-black border-white' : 'bg-white/5 text-gray-500 border-white/10'}`}
+                      >
+                        All
+                      </button>
+                      {Object.keys(TIERS).filter(t => t !== RankTier.NONE).map((tierKey) => (
+                        <button 
+                          key={tierKey}
+                          onClick={() => setLeaderboardTierFilter(tierKey as RankTier)} 
+                          className={`shrink-0 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${leaderboardTierFilter === tierKey ? 'bg-blue-600 text-white border-blue-500' : 'bg-white/5 text-gray-500 border-white/10'}`}
+                        >
+                          {TIERS[tierKey as RankTier].name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
                   <div className="flex justify-between items-center px-2">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Ranked by contribution</span>
-                    <button onClick={() => setLeaderboardSort(prev => prev === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Points: {leaderboardSort === 'desc' ? 'High to Low' : 'Low to High'}<ArrowUpDown className="w-3 h-3 text-blue-500" /></button>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2"><Filter className="w-3 h-3" /> Ranked by contribution</span>
+                    <button onClick={() => setLeaderboardSort(prev => prev === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Points: {leaderboardSort === 'desc' ? 'High' : 'Low'}<ArrowUpDown className="w-3 h-3 text-blue-500" /></button>
                   </div>
                 </div>
 
@@ -658,7 +703,7 @@ const App: React.FC = () => {
                               <CheckCircle2 className="w-1.5 h-1.5" /> Synced
                             </div>
                           </div>
-                          <span className="text-[7px] text-gray-500 font-black uppercase tracking-widest">{l.tier} Impact</span>
+                          <span className={`text-[7px] font-black uppercase tracking-widest bg-clip-text text-transparent bg-gradient-to-r ${TIERS[l.tier].color}`}>{TIERS[l.tier].name} Impact</span>
                         </div>
                       </div>
                       <div className="text-right">
@@ -669,7 +714,7 @@ const App: React.FC = () => {
                   )) : (
                     <div className="py-20 text-center glass-effect rounded-[2rem] border-white/5">
                       <Search className="w-8 h-8 text-gray-700 mx-auto mb-3" />
-                      <p className="text-xs font-black uppercase text-gray-600 italic">No verified members found</p>
+                      <p className="text-xs font-black uppercase text-gray-600 italic">No verified members found in this segment</p>
                     </div>
                   )}
                 </div>

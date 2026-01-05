@@ -17,23 +17,31 @@ export class TokenService {
 
   async getBalance(walletAddress: string, tokenContractAddress: string): Promise<number> {
     try {
+      if (!walletAddress || !tokenContractAddress) return 0;
+
       // Normalisasi alamat untuk menghindari case-sensitivity issues
       const normalizedWallet = ethers.getAddress(walletAddress);
       const normalizedToken = ethers.getAddress(tokenContractAddress);
       
       const contract = new ethers.Contract(normalizedToken, MINIMAL_ERC20_ABI, this.provider);
       
-      // Menggunakan timeout agar RPC tidak menggantung
+      // Menggunakan timeout atau penanganan error spesifik untuk decimals
       const [balance, decimals] = await Promise.all([
-        contract.balanceOf(normalizedWallet).catch(() => BigInt(0)),
-        contract.decimals().catch(() => 18) // Default ke 18 jika gagal baca desimal
+        contract.balanceOf(normalizedWallet).catch((err) => {
+          console.warn(`[TokenService] Balance fetch failed for ${tokenContractAddress}:`, err.message);
+          return BigInt(0);
+        }),
+        contract.decimals().catch((err) => {
+          console.warn(`[TokenService] Decimals fetch failed for ${tokenContractAddress}, defaulting to 18:`, err.message);
+          return 18;
+        })
       ]);
       
       const formattedBalance = parseFloat(ethers.formatUnits(balance, decimals));
-      console.log(`[TokenService] Balance for ${tokenContractAddress}: ${formattedBalance}`);
+      console.log(`[TokenService] Found Balance for ${tokenContractAddress}: ${formattedBalance}`);
       return formattedBalance;
     } catch (error) {
-      console.error(`[TokenService] Balance Fetch Error for ${tokenContractAddress}:`, error);
+      console.error(`[TokenService] Critical Balance Error for ${tokenContractAddress}:`, error);
       return 0;
     }
   }
