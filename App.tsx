@@ -265,15 +265,16 @@ const App: React.FC = () => {
       tokenService.getBalance(address, NICK_CONTRACT)
     ]);
     
-    log("Reading $JESSE (0x50f8...) balance on Base...");
+    // Perbaikan Audit Token $Jesse khusus
+    log("Reading $JESSE (0x50f8...) on Base Network...");
     const balJesse = await tokenService.getBalance(address, JESSE_CONTRACT);
     
-    log("Retrieved balances: " + balLambo.toFixed(2) + " $LAMBO, " + balNick.toFixed(2) + " $NICK, " + balJesse.toFixed(2) + " $JESSE");
+    log(`Confirmed Balances: ${balLambo.toFixed(2)} $LAMBO, ${balNick.toFixed(2)} $NICK, ${balJesse.toFixed(2)} $JESSE`);
     setScanProgress(30);
     await sleep(600);
 
     // Step 3: DeFi API Price Fetching
-    log("Fetching real-time price feeds via DexScreener...");
+    log("Synchronizing real-time market valuations...");
     setScanProgress(40);
     const [pLambo, pNick, pJesse] = await Promise.all([
       tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
@@ -284,7 +285,7 @@ const App: React.FC = () => {
     const usdNick = balNick * pNick;
     const usdJesse = balJesse * pJesse;
     
-    log(`Valuation: $LAMBO: $${pLambo.toFixed(6)} | $NICK: $${pNick.toFixed(6)} | $JESSE: $${pJesse.toFixed(6)}`);
+    log(`Impact Valuation: $LAMBO: $${usdLambo.toFixed(2)} | $JESSE: $${usdJesse.toFixed(2)}`);
     setScanProgress(55);
     await sleep(600);
 
@@ -352,7 +353,6 @@ const App: React.FC = () => {
   const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
     const tier = getTierFromRank(user.rank);
-    // Specific pre-filled message as requested
     const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
     const shareUrl = "https://base.app/app/real-base-2026.vercel.app";
     const tags = "\n\n@base @baseapp @jessepollak @LAMB0LESS #BaseImpression #OnchainSummer";

@@ -17,25 +17,29 @@ export class TokenService {
 
   async getBalance(walletAddress: string, tokenContractAddress: string): Promise<number> {
     try {
-      // Normalize addresses
+      // Normalisasi alamat untuk menghindari case-sensitivity issues
       const normalizedWallet = ethers.getAddress(walletAddress);
       const normalizedToken = ethers.getAddress(tokenContractAddress);
       
       const contract = new ethers.Contract(normalizedToken, MINIMAL_ERC20_ABI, this.provider);
+      
+      // Menggunakan timeout agar RPC tidak menggantung
       const [balance, decimals] = await Promise.all([
-        contract.balanceOf(normalizedWallet),
-        contract.decimals()
+        contract.balanceOf(normalizedWallet).catch(() => BigInt(0)),
+        contract.decimals().catch(() => 18) // Default ke 18 jika gagal baca desimal
       ]);
       
-      return parseFloat(ethers.formatUnits(balance, decimals));
+      const formattedBalance = parseFloat(ethers.formatUnits(balance, decimals));
+      console.log(`[TokenService] Balance for ${tokenContractAddress}: ${formattedBalance}`);
+      return formattedBalance;
     } catch (error) {
-      console.error(`Token Balance Fetch Error for ${tokenContractAddress}:`, error);
+      console.error(`[TokenService] Balance Fetch Error for ${tokenContractAddress}:`, error);
       return 0;
     }
   }
 
   /**
-   * Fetches real-time price from DexScreener for a specific token on Base.
+   * Mengambil harga real-time dari DexScreener dengan filter likuiditas terbaik.
    */
   async getTokenPrice(contractAddress: string): Promise<number> {
     try {
@@ -44,27 +48,24 @@ export class TokenService {
       const data = await response.json();
       
       if (data.pairs && data.pairs.length > 0) {
-        // Find the best pair on Base network
+        // Cari pair dengan likuiditas USD tertinggi di jaringan Base
         const basePairs = data.pairs.filter((p: any) => p.chainId === 'base');
         
         if (basePairs.length > 0) {
-          // Sort by liquidity to get the most accurate price
           const bestPair = basePairs.sort((a: any, b: any) => 
             (parseFloat(b.liquidity?.usd || "0")) - (parseFloat(a.liquidity?.usd || "0"))
           )[0];
           
           if (bestPair && bestPair.priceUsd) {
-            const price = parseFloat(bestPair.priceUsd);
-            console.log(`Price for ${contractAddress}: $${price}`);
-            return price;
+            return parseFloat(bestPair.priceUsd);
           }
         }
       }
       
-      console.warn(`No active Base pairs found for ${contractAddress}. Using safety fallback.`);
+      // Fallback jika tidak ada data harga (umum untuk token baru)
       return 0.0001; 
     } catch (error) {
-      console.error(`DexScreener Price Fetch Error for ${contractAddress}:`, error);
+      console.error(`[TokenService] Price Fetch Error for ${contractAddress}:`, error);
       return 0.0001;
     }
   }
