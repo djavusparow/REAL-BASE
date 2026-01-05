@@ -268,18 +268,18 @@ const App: React.FC = () => {
     setScanProgress(30);
     await sleep(600);
 
-    // Step 3: Gemini Grounding
-    log("Grounding asset values via Gemini AI Search Grounding...");
+    // Step 3: DeFi API Price Fetching
+    log("Fetching real-time price feeds via DexScreener DeFi Protocol...");
     setScanProgress(40);
     const [pLambo, pNick, pJesse] = await Promise.all([
-      geminiService.getTokenPrice("LAMBOLESS", LAMBOLESS_CONTRACT),
-      geminiService.getTokenPrice("thenickshirley", NICK_CONTRACT),
-      geminiService.getTokenPrice("jesse", JESSE_CONTRACT)
+      tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
+      tokenService.getTokenPrice(NICK_CONTRACT),
+      tokenService.getTokenPrice(JESSE_CONTRACT)
     ]);
     const usdLambo = balLambo * pLambo;
     const usdNick = balNick * pNick;
     const usdJesse = balJesse * pJesse;
-    log("Real-time valuation complete. Total USD exposure indexed.");
+    log("Live market valuation: $LAMBO: $" + pLambo.toFixed(6) + " | $NICK: $" + pNick.toFixed(6));
     setScanProgress(55);
     await sleep(600);
 
@@ -323,9 +323,9 @@ const App: React.FC = () => {
         tokenService.getBalance(user.address, JESSE_CONTRACT)
       ]);
       const [pLambo, pNick, pJesse] = await Promise.all([
-        geminiService.getTokenPrice("LAMBOLESS", LAMBOLESS_CONTRACT),
-        geminiService.getTokenPrice("thenickshirley", NICK_CONTRACT),
-        geminiService.getTokenPrice("jesse", JESSE_CONTRACT)
+        tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
+        tokenService.getTokenPrice(NICK_CONTRACT),
+        tokenService.getTokenPrice(JESSE_CONTRACT)
       ]);
       const updatedUser = { ...user, lambolessBalance: balLambo * pLambo, nickBalance: balNick * pNick, jesseBalance: balJesse * pJesse };
       updatedUser.points = calculatePoints(updatedUser.baseAppAgeDays, updatedUser.twitterAgeDays, updatedUser.validTweetsCount, updatedUser.farcasterAgeDays, { lambo: updatedUser.lambolessBalance, nick: updatedUser.nickBalance || 0, jesse: updatedUser.jesseBalance || 0 });
@@ -344,7 +344,6 @@ const App: React.FC = () => {
     setIsGenerating(false);
   };
 
-  // Fix: Add missing claimStatus logic for the Claim tab
   const claimStatus = useMemo(() => {
     const now = new Date();
     const isClaimOpen = now >= CLAIM_START;
