@@ -32,7 +32,9 @@ import {
   Send,
   Users,
   AlertTriangle,
-  Filter
+  Filter,
+  Copy,
+  ShoppingCart
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -117,7 +119,6 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
 
-  // Detection helper for Farcaster addresses
   const getFarcasterAddress = (ctx: any) => {
     if (!ctx) return null;
     return (
@@ -322,7 +323,7 @@ const App: React.FC = () => {
       setScanProgress(10);
       await sleep(400);
 
-      log("Checking $LAMBOLESS, $NICK, $JESSE balances...");
+      log("Checking token balances on Base...");
       const [amtLambo, amtNick, amtJesse] = await Promise.all([
         tokenService.getBalance(currentAddress, LAMBOLESS_CONTRACT),
         tokenService.getBalance(currentAddress, NICK_CONTRACT),
@@ -444,6 +445,17 @@ const App: React.FC = () => {
     else sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(msg)}&embeds[]=${encodeURIComponent(shareUrl)}`);
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert("Contract address copied!");
+  };
+
+  const handleBuyToken = (tokenAddress: string) => {
+    // Direct user to Uniswap on Base for the specified token
+    const uniswapUrl = `https://app.uniswap.org/explore/tokens/base/${tokenAddress}`;
+    sdk.actions.openUrl(uniswapUrl);
+  };
+
   const filteredLeaderboard = useMemo(() => {
     let list = [...MOCKED_LEADERBOARD];
     if (user && user.points > 0) {
@@ -529,11 +541,6 @@ const App: React.FC = () => {
                       <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400" />
                       <input value={handle} onChange={e => setHandle(e.target.value)} disabled={isTwitterVerified} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none" />
                     </div>
-                    {!isTwitterVerified ? (
-                      <button onClick={handleScan} className="px-6 bg-blue-600/20 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase">Start</button>
-                    ) : (
-                      <div className="px-6 bg-green-500/20 border border-green-500/40 rounded-2xl flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -559,26 +566,35 @@ const App: React.FC = () => {
                   <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">Social Points</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.pointsBreakdown?.social.toFixed(2)}</div></div>
                 </div>
 
-                {/* NEW: Holding Rewards Section */}
+                {/* Holding Rewards Section with Contract Addresses and Buy Button */}
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
                    <div className="flex items-center justify-between">
                      <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Holding Rewards (Since Jan 5)</h3></div>
                      <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/10 rounded-full">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-blue-500" />}</button>
                    </div>
-                   <div className="space-y-3">
+                   <div className="space-y-4">
                      {[
-                       { name: '$LAMBOLESS', amount: user.lambolessAmount || 0, val: user.lambolessBalance, pts: user.pointsBreakdown?.lambo || 0, color: 'text-blue-400' },
-                       { name: '$NICK', amount: user.nickAmount || 0, val: user.nickBalance || 0, pts: user.pointsBreakdown?.nick || 0, color: 'text-purple-400' },
-                       { name: '$JESSE', amount: user.jesseAmount || 0, val: user.jesseBalance || 0, pts: user.pointsBreakdown?.jesse || 0, color: 'text-green-400' },
+                       { name: '$LAMBOLESS', amount: user.lambolessAmount || 0, val: user.lambolessBalance, pts: user.pointsBreakdown?.lambo || 0, color: 'text-blue-400', contract: LAMBOLESS_CONTRACT },
+                       { name: '$NICK', amount: user.nickAmount || 0, val: user.nickBalance || 0, pts: user.pointsBreakdown?.nick || 0, color: 'text-purple-400', contract: NICK_CONTRACT },
+                       { name: '$JESSE', amount: user.jesseAmount || 0, val: user.jesseBalance || 0, pts: user.pointsBreakdown?.jesse || 0, color: 'text-green-400', contract: JESSE_CONTRACT },
                      ].map((item, i) => (
-                       <div key={i} className="p-4 bg-white/5 rounded-[1.5rem] border border-white/5 flex flex-col gap-2">
-                         <div className="flex justify-between items-center">
-                           <span className={`text-[11px] font-black ${item.color}`}>{item.name}</span>
-                           <span className="text-[10px] font-bold text-gray-500 tracking-widest">{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} TOKENS</span>
+                       <div key={i} className="p-5 bg-white/5 rounded-[2rem] border border-white/5 flex flex-col gap-4">
+                         <div className="flex justify-between items-start">
+                           <div className="flex flex-col gap-1">
+                             <span className={`text-sm font-black ${item.color}`}>{item.name}</span>
+                             <div className="flex items-center gap-2" onClick={() => copyToClipboard(item.contract)}>
+                               <span className="text-[8px] font-mono text-gray-500">{item.contract.slice(0, 6)}...{item.contract.slice(-4)}</span>
+                               <Copy className="w-2.5 h-2.5 text-gray-600 cursor-pointer" />
+                             </div>
+                           </div>
+                           <button onClick={() => handleBuyToken(item.contract)} className="px-4 py-2 bg-blue-600/20 border border-blue-500/40 rounded-xl flex items-center gap-2 hover:bg-blue-600/30 transition-all">
+                             <ShoppingCart className="w-3 h-3 text-blue-400" />
+                             <span className="text-[9px] font-black uppercase text-blue-200">Buy</span>
+                           </button>
                          </div>
-                         <div className="flex justify-between items-end border-t border-white/5 pt-2">
-                           <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Valuation</span><span className="text-[10px] font-black">${item.val.toFixed(2)}</span></div>
-                           <div className="flex flex-col items-end"><span className="text-[8px] font-black text-blue-600 uppercase">Points Earned</span><span className="text-[11px] font-black text-blue-400">+{item.pts.toFixed(4)} pts</span></div>
+                         <div className="flex justify-between items-center border-t border-white/5 pt-4">
+                            <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Holdings</span><span className="text-[11px] font-bold">{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
+                            <div className="flex flex-col items-end"><span className="text-[8px] font-black text-blue-600 uppercase">Points</span><span className="text-[11px] font-black text-blue-400">+{item.pts.toFixed(4)}</span></div>
                          </div>
                        </div>
                      ))}
