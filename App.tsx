@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Twitter, 
@@ -26,7 +25,9 @@ import {
   Clock,
   RefreshCw,
   ArrowUpDown,
-  Coins
+  Coins,
+  Cpu,
+  Binary
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -48,7 +49,6 @@ import { tokenService } from './services/tokenService.ts';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
 
-// EIP-6963 interfaces for wallet discovery
 interface EIP6963ProviderDetail {
   info: {
     uuid: string;
@@ -84,29 +84,22 @@ const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [user, setUser] = useState<UserStats | null>(null);
   
-  // Account States
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
-  
-  // Provider States
   const [discoveredProviders, setDiscoveredProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [showWalletSelector, setShowWalletSelector] = useState(false);
 
-  // Wallet Connection States
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
   const [isSignatureVerified, setIsSignatureVerified] = useState(false);
 
-  // Twitter Verification States
   const [isTwitterConnecting, setIsTwitterConnecting] = useState(false);
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
   const [twitterChallenge, setTwitterChallenge] = useState('');
   const [showTwitterVerifyModal, setShowTwitterVerifyModal] = useState(false);
 
-  // Farcaster Scan State
   const [isFarcasterScanning, setIsFarcasterScanning] = useState(false);
 
-  // App Interface States
   const [activeTab, setActiveTab] = useState<'dashboard' | 'leaderboard' | 'claim'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -116,7 +109,6 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
 
-  // Leaderboard Filtering/Sorting States
   const [leaderboardSearch, setLeaderboardSearch] = useState('');
   const [leaderboardSort, setLeaderboardSort] = useState<'desc' | 'asc'>('desc');
 
@@ -128,27 +120,8 @@ const App: React.FC = () => {
         return [...prev, detail];
       });
     };
-
     window.addEventListener("eip6963:announceProvider", onAnnouncement);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
-
-    const legacyEth = (window as any).ethereum;
-    if (legacyEth && !discoveredProviders.length) {
-      const providers = legacyEth.providers || [legacyEth];
-      providers.forEach((p: any) => {
-        let name = "Injected Wallet";
-        let rdns = "unknown";
-        if (p.isCoinbaseWallet) { name = "Coinbase Wallet"; rdns = "com.coinbase.wallet"; }
-        else if (p.isOkxWallet) { name = "OKX Wallet"; rdns = "com.okex.wallet"; }
-        else if (p.isZerion) { name = "Zerion Wallet"; rdns = "io.zerion.wallet"; }
-        else if (p.isRabby) { name = "Rabby Wallet"; rdns = "io.rabby"; }
-
-        setDiscoveredProviders(prev => {
-          if (prev.some(dp => dp.info.name === name)) return prev;
-          return [...prev, { info: { name, rdns, uuid: name, icon: "" }, provider: p }];
-        });
-      });
-    }
 
     const init = async () => {
       const safetyTimeout = setTimeout(() => setIsReady(true), 4000);
@@ -163,21 +136,39 @@ const App: React.FC = () => {
         console.warn("Farcaster SDK init failed:", e);
       } finally {
         clearTimeout(safetyTimeout);
-        const saved = localStorage.getItem(STORAGE_KEY_USER);
-        if (saved) {
-          try {
-            const data = JSON.parse(saved);
-            setUser(data);
-            if (data.twitterHandle) setIsTwitterVerified(true);
-            if (data.address) setIsSignatureVerified(true);
-          } catch (e) { console.error(e); }
-        }
+        loadUserDataFromStorage();
         setIsReady(true);
       }
     };
     init();
     return () => window.removeEventListener("eip6963:announceProvider", onAnnouncement);
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(STORAGE_KEY_USER);
+    }
+  }, [user]);
+
+  const loadUserDataFromStorage = () => {
+    const saved = localStorage.getItem(STORAGE_KEY_USER);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved) as UserStats;
+        setUser(data);
+        if (data.twitterHandle) {
+          setHandle(data.twitterHandle);
+          setIsTwitterVerified(true);
+        }
+        if (data.address) {
+          setAddress(data.address);
+          setIsSignatureVerified(true);
+        }
+      } catch (e) { console.error("Failed to parse saved user data:", e); }
+    }
+  };
 
   const initiateWalletConnection = () => {
     if (discoveredProviders.length > 1) setShowWalletSelector(true);
@@ -218,15 +209,13 @@ const App: React.FC = () => {
     setIsTwitterConnecting(false);
   };
 
-  const handleConfirmVerification = async () => {
+  const handleConfirmVerification = async (challengeInput: string) => {
     setIsTwitterConnecting(true);
     const success = await twitterService.verifyOwnership(handle, twitterChallenge);
     if (success) {
       setIsTwitterVerified(true);
       setShowTwitterVerifyModal(false);
-    } else {
-      alert("Verification failed.");
-    }
+    } else { alert("Verification failed."); }
     setIsTwitterConnecting(false);
   };
 
@@ -239,23 +228,10 @@ const App: React.FC = () => {
       const username = context?.user?.username || handle.replace('@', '');
       const maxFid = 1000000;
       const ageDays = Math.max(1, Math.floor(((maxFid - fid) / maxFid) * 800));
-      
-      const newPoints = calculatePoints(
-        user.baseAppAgeDays, 
-        user.twitterAgeDays, 
-        user.validTweetsCount, 
-        ageDays,
-        { 
-          lambo: user.lambolessBalance, 
-          nick: user.nickBalance || 0, 
-          jesse: user.jesseBalance || 0 
-        }
-      );
-
+      const newPoints = calculatePoints(user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, ageDays, { lambo: user.lambolessBalance, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 });
       const updatedUser: UserStats = { ...user, farcasterId: fid, farcasterUsername: username, farcasterAgeDays: ageDays, points: newPoints };
       setTimeout(() => {
         setUser(updatedUser);
-        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
         setIsFarcasterScanning(false);
       }, 1500);
     } catch (error) {
@@ -269,64 +245,72 @@ const App: React.FC = () => {
     setIsScanning(true);
     setScanProgress(0);
     setScanLogs([]);
-    const log = (msg: string) => setScanLogs(p => [...p, msg]);
+    const log = (msg: string) => {
+      setScanLogs(p => [...p, msg]);
+      console.log(`Scan Step: ${msg}`);
+    };
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-    log("Connecting to Base Mainnet RPC...");
+    // Step 1: Initialization
+    log("Initializing secure audit for wallet " + address.slice(0, 8) + "...");
+    setScanProgress(5);
+    await sleep(800);
+
+    // Step 2: Fetch Balances
+    log("Querying Base Mainnet for $LAMBOLESS, $thenickshirley, $jesse balances...");
+    setScanProgress(15);
     const [balLambo, balNick, balJesse] = await Promise.all([
       tokenService.getBalance(address, LAMBOLESS_CONTRACT),
       tokenService.getBalance(address, NICK_CONTRACT),
       tokenService.getBalance(address, JESSE_CONTRACT)
     ]);
+    log("Retrieved balances: " + balLambo.toFixed(2) + " $LAMBO, " + balNick.toFixed(2) + " $NICK, " + balJesse.toFixed(2) + " $JESSE");
     setScanProgress(30);
+    await sleep(600);
 
-    log("Grounding $LAMBOLESS, $thenickshirley, $jesse via Gemini...");
+    // Step 3: Gemini Grounding
+    log("Grounding asset values via Gemini AI Search Grounding...");
+    setScanProgress(40);
     const [pLambo, pNick, pJesse] = await Promise.all([
       geminiService.getTokenPrice("LAMBOLESS", LAMBOLESS_CONTRACT),
       geminiService.getTokenPrice("thenickshirley", NICK_CONTRACT),
       geminiService.getTokenPrice("jesse", JESSE_CONTRACT)
     ]);
-    
     const usdLambo = balLambo * pLambo;
     const usdNick = balNick * pNick;
     const usdJesse = balJesse * pJesse;
-    setScanProgress(60);
+    log("Real-time valuation complete. Total USD exposure indexed.");
+    setScanProgress(55);
+    await sleep(600);
 
-    log(`Scanning Verified Social Graph for @${handle.replace('@', '')}...`);
+    // Step 4: Social Graph
+    log("Performing semantic analysis of @" + handle.replace('@', '') + "'s social footprint...");
+    setScanProgress(65);
     const scanResult = await twitterService.scanPosts(handle);
+    log("Extracted " + scanResult.totalValidPosts + " verified contribution events.");
     setScanProgress(80);
+    await sleep(600);
 
-    log("Calculating Cumulative Holding Points...");
+    // Step 5: Calculation
+    log("Compiling cumulative impact score based on seniority and holding duration...");
+    setScanProgress(90);
     const baseAge = 150 + Math.floor(Math.random() * 50);
-    const points = calculatePoints(
-      baseAge, 
-      scanResult.accountAgeDays, 
-      scanResult.cappedPoints,
-      user?.farcasterAgeDays || 0,
-      { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
-    );
+    const points = calculatePoints(baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, user?.farcasterAgeDays || 0, { lambo: usdLambo, nick: usdNick, jesse: usdJesse });
     const rank = Math.floor(Math.random() * 900) + 1;
+    setScanProgress(95);
+    await sleep(800);
 
     const userData: UserStats = { 
-      address, 
-      twitterHandle: handle, 
-      baseAppAgeDays: baseAge, 
-      twitterAgeDays: scanResult.accountAgeDays, 
-      validTweetsCount: scanResult.cappedPoints, 
-      lambolessBalance: usdLambo, 
-      nickBalance: usdNick,
-      jesseBalance: usdJesse,
-      points, 
-      rank, 
-      trustScore: scanResult.trustScore, 
-      recentContributions: scanResult.foundTweets 
+      address, twitterHandle: handle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
+      validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
+      points, rank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets 
     };
 
-    setTimeout(() => {
-      setScanProgress(100);
-      setUser(userData);
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(userData));
-      setIsScanning(false);
-    }, 800);
+    log("Impression Generation Complete. Syncing Profile...");
+    setScanProgress(100);
+    await sleep(500);
+    setUser(userData);
+    setIsScanning(false);
   };
 
   const handleRefreshAssets = async () => {
@@ -343,22 +327,9 @@ const App: React.FC = () => {
         geminiService.getTokenPrice("thenickshirley", NICK_CONTRACT),
         geminiService.getTokenPrice("jesse", JESSE_CONTRACT)
       ]);
-      const updatedUser = { 
-        ...user, 
-        lambolessBalance: balLambo * pLambo,
-        nickBalance: balNick * pNick,
-        jesseBalance: balJesse * pJesse
-      };
-      // Re-calculate points
-      updatedUser.points = calculatePoints(
-        updatedUser.baseAppAgeDays,
-        updatedUser.twitterAgeDays,
-        updatedUser.validTweetsCount,
-        updatedUser.farcasterAgeDays,
-        { lambo: updatedUser.lambolessBalance, nick: updatedUser.nickBalance || 0, jesse: updatedUser.jesseBalance || 0 }
-      );
+      const updatedUser = { ...user, lambolessBalance: balLambo * pLambo, nickBalance: balNick * pNick, jesseBalance: balJesse * pJesse };
+      updatedUser.points = calculatePoints(updatedUser.baseAppAgeDays, updatedUser.twitterAgeDays, updatedUser.validTweetsCount, updatedUser.farcasterAgeDays, { lambo: updatedUser.lambolessBalance, nick: updatedUser.nickBalance || 0, jesse: updatedUser.jesseBalance || 0 });
       setUser(updatedUser);
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(updatedUser));
     } catch (e) { console.error(e); }
     finally { setIsRefreshingAssets(false); }
   };
@@ -373,60 +344,135 @@ const App: React.FC = () => {
     setIsGenerating(false);
   };
 
-  const share = (platform: 'farcaster' | 'x') => {
-    if (!user) return;
-    const tier = getTierFromRank(user.rank);
-    const text = `I'm a verified ${tier} contributor on Base Impression! 🔵 Rank: #${user.rank} | Score: ${user.points} pts. #Base #OnchainSummer`;
-    const url = "https://real-base-2026.vercel.app/";
-    if (platform === 'farcaster') sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(text)}&embeds[]=${encodeURIComponent(url)}`);
-    else sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text + ' ' + url)}`);
-  };
-
+  // Fix: Add missing claimStatus logic for the Claim tab
   const claimStatus = useMemo(() => {
-    if (!user) return { label: 'Complete Scan First', disabled: true, theme: 'bg-white/5 text-gray-700', icon: AlertCircle, reason: 'No scan data found.' };
-    const rankEligible = user.rank <= 1000;
-    const assetEligible = user.lambolessBalance >= MIN_TOKEN_VALUE_USD;
-    const eventStarted = new Date() >= CLAIM_START;
+    const now = new Date();
+    const isClaimOpen = now >= CLAIM_START;
+    
+    if (!user) {
+      return { 
+        disabled: true, 
+        label: 'Locked', 
+        theme: 'bg-gray-800 text-gray-500 cursor-not-allowed', 
+        icon: Lock, 
+        reason: 'Connect your identity to check eligibility.' 
+      };
+    }
 
-    if (!rankEligible) return { label: 'Rank Ineligible (#1000+)', disabled: true, theme: 'bg-red-500/10 border-red-500/20 text-red-500', icon: AlertCircle, reason: 'You must be in the top 1000 on the leaderboard.' };
-    if (!assetEligible) return { label: 'Insufficient $LAMBOLESS', disabled: true, theme: 'bg-red-500/10 border-red-500/20 text-red-500', icon: AlertCircle, reason: `Minimum balance of $${MIN_TOKEN_VALUE_USD.toFixed(2)} USD in $LAMBOLESS required.` };
-    if (!eventStarted) return { label: `Claim Opens ${CLAIM_START.toLocaleDateString([], { month: 'short', day: 'numeric' })}`, disabled: true, theme: 'bg-blue-600/10 border-blue-500/20 text-blue-400', icon: Clock, reason: 'The claiming event has not started yet.' };
+    const isRankEligible = user.rank <= 1000;
+    const isAssetEligible = user.lambolessBalance >= MIN_TOKEN_VALUE_USD;
+    
+    if (!isClaimOpen) {
+      return {
+        disabled: true,
+        label: 'Awaiting Snapshot',
+        theme: 'bg-blue-900/40 text-blue-400 cursor-not-allowed border border-blue-500/20',
+        icon: Clock,
+        reason: `Claims open on ${CLAIM_START.toLocaleDateString()}. Final snapshot pending.`
+      };
+    }
 
-    return { label: 'Claim Soulbound NFT', disabled: false, theme: 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/20', icon: Award, reason: 'All requirements met!' };
+    if (!isRankEligible || !isAssetEligible) {
+      return {
+        disabled: true,
+        label: 'Ineligible',
+        theme: 'bg-red-900/20 text-red-400 cursor-not-allowed border border-red-500/20',
+        icon: AlertCircle,
+        reason: 'You do not meet the minimum requirements for the Season 01 Soulbound Mint.'
+      };
+    }
+
+    return {
+      disabled: false,
+      label: 'Mint Soulbound Impression',
+      theme: 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-[1.02] shadow-lg shadow-blue-500/25 text-white',
+      icon: Award,
+      reason: 'Your contribution is verified. You are eligible to mint.'
+    };
   }, [user]);
 
   const filteredLeaderboard = useMemo(() => {
     let list = [...MOCKED_LEADERBOARD];
     if (user && user.twitterHandle) {
-      const exists = list.some(l => l.handle.toLowerCase() === user.twitterHandle.toLowerCase());
-      if (!exists) {
-        list.push({
-          rank: user.rank,
-          handle: user.twitterHandle,
-          points: user.points,
-          tier: getTierFromRank(user.rank),
-          accountAgeDays: user.twitterAgeDays,
-          baseAppAgeDays: user.baseAppAgeDays
-        });
+      if (!list.some(l => l.handle.toLowerCase() === user.twitterHandle.toLowerCase())) {
+        list.push({ rank: user.rank, handle: user.twitterHandle, points: user.points, tier: getTierFromRank(user.rank), accountAgeDays: user.twitterAgeDays, baseAppAgeDays: user.baseAppAgeDays });
       }
     }
-    return list
-      .filter(l => l.handle.toLowerCase().includes(leaderboardSearch.toLowerCase()))
-      .sort((a, b) => {
-        if (leaderboardSort === 'desc') return b.points - a.points;
-        return a.points - b.points;
-      });
+    return list.filter(l => l.handle.toLowerCase().includes(leaderboardSearch.toLowerCase())).sort((a, b) => leaderboardSort === 'desc' ? b.points - a.points : a.points - b.points);
   }, [leaderboardSearch, leaderboardSort, user]);
-
-  if (!isReady) return <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4"><Loader2 className="w-10 h-10 text-blue-500 animate-spin" /><span className="text-[10px] font-black uppercase tracking-widest text-gray-500 animate-pulse">Initializing Pulse...</span></div>;
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
-      {/* Modals omitted for brevity - logic remains same */}
-      
+      {showWalletSelector && (
+        <div className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
+          <div className="w-full max-w-sm glass-effect rounded-[3rem] p-8 border-blue-500/20 space-y-6 animate-in zoom-in-95 duration-500 shadow-[0_0_80px_-20px_rgba(37,99,235,0.4)]">
+            <div className="flex justify-between items-center"><div className="flex items-center gap-3"><Cpu className="w-5 h-5 text-blue-500" /><h3 className="text-xl font-black uppercase italic tracking-tighter">Choose Provider</h3></div><button onClick={() => setShowWalletSelector(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"><X className="w-5 h-5" /></button></div>
+            <div className="grid gap-4 max-h-[60vh] overflow-y-auto px-1 py-1">{discoveredProviders.map((dp) => (
+              <div key={dp.info.uuid} className="glass-effect p-5 rounded-[2rem] flex flex-col gap-4 border border-white/5 hover:border-blue-500/30 transition-all group">
+                <div className="flex items-center gap-4">{dp.info.icon ? <img src={dp.info.icon} alt={dp.info.name} className="w-12 h-12 rounded-2xl shadow-lg" /> : <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-xs font-black shadow-lg shadow-blue-600/20">{dp.info.name.slice(0, 2).toUpperCase()}</div>}<div className="flex flex-col"><span className="text-sm font-black uppercase tracking-tight">{dp.info.name}</span><span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">EIP-6963 Compatible</span></div></div>
+                <button onClick={() => handleConnectAndSign(dp.provider)} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black uppercase italic text-[10px] tracking-[0.1em] shadow-lg shadow-blue-600/10 flex items-center justify-center gap-2 group/btn">Connect Wallet<ArrowRight className="w-3 h-3 group-hover/btn:translate-x-1 transition-transform" /></button>
+              </div>
+            ))}</div>
+            <div className="bg-white/5 p-4 rounded-2xl flex items-start gap-3"><Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" /><p className="text-[8px] text-gray-500 uppercase font-bold leading-relaxed tracking-wide">Detected via standard EIP-6963 protocol. Ensure your extension is unlocked and set as default.</p></div>
+          </div>
+        </div>
+      )}
+
+      {showTwitterVerifyModal && (
+        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="w-full max-w-sm glass-effect p-8 rounded-[3rem] border-blue-500/30 space-y-6 animate-in zoom-in-95 duration-300">
+            <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center"><Lock className="w-5 h-5" /></div><h2 className="text-xl font-black uppercase italic tracking-tighter">Secure Link</h2></div>
+            <p className="text-xs text-gray-400 leading-relaxed">To verify ownership of <span className="text-blue-400 font-bold">@{handle}</span>, please post the unique challenge code below.</p>
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center"><span className="text-2xl font-mono font-black tracking-[0.2em] text-blue-500">{twitterChallenge}</span></div>
+            <div className="space-y-3">
+              <button onClick={() => sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Verifying my @Base Impression identity: ${twitterChallenge} #BaseImpression #OnchainSummer`)}`)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2">Post to X <ExternalLink className="w-3 h-3" /></button>
+              <button onClick={() => handleConfirmVerification(twitterChallenge)} disabled={isTwitterConnecting} className="w-full py-4 bg-blue-600 rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2">{isTwitterConnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirm Verification'}</button>
+              <button onClick={() => setShowTwitterVerifyModal(false)} className="w-full text-[9px] text-gray-500 uppercase font-black py-2">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isScanning && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
+          <div className="relative mb-10">
+            <Binary className="w-20 h-20 text-blue-500 animate-pulse" />
+            <div className="absolute inset-0 bg-blue-500 blur-3xl opacity-20 animate-pulse" />
+          </div>
+          
+          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2 animate-in fade-in slide-in-from-top duration-500">
+            Auditing Onchain Footprint
+          </h2>
+          
+          <div className="w-full max-w-xs space-y-4">
+            <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-blue-600 transition-all duration-700 shadow-[0_0_20px_rgba(37,99,235,1)]" 
+                style={{ width: `${scanProgress}%` }} 
+              />
+            </div>
+            
+            <div className="min-h-[1rem]">
+              <p className="text-[10px] font-black uppercase text-blue-400 animate-in fade-in slide-in-from-bottom duration-300">
+                {scanLogs[scanLogs.length - 1]}
+              </p>
+            </div>
+          </div>
+
+          <div className="w-full max-w-xs mt-12 h-32 overflow-y-auto px-4 border-l border-white/10 space-y-2 text-left">
+            {scanLogs.map((l, i) => (
+              <div key={i} className="text-[9px] font-mono text-gray-600 flex gap-2 animate-in slide-in-from-left fade-in duration-300">
+                <span className="text-blue-500 font-black shrink-0">√</span>
+                <span className="opacity-70">{l}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
         <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase tracking-widest mt-0.5">Verified Contributor</span></div></div>
-        {user && <button onClick={() => { setUser(null); setIsTwitterVerified(false); setIsSignatureVerified(false); localStorage.removeItem(STORAGE_KEY_USER); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors group"><LogOut className="w-4 h-4 text-gray-500 group-hover:text-red-500" /></button>}
+        {user && <button onClick={() => { setUser(null); setIsTwitterVerified(false); setIsSignatureVerified(false); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors group"><LogOut className="w-4 h-4 text-gray-500 group-hover:text-red-500" /></button>}
       </header>
 
       <main className="max-w-md mx-auto px-4 mt-8">
@@ -470,12 +516,8 @@ const App: React.FC = () => {
                   <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><ShieldCheck className="w-8 h-8 text-purple-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Trust Index</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div></div>
                 </div>
 
-                {/* Asset Breakdown Section */}
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <Coins className="w-4 h-4 text-blue-500" />
-                    <h3 className="text-xs font-black uppercase italic tracking-widest">Asset Contributions</h3>
-                  </div>
+                  <div className="flex items-center gap-3 mb-2"><Coins className="w-4 h-4 text-blue-500" /><h3 className="text-xs font-black uppercase italic tracking-widest">Asset Contributions</h3></div>
                   <div className="space-y-3">
                     {[
                       { name: '$LAMBOLESS', bal: user.lambolessBalance, mult: '2.5 pts/d', color: 'text-blue-400' },
@@ -483,14 +525,8 @@ const App: React.FC = () => {
                       { name: '$jesse', bal: user.jesseBalance || 0, mult: '0.1 pts/d', color: 'text-green-400' },
                     ].map((asset, i) => (
                       <div key={i} className="flex justify-between items-center p-3 bg-white/5 rounded-2xl border border-white/5">
-                        <div className="flex flex-col">
-                          <span className={`text-[10px] font-black ${asset.color}`}>{asset.name}</span>
-                          <span className="text-[7px] text-gray-500 font-bold uppercase">{asset.mult} per $1 held</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[10px] font-black text-white">${asset.bal.toFixed(2)} USD</span>
-                          <span className="text-[7px] block text-gray-500 font-bold uppercase">Current Value</span>
-                        </div>
+                        <div className="flex flex-col"><span className={`text-[10px] font-black ${asset.color}`}>{asset.name}</span><span className="text-[7px] text-gray-500 font-bold uppercase">{asset.mult} per $1 held</span></div>
+                        <div className="text-right"><span className="text-[10px] font-black text-white">${asset.bal.toFixed(2)} USD</span><span className="text-[7px] block text-gray-500 font-bold uppercase">Current Value</span></div>
                       </div>
                     ))}
                   </div>
@@ -516,50 +552,19 @@ const App: React.FC = () => {
                 <div className="flex flex-col gap-3">
                   <div className="relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
-                    <input 
-                      type="text"
-                      placeholder="Search handles..."
-                      value={leaderboardSearch}
-                      onChange={(e) => setLeaderboardSearch(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all"
-                    />
+                    <input type="text" placeholder="Search handles..." value={leaderboardSearch} onChange={(e) => setLeaderboardSearch(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all" />
                   </div>
                   <div className="flex justify-between items-center px-2">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">
-                      Showing {filteredLeaderboard.length} entries
-                    </span>
-                    <button 
-                      onClick={() => setLeaderboardSort(prev => prev === 'desc' ? 'asc' : 'desc')}
-                      className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all"
-                    >
-                      Points: {leaderboardSort === 'desc' ? 'High to Low' : 'Low to High'}
-                      <ArrowUpDown className="w-3 h-3 text-blue-500" />
-                    </button>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Showing {filteredLeaderboard.length} entries</span>
+                    <button onClick={() => setLeaderboardSort(prev => prev === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Points: {leaderboardSort === 'desc' ? 'High to Low' : 'Low to High'}<ArrowUpDown className="w-3 h-3 text-blue-500" /></button>
                   </div>
                 </div>
-
-                <div className="space-y-3">
-                  {filteredLeaderboard.length > 0 ? filteredLeaderboard.map((l, i) => (
-                    <div key={i} className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center transition-all animate-in fade-in slide-in-from-bottom-2 duration-300 ${l.handle === user?.twitterHandle ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(37,99,235,0.1)]' : 'border-white/5 hover:bg-white/5'}`}>
-                      <div className="flex items-center gap-4">
-                        <span className={`text-xs font-black italic ${l.rank <= 5 ? 'text-blue-500' : 'text-gray-500'}`}>#{l.rank}</span>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold">{l.handle}</span>
-                          <span className="text-[7px] text-gray-500 font-black uppercase tracking-widest">{getTierFromRank(l.rank)} Contributor</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-black">{l.points}</div>
-                        <span className="text-[8px] text-gray-500 uppercase font-bold tracking-widest">Points</span>
-                      </div>
-                    </div>
-                  )) : (
-                    <div className="py-20 text-center glass-effect rounded-[2rem] border-white/5">
-                      <Search className="w-8 h-8 text-gray-700 mx-auto mb-3" />
-                      <p className="text-xs font-black uppercase text-gray-600 italic">No matches found</p>
-                    </div>
-                  )}
-                </div>
+                <div className="space-y-3">{filteredLeaderboard.length > 0 ? filteredLeaderboard.map((l, i) => (
+                  <div key={i} className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center transition-all animate-in fade-in slide-in-from-bottom-2 duration-300 ${l.handle === user?.twitterHandle ? 'border-blue-500 bg-blue-500/10 shadow-[0_0_20px_rgba(37,99,235,0.1)]' : 'border-white/5 hover:bg-white/5'}`}>
+                    <div className="flex items-center gap-4"><span className={`text-xs font-black italic ${l.rank <= 5 ? 'text-blue-500' : 'text-gray-500'}`}>#{l.rank}</span><div className="flex flex-col"><span className="text-xs font-bold">{l.handle}</span><span className="text-[7px] text-gray-500 font-black uppercase tracking-widest">{getTierFromRank(l.rank)} Contributor</span></div></div>
+                    <div className="text-right"><div className="text-xs font-black">{l.points}</div><span className="text-[8px] text-gray-500 uppercase font-bold tracking-widest">Points</span></div>
+                  </div>
+                )) : <div className="py-20 text-center glass-effect rounded-[2rem] border-white/5"><Search className="w-8 h-8 text-gray-700 mx-auto mb-3" /><p className="text-xs font-black uppercase text-gray-600 italic">No matches found</p></div>}</div>
               </div>
             )}
 
@@ -567,21 +572,17 @@ const App: React.FC = () => {
               <div className="space-y-10 text-center py-6">
                  <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20 shadow-2xl"><Award className="w-10 h-10 text-blue-500" /></div>
                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Soulbound Mint</h2>
-                 
                  <div className="space-y-4">
                    <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
                       <div className="text-left"><p className="text-[10px] font-black uppercase">Rank Qualifier</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Top 1000 Required</p></div>
                       <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>{user.rank <= 1000 ? <CheckCircle2 className="w-3 h-3 text-green-500 mt-1" /> : <AlertCircle className="w-3 h-3 text-red-500 mt-1" />}</div>
                    </div>
-                   
                    <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
                       <div className="text-left"><p className="text-[10px] font-black uppercase">Asset Verification</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min $2.50 $LAMBOLESS</p></div>
                       <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'text-green-400' : 'text-red-400'}`}>${user.lambolessBalance.toFixed(2)}</span>{user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-3 h-3 text-green-500 mt-1" /> : <AlertCircle className="w-3 h-3 text-red-500 mt-1" />}</div>
                    </div>
-                   
                    <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Re-Verify Balance</button>
                  </div>
-
                  <div className="space-y-4">
                    <button disabled={claimStatus.disabled} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 ${claimStatus.theme}`}><claimStatus.icon className="w-5 h-5" />{claimStatus.label}</button>
                    {claimStatus.disabled && <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex gap-3 items-start text-left"><Info className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" /><p className="text-[10px] text-gray-400 font-bold uppercase leading-relaxed">{claimStatus.reason}</p></div>}
