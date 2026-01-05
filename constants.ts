@@ -1,3 +1,4 @@
+
 import { RankTier, BadgeConfig, LeaderboardEntry } from './types.ts';
 
 /**
@@ -19,15 +20,16 @@ export const JESSE_CONTRACT = "0x50f88fe97f72cd3e75b9eb4f747f59bceba80d59";
 export const MIN_TOKEN_VALUE_USD = 2.5;
 
 /**
- * POINT MULTIPLIERS (Per $1 per 1 jam)
- * Diperbarui sesuai instruksi: 
- * LAMBO: 0.025/jam
- * NICK/JESSE: 0.001/jam
+ * POINT MULTIPLIERS (Per $1 per 1 hour)
+ * Updated per instructions:
+ * LAMBOLESS: 0.005/hour
+ * NICK: 0.0001/hour
+ * JESSE: 0.0001/hour
  */
 export const MULTIPLIERS = {
-  LAMBOLESS: 0.025,
-  NICK: 0.001,
-  JESSE: 0.001
+  LAMBOLESS: 0.005,
+  NICK: 0.0001,
+  JESSE: 0.0001
 };
 
 /**
@@ -83,7 +85,7 @@ export const TIERS: Record<RankTier, BadgeConfig> = {
 };
 
 /**
- * VERIFIED SYNCED MEMBERS (Simulated participants who already checked)
+ * VERIFIED SYNCED MEMBERS
  */
 export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
   { rank: 1, handle: "@jessepollak", points: 1540.25, tier: RankTier.PLATINUM, accountAgeDays: 4500, baseAppAgeDays: 800 },
@@ -91,6 +93,4 @@ export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
   { rank: 3, handle: "@basegod", points: 1105.12, tier: RankTier.PLATINUM, accountAgeDays: 200, baseAppAgeDays: 150 },
   { rank: 4, handle: "@lambofarmer", points: 980.45, tier: RankTier.PLATINUM, accountAgeDays: 1200, baseAppAgeDays: 400 },
   { rank: 5, handle: "@warpcast_king", points: 855.90, tier: RankTier.PLATINUM, accountAgeDays: 800, baseAppAgeDays: 200 },
-  { rank: 6, handle: "@onchainsummer", points: 720.15, tier: RankTier.GOLD, accountAgeDays: 365, baseAppAgeDays: 180 },
-  { rank: 7, handle: "@basebuilder", points: 645.30, tier: RankTier.GOLD, accountAgeDays: 500, baseAppAgeDays: 220 },
 ];

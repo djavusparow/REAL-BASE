@@ -1,9 +1,10 @@
+
 import { RankTier } from '../types.ts';
 import { MULTIPLIERS, HOURLY_WINDOW_START, HOURLY_WINDOW_END } from '../constants.ts';
 
 /**
  * Points Calculation Formula
- * Poin aset dihitung per jam berdasarkan durasi dalam jendela waktu 5 - 15 Jan 2026.
+ * Points accrue hourly based on USD value of holdings.
  */
 export const calculatePoints = (
   baseAppAgeDays: number, 
@@ -12,7 +13,7 @@ export const calculatePoints = (
   farcasterAgeDays: number = 0,
   tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
 ): number => {
-  // 1. Social & Seniority Base Points (Statik)
+  // 1. Social & Seniority Base Points
   const baseAgePoints = baseAppAgeDays * 0.10;
   const twitterAgePoints = twitterAgeDays * 0.15;
   const contributionPoints = cappedContributionPoints * 0.30;
@@ -20,10 +21,6 @@ export const calculatePoints = (
   
   // 2. Real-time Hourly Asset Points
   const now = new Date();
-  
-  // Menghitung berapa jam user berada dalam jendela akumulasi
-  // Start: Max(Kapan jendela dimulai, Kapan user mulai berpartisipasi)
-  // End: Min(Sekarang, Kapan jendela berakhir)
   
   const userStartDate = new Date(now.getTime() - (baseAppAgeDays * 24 * 60 * 60 * 1000));
   const effectiveStart = new Date(Math.max(HOURLY_WINDOW_START.getTime(), userStartDate.getTime()));
@@ -34,14 +31,14 @@ export const calculatePoints = (
     hoursElapsed = (effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60);
   }
 
-  // Akumulasi poin per jam
+  // Akumulasi poin per jam sesuai instruksi baru
   const lamboPoints = tokenUSDValues.lambo * MULTIPLIERS.LAMBOLESS * hoursElapsed;
   const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * hoursElapsed;
   const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * hoursElapsed;
   
   const total = baseAgePoints + twitterAgePoints + contributionPoints + farcasterAgePoints + lamboPoints + nickPoints + jessePoints;
   
-  return parseFloat(total.toFixed(3)); // Menggunakan 3 desimal untuk presisi akumulasi per jam
+  return parseFloat(total.toFixed(4)); 
 };
 
 export const calculateAccountAgeDays = (createdAt: Date): number => {

@@ -1,4 +1,6 @@
+
 import { ethers } from 'ethers';
+import { geminiService } from './geminiService.ts';
 
 const MINIMAL_ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
@@ -6,19 +8,24 @@ const MINIMAL_ERC20_ABI = [
   "function symbol() view returns (string)"
 ];
 
-// Public RPC Base dengan urutan prioritas yang diperbarui
 const RPC_URLS = [
   "https://mainnet.base.org",
   "https://base.llamarpc.com",
-  "https://base-mainnet.public.blastapi.io",
-  "https://1rpc.io/base",
-  "https://gateway.tenderly.co/public/base"
+  "https://base-mainnet.public.blastapi.io"
 ];
 
 const DEXSCREENER_API = "https://api.dexscreener.com/latest/dex/tokens/";
+const GECKOTERMINAL_API = "https://api.geckoterminal.com/api/v2/networks/base/tokens/";
+
+interface PriceCache {
+  value: number;
+  timestamp: number;
+}
 
 export class TokenService {
   private currentRpcIndex: number = 0;
+  private priceCache: Record<string, PriceCache> = {};
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   private getProvider(): ethers.JsonRpcProvider {
     return new ethers.JsonRpcProvider(RPC_URLS[this.currentRpcIndex]);
@@ -26,12 +33,8 @@ export class TokenService {
 
   private rotateRpc() {
     this.currentRpcIndex = (this.currentRpcIndex + 1) % RPC_URLS.length;
-    console.warn(`[TokenService] Rotating to RPC: ${RPC_URLS[this.currentRpcIndex]}`);
   }
 
-  /**
-   * Mengambil saldo token dengan mekanisme rotasi RPC dan retry otomatis.
-   */
   async getBalance(walletAddress: string, tokenContractAddress: string, retries: number = 3): Promise<number> {
     if (!walletAddress || !tokenContractAddress) return 0;
 
@@ -42,67 +45,69 @@ export class TokenService {
       const provider = this.getProvider();
       const contract = new ethers.Contract(normalizedToken, MINIMAL_ERC20_ABI, provider);
       
-      // Mengambil balance dan decimals
       const balancePromise = contract.balanceOf(normalizedWallet);
-      const decimalsPromise = contract.decimals().catch(() => 18); // Default 18 jika gagal
+      const decimalsPromise = contract.decimals().catch(() => 18);
       
       const [balance, decimals] = await Promise.all([balancePromise, decimalsPromise]);
-      
-      const formattedBalance = parseFloat(ethers.formatUnits(balance, decimals));
-      
-      if (formattedBalance >= 0) {
-        return formattedBalance;
-      }
-      return 0;
+      return parseFloat(ethers.formatUnits(balance, decimals));
     } catch (error: any) {
-      console.error(`[TokenService] Attempt failed for ${tokenContractAddress}:`, error.message);
-      
       if (retries > 0) {
         this.rotateRpc();
-        // Delay sedikit sebelum retry
         await new Promise(resolve => setTimeout(resolve, 500));
         return this.getBalance(walletAddress, tokenContractAddress, retries - 1);
       }
-      
       return 0;
     }
   }
 
   /**
-   * Mengambil harga real-time dari DexScreener.
+   * Multi-source real-time pricing engine with fallbacks and caching.
    */
   async getTokenPrice(contractAddress: string): Promise<number> {
-    try {
-      const normalizedAddress = contractAddress.toLowerCase();
-      const response = await fetch(`${DEXSCREENER_API}${normalizedAddress}`, {
-        headers: { 'Accept': 'application/json' },
-        // Timeout 5 detik
-        signal: AbortSignal.timeout(5000)
-      });
-      
-      if (!response.ok) throw new Error("Price API Unavailable");
-      
-      const data = await response.json();
-      
-      if (data.pairs && data.pairs.length > 0) {
-        const basePairs = data.pairs.filter((p: any) => p.chainId === 'base');
-        
-        if (basePairs.length > 0) {
-          const bestPair = basePairs.sort((a: any, b: any) => 
-            (parseFloat(b.liquidity?.usd || "0")) - (parseFloat(a.liquidity?.usd || "0"))
-          )[0];
-          
-          if (bestPair && bestPair.priceUsd) {
-            return parseFloat(bestPair.priceUsd);
-          }
-        }
-      }
-      
-      return 0.0001; 
-    } catch (error) {
-      console.error(`[TokenService] Price Fetch Error for ${contractAddress}:`, error);
-      return 0.0001;
+    const now = Date.now();
+    const normalizedAddress = contractAddress.toLowerCase();
+
+    // Check Cache
+    if (this.priceCache[normalizedAddress] && (now - this.priceCache[normalizedAddress].timestamp < this.CACHE_DURATION)) {
+      return this.priceCache[normalizedAddress].value;
     }
+
+    let price = 0;
+
+    // Source 1: DexScreener
+    try {
+      const response = await fetch(`${DEXSCREENER_API}${normalizedAddress}`, { signal: AbortSignal.timeout(4000) });
+      const data = await response.json();
+      if (data.pairs?.[0]?.priceUsd) {
+        price = parseFloat(data.pairs[0].priceUsd);
+      }
+    } catch (e) { console.warn(`[TokenService] DexScreener failed for ${contractAddress}`); }
+
+    // Source 2: GeckoTerminal Fallback
+    if (price === 0) {
+      try {
+        const response = await fetch(`${GECKOTERMINAL_API}${normalizedAddress}`, { signal: AbortSignal.timeout(4000) });
+        const data = await response.json();
+        if (data.data?.attributes?.price_usd) {
+          price = parseFloat(data.data.attributes.price_usd);
+        }
+      } catch (e) { console.warn(`[TokenService] GeckoTerminal failed for ${contractAddress}`); }
+    }
+
+    // Source 3: AI Intelligence Fallback (Gemini with Search Grounding)
+    if (price === 0) {
+      try {
+        console.log(`[TokenService] Invoking Gemini Search grounding for ${contractAddress}`);
+        price = await geminiService.getTokenPrice("Token", contractAddress);
+      } catch (e) { console.warn(`[TokenService] AI Fallback failed for ${contractAddress}`); }
+    }
+
+    // Final sanity check
+    if (price <= 0) price = 0.0001;
+
+    // Update Cache
+    this.priceCache[normalizedAddress] = { value: price, timestamp: now };
+    return price;
   }
 }
 
