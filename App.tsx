@@ -108,6 +108,7 @@ const App: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'leaderboard' | 'claim'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
+  const [isSyncingFarcaster, setIsSyncingFarcaster] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [badgeImage, setBadgeImage] = useState<string | null>(null);
@@ -135,16 +136,20 @@ const App: React.FC = () => {
         await sdk.actions.ready();
         const context = await sdk.context;
         if (context?.user) {
-          console.log("Farcaster Context Detected:", context.user);
+          console.log("Farcaster Context User Object:", context.user);
           setFarcasterContextUser(context.user);
           
           const saved = localStorage.getItem(STORAGE_KEY_USER);
           if (!saved) {
-            // Priority detection of address
-            const detectedAddr = context.user.custodyAddress || context.user.address;
-            setAddress(detectedAddr || '');
+            const detectedAddr = 
+              context.user.custodyAddress || 
+              context.user.address || 
+              (Array.isArray(context.user.verifiedAddresses) && context.user.verifiedAddresses[0]) ||
+              '';
+              
+            setAddress(detectedAddr);
             setHandle(`@${context.user.username}`);
-            // If we have an address from context, we consider it verified
+            
             if (detectedAddr) {
               setIsSignatureVerified(true);
               setIsTwitterVerified(true);
@@ -219,12 +224,14 @@ const App: React.FC = () => {
   const handleFarcasterAutoLogin = () => {
     if (!farcasterContextUser) return;
     
-    // Fallback detection for various Farcaster SDK versions/profiles
-    const custodyAddr = farcasterContextUser.custodyAddress || farcasterContextUser.address;
+    const custodyAddr = 
+      farcasterContextUser.custodyAddress || 
+      farcasterContextUser.address || 
+      (Array.isArray(farcasterContextUser.verifiedAddresses) && farcasterContextUser.verifiedAddresses[0]);
     
     if (!custodyAddr) {
-      console.warn("Farcaster context missing address fields:", farcasterContextUser);
-      alert("No linked wallet address found in your Farcaster profile. Please try the 'Connect Wallet' option instead.");
+      console.error("Farcaster context missing address fields. Full context:", farcasterContextUser);
+      alert("No linked wallet address found in your Farcaster profile. Please connect your wallet manually using the 'Connect Wallet' menu.");
       return;
     }
     
@@ -233,6 +240,52 @@ const App: React.FC = () => {
     setIsSignatureVerified(true);
     setIsTwitterVerified(true); 
     setShowWalletSelector(false);
+    console.log("Farcaster Auto-Login Successful. Address:", custodyAddr);
+  };
+
+  const handleSyncFarcaster = async () => {
+    if (!user) return;
+    setIsSyncingFarcaster(true);
+    try {
+      const context = await sdk.context;
+      if (context?.user) {
+        const fid = context.user.fid;
+        const username = context.user.username;
+        // Logic: Lower FID = older account. Max FID 1M for age calculation.
+        const ageDays = Math.max(1, Math.floor(((1000000 - fid) / 1000000) * 1200));
+        const createdAt = new Date(Date.now() - (ageDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
+
+        setUser(prev => {
+          if (!prev) return null;
+          const updated = {
+            ...prev,
+            farcasterId: fid,
+            farcasterUsername: username,
+            farcasterAgeDays: ageDays,
+            farcasterCreatedAt: createdAt
+          };
+          updated.points = calculatePoints(
+            updated.baseAppAgeDays || 0,
+            updated.twitterAgeDays || 0,
+            updated.validTweetsCount || 0,
+            updated.farcasterAgeDays || 0,
+            { 
+              lambo: updated.lambolessBalance || 0, 
+              nick: updated.nickBalance || 0, 
+              jesse: updated.jesseBalance || 0 
+            }
+          );
+          return updated;
+        });
+        console.log("Farcaster profile synced:", { fid, username, ageDays });
+      } else {
+        alert("Farcaster context unavailable. Please open this frame in Warpcast.");
+      }
+    } catch (e) {
+      console.error("Sync error:", e);
+    } finally {
+      setIsSyncingFarcaster(false);
+    }
   };
 
   const initiateWalletConnection = () => {
@@ -295,19 +348,19 @@ const App: React.FC = () => {
   };
 
   const handleScan = async () => {
-    // Basic validation before starting
-    if (!address || address.trim() === '') {
-      alert("Wallet address is required. If you are on Farcaster, please re-link your profile.");
+    const currentAddress = address || (farcasterContextUser?.custodyAddress || farcasterContextUser?.address);
+    const currentHandle = handle || (farcasterContextUser?.username ? `@${farcasterContextUser.username}` : '');
+
+    if (!currentAddress || currentAddress.trim() === '') {
+      alert("Wallet address is required. Please re-connect your identity.");
       return;
     }
     
-    // In Farcaster context, we might skip strict social verification if it's already a trusted environment
-    if (!isTwitterVerified || !isSignatureVerified) {
-       // Only alert if we really don't have the data
-       if (!handle || handle.trim() === '') {
-         alert("Social handle or Signature identity not fully verified.");
+    if (!farcasterContextUser) {
+      if (!isTwitterVerified || !isSignatureVerified) {
+         alert("Please complete both Wallet Connection and Social Verification steps first.");
          return;
-       }
+      }
     }
 
     setIsScanning(true);
@@ -317,19 +370,19 @@ const App: React.FC = () => {
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     try {
-      log("Initializing audit for " + address.slice(0, 8) + "...");
+      log("Initializing audit for " + currentAddress.slice(0, 8) + "...");
       setScanProgress(10);
       await sleep(400);
 
       log("Synchronizing balances from Base L2...");
       setScanProgress(30);
       const [balLambo, balNick, balJesse] = await Promise.all([
-        tokenService.getBalance(address, LAMBOLESS_CONTRACT).catch(() => 0),
-        tokenService.getBalance(address, NICK_CONTRACT).catch(() => 0),
-        tokenService.getBalance(address, JESSE_CONTRACT).catch(() => 0)
+        tokenService.getBalance(currentAddress, LAMBOLESS_CONTRACT).catch(() => 0),
+        tokenService.getBalance(currentAddress, NICK_CONTRACT).catch(() => 0),
+        tokenService.getBalance(currentAddress, JESSE_CONTRACT).catch(() => 0)
       ]);
       
-      log(`Sync Complete: Asset snapshot retrieved.`);
+      log(`Sync Complete: Assets indexed.`);
       setScanProgress(50);
       await sleep(400);
 
@@ -345,13 +398,13 @@ const App: React.FC = () => {
       const usdNick = (balNick || 0) * pNick;
       const usdJesse = (balJesse || 0) * pJesse;
       
-      log(`Impact analysis in progress...`);
+      log(`Calculating impact velocity...`);
       setScanProgress(80);
       await sleep(400);
 
-      log("Crawling verified social history...");
+      log("Scanning social contribution history...");
       setScanProgress(90);
-      const scanResult = await twitterService.scanPosts(handle).catch(err => {
+      const scanResult = await twitterService.scanPosts(currentHandle).catch(err => {
         console.warn("Twitter scan fallback:", err);
         return { accountAgeDays: 60, cappedPoints: 10, trustScore: 75, foundTweets: [] };
       });
@@ -359,11 +412,10 @@ const App: React.FC = () => {
       setScanProgress(95);
       await sleep(400);
 
-      log("Finalizing contribution report...");
+      log("Synthesizing final Impression Report...");
       const baseAge = 150 + Math.floor(Math.random() * 50);
       const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - (farcasterContextUser.fid || 1)) / 1000000) * 800)) : 0;
       
-      // Calculate final points
       const points = calculatePoints(
         baseAge, 
         scanResult.accountAgeDays || 0, 
@@ -372,12 +424,11 @@ const App: React.FC = () => {
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
-      // Generate a dynamic rank based on points (simplified for MVP)
-      const rank = points > 1000 ? Math.floor(Math.random() * 5) + 1 : Math.floor(Math.random() * 950) + 20;
+      const rank = points > 1000 ? Math.floor(Math.random() * 5) + 1 : Math.floor(Math.random() * 950) + 25;
       
       const userData: UserStats = { 
-        address, 
-        twitterHandle: handle, 
+        address: currentAddress, 
+        twitterHandle: currentHandle, 
         baseAppAgeDays: baseAge, 
         twitterAgeDays: scanResult.accountAgeDays || 0, 
         validTweetsCount: scanResult.cappedPoints || 0, 
@@ -386,23 +437,23 @@ const App: React.FC = () => {
         jesseBalance: usdJesse,
         points, 
         rank, 
-        trustScore: scanResult.trustScore || 80, 
+        trustScore: scanResult.trustScore || 85, 
         recentContributions: scanResult.foundTweets || [],
         farcasterId: farcasterContextUser?.fid,
         farcasterUsername: farcasterContextUser?.username,
-        farcasterAgeDays: fidAge
+        farcasterAgeDays: fidAge,
+        farcasterCreatedAt: farcasterContextUser?.fid ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
       };
 
       setScanProgress(100);
       await sleep(500);
       
-      // Transitions to Dashboard
       setUser(userData);
-      console.log("Success: Base Impression Profile Active.");
+      console.log("Impression Profile Generated Successfully:", userData);
 
     } catch (error) {
       console.error("Audit Critical Failure:", error);
-      alert("A problem occurred during the audit. Please check your connection and try again.");
+      alert("An error occurred during the audit. Please check your connection and try again.");
     } finally {
       setIsScanning(false);
     }
@@ -453,7 +504,7 @@ const App: React.FC = () => {
     try {
       const tier = getTierFromRank(user.rank);
       const [img, msg] = await Promise.all([
-        geminiService.generateBadgePreview(tier, user.twitterHandle || user.farcasterUsername || 'User'), 
+        geminiService.generateBadgePreview(tier, user.twitterHandle || user.farcasterUsername || 'Base Builder'), 
         geminiService.getImpressionAnalysis(user.points, user.rank)
       ]);
       setBadgeImage(img);
@@ -634,7 +685,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <button onClick={handleScan} disabled={isScanning || !address || address === ''} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-20 flex items-center justify-center gap-2 transition-all">
+              <button onClick={handleScan} disabled={isScanning} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-500/20 active:scale-95 disabled:opacity-20 flex items-center justify-center gap-2 transition-all">
                 {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Generate Impression'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -660,6 +711,30 @@ const App: React.FC = () => {
                   <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center">
                     <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Trust Index</span>
                     <div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div>
+                  </div>
+                </div>
+
+                {/* Ecosystem Profile Sync */}
+                <div className="glass-effect p-8 rounded-[3rem] border-purple-500/10 space-y-4 shadow-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3"><Fingerprint className="w-4 h-4 text-purple-400" /><h3 className="text-xs font-black uppercase italic">Ecosystem Context</h3></div>
+                    {user.farcasterId ? (
+                      <span className="text-[8px] font-black uppercase text-purple-400 bg-purple-400/10 px-2 py-1 rounded-full border border-purple-400/20">Synced</span>
+                    ) : (
+                      <button onClick={handleSyncFarcaster} disabled={isSyncingFarcaster} className="px-3 py-1.5 bg-purple-600/10 border border-purple-500/20 rounded-full text-[9px] font-black text-purple-400 hover:bg-purple-600/20 transition-all">
+                        {isSyncingFarcaster ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Sync Farcaster'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-white/5 rounded-2xl border border-white/5 flex flex-col">
+                       <span className="text-[7px] font-black uppercase text-gray-500 mb-1">FID ID</span>
+                       <span className="text-[10px] font-black text-white">{user.farcasterId || 'Not Linked'}</span>
+                    </div>
+                    <div className="p-3 bg-white/5 rounded-2xl border border-white/5 flex flex-col">
+                       <span className="text-[7px] font-black uppercase text-gray-500 mb-1">Joined Date</span>
+                       <span className="text-[10px] font-black text-white">{user.farcasterCreatedAt || 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
 

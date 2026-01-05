@@ -24,6 +24,7 @@ export interface UserStats {
   farcasterId?: number;
   farcasterUsername?: string;
   farcasterAgeDays?: number;
+  farcasterCreatedAt?: string;
 }
 
 export interface LeaderboardEntry {
