@@ -89,6 +89,7 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [user, setUser] = useState<UserStats | null>(null);
+  const [farcasterContextUser, setFarcasterContextUser] = useState<any>(null);
   
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
@@ -133,13 +134,18 @@ const App: React.FC = () => {
 
     const init = async () => {
       try {
-        // Critical: Signal to Farcaster host that we are ready to hide splash screen
         await sdk.actions.ready();
-        
         const context = await sdk.context;
         if (context?.user) {
-          setHandle(context.user.username || '');
-          if (context.user.custodyAddress) setAddress(context.user.custodyAddress);
+          console.log("Farcaster Context Detected:", context.user);
+          setFarcasterContextUser(context.user);
+          // Pre-populate if available but don't force login yet
+          if (!address && context.user.custodyAddress) {
+            setAddress(context.user.custodyAddress);
+          }
+          if (!handle && context.user.username) {
+            setHandle(`@${context.user.username}`);
+          }
         }
       } catch (e) {
         console.warn("Farcaster SDK init failed:", e);
@@ -156,7 +162,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Update points every minute if within accumulation window
     const interval = setInterval(() => {
       const now = new Date();
       if (now >= HOURLY_WINDOW_START && now <= HOURLY_WINDOW_END) {
@@ -204,6 +209,15 @@ const App: React.FC = () => {
         }
       } catch (e) { console.error("Failed to parse saved user data:", e); }
     }
+  };
+
+  const handleFarcasterAutoLogin = () => {
+    if (!farcasterContextUser) return;
+    setAddress(farcasterContextUser.custodyAddress || '');
+    setHandle(`@${farcasterContextUser.username}`);
+    setIsSignatureVerified(true);
+    setIsTwitterVerified(true); // Treat FC username as verified identity
+    // If they have an FID, we should also record it
   };
 
   const initiateWalletConnection = () => {
@@ -283,16 +297,13 @@ const App: React.FC = () => {
     setScanLogs([]);
     const log = (msg: string) => {
       setScanLogs(p => [...p, msg]);
-      console.log(`Scan Step: ${msg}`);
     };
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-    // Step 1: Initialization
     log("Initializing audit for " + address.slice(0, 8) + "...");
     setScanProgress(5);
     await sleep(800);
 
-    // Step 2: Fetch Balances (Improved: ensuring $JESSE is properly audited)
     log("Synchronizing $LAMBOLESS, $thenickshirley, and $JESSE balances...");
     setScanProgress(25);
     const [balLambo, balNick, balJesse] = await Promise.all([
@@ -305,7 +316,6 @@ const App: React.FC = () => {
     setScanProgress(45);
     await sleep(600);
 
-    // Step 3: Prices
     log("Fetching real-time asset market values...");
     setScanProgress(60);
     const [pLambo, pNick, pJesse] = await Promise.all([
@@ -321,24 +331,29 @@ const App: React.FC = () => {
     setScanProgress(75);
     await sleep(600);
 
-    // Step 4: Social Graph
     log("Analyzing social footprint and verified contributions...");
     setScanProgress(85);
     const scanResult = await twitterService.scanPosts(handle);
     setScanProgress(95);
     await sleep(600);
 
-    // Step 5: Finalize
     log("Generating final BASE IMPRESSION profile...");
     const baseAge = 150 + Math.floor(Math.random() * 50);
-    const points = calculatePoints(baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, user?.farcasterAgeDays || 0, { lambo: usdLambo, nick: usdNick, jesse: usdJesse });
+    
+    // Check if we already have Farcaster context to boost points
+    const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - farcasterContextUser.fid) / 1000000) * 800)) : (user?.farcasterAgeDays || 0);
+    
+    const points = calculatePoints(baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fidAge, { lambo: usdLambo, nick: usdNick, jesse: usdJesse });
     const rank = Math.floor(Math.random() * 900) + 1;
     await sleep(800);
 
     const userData: UserStats = { 
       address, twitterHandle: handle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
       validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
-      points, rank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets 
+      points, rank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
+      farcasterId: farcasterContextUser?.fid,
+      farcasterUsername: farcasterContextUser?.username,
+      farcasterAgeDays: fidAge
     };
 
     setScanProgress(100);
@@ -387,7 +402,7 @@ const App: React.FC = () => {
       sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message + tags)}&url=${encodeURIComponent(shareUrl)}`);
     } else {
       const tier = getTierFromRank(user.rank);
-      const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
+      const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points.toFixed(2)}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
       const tags = "\n\n@base @baseapp @jessepollak @LAMB0LESS #BaseImpression #OnchainSummer";
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(message + tags)}&embeds[]=${encodeURIComponent(shareUrl)}`);
     }
@@ -398,6 +413,8 @@ const App: React.FC = () => {
     setIsTwitterVerified(false);
     setIsSignatureVerified(false);
     setShowLogoutConfirm(false);
+    setHandle('');
+    setAddress('');
   };
 
   const claimStatus = useMemo(() => {
@@ -567,37 +584,126 @@ const App: React.FC = () => {
           <div className="space-y-12 text-center animate-in fade-in duration-1000">
             <div className="flex justify-center float-animation"><BrandLogo size="lg" /></div>
             <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Proof.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Contribution Event</p></div>
+            
             <div className="glass-effect p-8 rounded-[3rem] space-y-6 shadow-[0_0_50px_-20px_rgba(37,99,235,0.4)]">
               <div className="space-y-4">
                 <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Web3 Auth Flow</label>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Identity Auth Flow</label>
+                  
+                  {/* FARCASTER AUTO-LOGIN OPTION */}
+                  {farcasterContextUser && !isSignatureVerified && (
+                    <button 
+                      onClick={handleFarcasterAutoLogin} 
+                      className="w-full bg-[#8a63d2] hover:bg-[#7a53c2] text-white rounded-2xl py-4 px-5 flex items-center justify-between group transition-all active:scale-[0.98] mb-3 shadow-lg shadow-purple-900/20"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shadow-inner">
+                          <Fingerprint className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col text-left">
+                          <span className="text-[10px] font-black uppercase tracking-widest leading-none">Continue with Farcaster</span>
+                          <span className="text-xs font-bold opacity-80 mt-0.5">@{farcasterContextUser.username}</span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  )}
+
                   {!isSignatureVerified ? (
                     <button onClick={initiateWalletConnection} disabled={isConnecting || isSigning} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex flex-col gap-2 group hover:bg-blue-600/20 hover:border-blue-500/50 transition-all active:scale-[0.98]">
-                      <div className="flex items-center justify-between w-full"><div className="flex items-center gap-3"><div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-[10px] font-black italic shadow-lg shadow-blue-600/30">{discoveredProviders.length > 0 ? <Zap className="w-3 h-3" /> : '??'}</div><span className="text-xs font-bold text-blue-200 uppercase tracking-tight">{isConnecting ? 'Linking...' : isSigning ? 'Signing...' : discoveredProviders.length > 1 ? 'Select Your Wallet' : 'Connect Verified Wallet'}</span></div>{isConnecting || isSigning ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Shield className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" />}</div>
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
+                            <Wallet className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs font-bold text-blue-200 uppercase tracking-tight">
+                            {isConnecting ? 'Linking...' : isSigning ? 'Signing...' : 'Connect External Wallet'}
+                          </span>
+                        </div>
+                        {isConnecting || isSigning ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Shield className="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform" />}
+                      </div>
                     </button>
-                  ) : <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between animate-in zoom-in-95 duration-300"><div className="flex flex-col"><span className="text-[8px] font-black uppercase text-green-500 leading-none mb-1 tracking-widest">Ownership Proved</span><span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span></div><CheckCircle2 className="w-5 h-5 text-green-500" /></div>}
+                  ) : (
+                    <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between animate-in zoom-in-95 duration-300">
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-black uppercase text-green-500 leading-none mb-1 tracking-widest">Identity Proved</span>
+                        <span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-green-500" />
+                    </div>
+                  )}
                 </div>
+
                 <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Twitter Identity</label>
-                  <div className="relative group flex gap-2"><div className="relative flex-1"><Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 group-focus-within:text-blue-500 transition-colors" /><input value={handle} onChange={e => setHandle(e.target.value)} disabled={isTwitterVerified} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all disabled:opacity-50" /></div>
-                    {!isTwitterVerified ? <button onClick={handleStartTwitterVerification} disabled={!handle || isTwitterConnecting} className="px-6 bg-blue-600/20 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600/40 disabled:opacity-20 transition-all">{isTwitterConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}</button> : <div className="px-6 bg-green-500/20 border border-green-500/40 rounded-2xl flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-green-500" /></div>}
+                  <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 ml-4">Social Handle</label>
+                  <div className="relative group flex gap-2">
+                    <div className="relative flex-1">
+                      <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400 group-focus-within:text-blue-500 transition-colors" />
+                      <input 
+                        value={handle} 
+                        onChange={e => setHandle(e.target.value)} 
+                        disabled={isTwitterVerified} 
+                        placeholder="@username" 
+                        className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500 focus:bg-blue-950/20 transition-all disabled:opacity-50" 
+                      />
+                    </div>
+                    {!isTwitterVerified ? (
+                      <button 
+                        onClick={handleStartTwitterVerification} 
+                        disabled={!handle || isTwitterConnecting} 
+                        className="px-6 bg-blue-600/20 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600/40 disabled:opacity-20 transition-all"
+                      >
+                        {isTwitterConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify'}
+                      </button>
+                    ) : (
+                      <div className="px-6 bg-green-500/20 border border-green-500/40 rounded-2xl flex items-center justify-center">
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
-              <button onClick={handleScan} disabled={!isSignatureVerified || !isTwitterVerified} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-600/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-20 flex items-center justify-center gap-2 group">Generate Impression <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" /></button>
+
+              <button 
+                onClick={handleScan} 
+                disabled={!isSignatureVerified || !isTwitterVerified} 
+                className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-600/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-20 flex items-center justify-center gap-2 group"
+              >
+                Generate Impression <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
             </div>
+            
+            <p className="text-[9px] text-gray-600 uppercase font-black tracking-widest">
+              Automated Verification via Base Identity Protocol
+            </p>
           </div>
         ) : (
           <div className="space-y-8 animate-in slide-in-from-bottom-6 fade-in duration-700">
-            <div className="flex glass-effect p-1.5 rounded-2xl sticky top-20 z-30 backdrop-blur-xl border border-white/5">{(['dashboard', 'leaderboard', 'claim'] as const).map(t => (
-              <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 shadow-lg text-white' : 'text-gray-500 hover:text-gray-300'}`}>{t}</button>
-            ))}</div>
+            <div className="flex glass-effect p-1.5 rounded-2xl sticky top-20 z-30 backdrop-blur-xl border border-white/5">
+              {(['dashboard', 'leaderboard', 'claim'] as const).map(t => (
+                <button 
+                  key={t} 
+                  onClick={() => setActiveTab(t)} 
+                  className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 shadow-lg text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
 
             {activeTab === 'dashboard' && (
               <div className="space-y-8">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><TrendingUp className="w-8 h-8 text-blue-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(3)}</div></div>
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><ShieldCheck className="w-8 h-8 text-purple-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Trust Index</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div></div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-2 opacity-10"><TrendingUp className="w-8 h-8 text-blue-500" /></div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Impact Score</span>
+                    <div className="text-3xl font-black italic mt-1">{user.points.toFixed(3)}</div>
+                  </div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-2 opacity-10"><ShieldCheck className="w-8 h-8 text-purple-500" /></div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Trust Index</span>
+                    <div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div>
+                  </div>
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-4">
