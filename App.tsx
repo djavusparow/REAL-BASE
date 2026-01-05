@@ -132,18 +132,18 @@ const App: React.FC = () => {
     window.dispatchEvent(new Event("eip6963:requestProvider"));
 
     const init = async () => {
-      const safetyTimeout = setTimeout(() => setIsReady(true), 4000);
       try {
+        // Critical: Signal to Farcaster host that we are ready to hide splash screen
+        await sdk.actions.ready();
+        
         const context = await sdk.context;
         if (context?.user) {
           setHandle(context.user.username || '');
           if (context.user.custodyAddress) setAddress(context.user.custodyAddress);
         }
-        await sdk.actions.ready();
       } catch (e) {
         console.warn("Farcaster SDK init failed:", e);
       } finally {
-        clearTimeout(safetyTimeout);
         loadUserDataFromStorage();
         setIsReady(true);
       }
@@ -156,7 +156,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Update poin setiap menit jika berada dalam jendela waktu akumulasi
+    // Update points every minute if within accumulation window
     const interval = setInterval(() => {
       const now = new Date();
       if (now >= HOURLY_WINDOW_START && now <= HOURLY_WINDOW_END) {
@@ -292,7 +292,7 @@ const App: React.FC = () => {
     setScanProgress(5);
     await sleep(800);
 
-    // Step 2: Fetch Balances (PENTING: Memastikan $JESSE dibaca dengan provider yang stabil)
+    // Step 2: Fetch Balances (Improved: ensuring $JESSE is properly audited)
     log("Synchronizing $LAMBOLESS, $thenickshirley, and $JESSE balances...");
     setScanProgress(25);
     const [balLambo, balNick, balJesse] = await Promise.all([
@@ -379,7 +379,6 @@ const App: React.FC = () => {
 
   const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
-    const tier = getTierFromRank(user.rank);
     const shareUrl = "https://base.app/app/real-base-2026.vercel.app";
     
     if (platform === 'twitter') {
@@ -387,6 +386,7 @@ const App: React.FC = () => {
       const tags = "\n\n@base @baseapp @jessepollak @nickshirleyy #BaseImpression #OnchainSummer";
       sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(message + tags)}&url=${encodeURIComponent(shareUrl)}`);
     } else {
+      const tier = getTierFromRank(user.rank);
       const message = `Check out my Base Impression rating! 🏎️💨\n\nRank: #${user.rank}\nPoints: ${user.points}\nTier: ${tier}\n\nTrack your own onchain footprint and contributions on Base here:`;
       const tags = "\n\n@base @baseapp @jessepollak @LAMB0LESS #BaseImpression #OnchainSummer";
       sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(message + tags)}&embeds[]=${encodeURIComponent(shareUrl)}`);
@@ -423,17 +423,37 @@ const App: React.FC = () => {
         label: 'Awaiting Snapshot',
         theme: 'bg-blue-900/40 text-blue-400 cursor-not-allowed border border-blue-500/20',
         icon: Clock,
-        reason: `Claims open on ${CLAIM_START.toLocaleDateString()}. Final snapshot pending.`
+        reason: `Claims open on ${CLAIM_START.toLocaleDateString()} at 02:00 UTC.`
       };
     }
 
-    if (!isRankEligible || !isAssetEligible) {
+    if (!isRankEligible && !isAssetEligible) {
       return {
         disabled: true,
         label: 'Ineligible',
         theme: 'bg-red-900/20 text-red-400 cursor-not-allowed border border-red-500/20',
         icon: AlertCircle,
-        reason: 'You do not meet the minimum requirements for the Season 01 Soulbound Mint.'
+        reason: 'Minimum rank (#1000) and $LAMBOLESS balance ($2.50) not met.'
+      };
+    }
+
+    if (!isRankEligible) {
+      return {
+        disabled: true,
+        label: 'Rank Too Low',
+        theme: 'bg-orange-900/20 text-orange-400 cursor-not-allowed border border-orange-500/20',
+        icon: TrendingUp,
+        reason: 'Your impact rank must be #1000 or better to qualify for the Soulbound badge.'
+      };
+    }
+
+    if (!isAssetEligible) {
+      return {
+        disabled: true,
+        label: 'Not enough $LAMBOLESS',
+        theme: 'bg-orange-900/20 text-orange-400 cursor-not-allowed border border-orange-500/20',
+        icon: Coins,
+        reason: `Hold at least $${MIN_TOKEN_VALUE_USD} worth of $LAMBOLESS to verify your contribution.`
       };
     }
 
@@ -442,7 +462,7 @@ const App: React.FC = () => {
       label: 'Mint Soulbound Impression',
       theme: 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-[1.02] shadow-lg shadow-blue-500/25 text-white',
       icon: Award,
-      reason: 'Your contribution is verified. You are eligible to mint.'
+      reason: 'Verified. You are eligible to mint the Season 01 Soulbound NFT.'
     };
   }, [user]);
 
@@ -576,14 +596,14 @@ const App: React.FC = () => {
             {activeTab === 'dashboard' && (
               <div className="space-y-8">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center"><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(3)}</div></div>
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center"><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Trust Index</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div></div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><TrendingUp className="w-8 h-8 text-blue-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(3)}</div></div>
+                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center relative overflow-hidden group"><div className="absolute top-0 right-0 p-2 opacity-10"><ShieldCheck className="w-8 h-8 text-purple-500" /></div><span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Trust Index</span><div className="text-3xl font-black italic mt-1 text-blue-400">{user.trustScore}%</div></div>
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3"><Coins className="w-4 h-4 text-blue-500" /><h3 className="text-xs font-black uppercase italic tracking-widest">Asset Contributions</h3></div>
-                    <button onClick={() => handleShare('twitter')} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full text-[9px] font-black uppercase text-blue-400 hover:bg-blue-600/20 transition-all"><Twitter className="w-3 h-3" /> Share to X</button>
+                    <button onClick={() => handleShare('twitter')} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full text-[9px] font-black uppercase text-blue-400 hover:bg-blue-600/20 transition-all active:scale-95 shadow-lg shadow-blue-500/10"><Twitter className="w-3 h-3" /> Share Rating</button>
                   </div>
                   <div className="space-y-3">
                     {[
@@ -597,6 +617,11 @@ const App: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                  <div className="p-3 bg-blue-500/5 rounded-2xl border border-blue-500/10">
+                    <p className="text-[8px] text-blue-200/60 uppercase font-black leading-relaxed">
+                      🔥 Holders of $jesse, $thenickshirley & $LAMBOLESS accumulate extra points every hour based on USD value.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 border border-white/5 shadow-2xl">
@@ -608,7 +633,7 @@ const App: React.FC = () => {
                     
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => handleShare('farcaster')} className="py-3 bg-[#8a63d2]/10 border border-[#8a63d2]/30 rounded-2xl text-[9px] font-black uppercase text-purple-200 flex items-center justify-center gap-2 hover:bg-[#8a63d2]/20 transition-all"><Send className="w-3 h-3" /> Warpcast</button>
-                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all"><Twitter className="w-3 h-3" /> Share to Twitter</button>
+                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all active:scale-95"><Twitter className="w-3 h-3" /> Post to X</button>
                     </div>
                   </div>
                 </div>
@@ -674,8 +699,22 @@ const App: React.FC = () => {
               <div className="space-y-10 text-center py-6">
                  <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20 shadow-2xl"><Award className="w-10 h-10 text-blue-500" /></div>
                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Soulbound Mint</h2>
-                 <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Re-Verify Balance</button>
-                 <button disabled={claimStatus.disabled} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 ${claimStatus.theme}`}><claimStatus.icon className="w-5 h-5" />{claimStatus.label}</button>
+                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8">Final snapshot on Jan 16th. Ensure your verified holdings are synced.</p>
+                 <div className="space-y-4 px-4">
+                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/20'}`}>
+                      <div className="text-left"><p className="text-[10px] font-black uppercase">Impact Rank</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min #1000</p></div>
+                      <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>{user.rank <= 1000 ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertTriangle className="w-3 h-3 text-red-500" />}</div>
+                   </div>
+                   <div className={`p-6 glass-effect rounded-[2rem] flex justify-between items-center ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'border-green-500/30' : 'border-red-500/20'}`}>
+                      <div className="text-left"><p className="text-[10px] font-black uppercase">$LAMBOLESS Balance</p><p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Min $2.50 USD</p></div>
+                      <div className="flex flex-col items-end"><span className={`text-xs font-black ${user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? 'text-green-400' : 'text-red-400'}`}>${user.lambolessBalance.toFixed(2)}</span>{user.lambolessBalance >= MIN_TOKEN_VALUE_USD ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <AlertTriangle className="w-3 h-3 text-red-500" />}</div>
+                   </div>
+                 </div>
+                 <div className="space-y-4 px-4">
+                   <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="text-[10px] font-black uppercase text-blue-500 flex items-center justify-center gap-2 mx-auto py-2 px-4 hover:bg-blue-500/5 rounded-xl transition-all">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync My Assets</button>
+                   <button disabled={claimStatus.disabled} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm tracking-widest flex items-center justify-center gap-3 transition-all active:scale-95 ${claimStatus.theme}`}><claimStatus.icon className="w-5 h-5" />{claimStatus.label}</button>
+                   {claimStatus.disabled && <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-2">{claimStatus.reason}</p>}
+                 </div>
               </div>
             )}
           </div>

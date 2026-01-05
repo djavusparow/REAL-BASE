@@ -6,66 +6,65 @@ const MINIMAL_ERC20_ABI = [
   "function symbol() view returns (string)"
 ];
 
-// Menggunakan beberapa public RPC Base sebagai redundansi
+// Public RPC Base dengan urutan prioritas yang diperbarui
 const RPC_URLS = [
   "https://mainnet.base.org",
   "https://base.llamarpc.com",
-  "https://base-mainnet.public.blastapi.io"
+  "https://base-mainnet.public.blastapi.io",
+  "https://1rpc.io/base",
+  "https://gateway.tenderly.co/public/base"
 ];
 
 const DEXSCREENER_API = "https://api.dexscreener.com/latest/dex/tokens/";
 
 export class TokenService {
-  private provider: ethers.JsonRpcProvider;
+  private currentRpcIndex: number = 0;
 
-  constructor() {
-    this.provider = new ethers.JsonRpcProvider(RPC_URLS[0]);
+  private getProvider(): ethers.JsonRpcProvider {
+    return new ethers.JsonRpcProvider(RPC_URLS[this.currentRpcIndex]);
+  }
+
+  private rotateRpc() {
+    this.currentRpcIndex = (this.currentRpcIndex + 1) % RPC_URLS.length;
+    console.warn(`[TokenService] Rotating to RPC: ${RPC_URLS[this.currentRpcIndex]}`);
   }
 
   /**
-   * Mengambil saldo token dengan penanganan error yang lebih kuat.
+   * Mengambil saldo token dengan mekanisme rotasi RPC dan retry otomatis.
    */
-  async getBalance(walletAddress: string, tokenContractAddress: string): Promise<number> {
-    try {
-      if (!walletAddress || !tokenContractAddress) return 0;
+  async getBalance(walletAddress: string, tokenContractAddress: string, retries: number = 3): Promise<number> {
+    if (!walletAddress || !tokenContractAddress) return 0;
 
-      // Normalisasi alamat menggunakan checksum (ethers v6)
+    try {
       const normalizedWallet = ethers.getAddress(walletAddress);
       const normalizedToken = ethers.getAddress(tokenContractAddress);
       
-      const contract = new ethers.Contract(normalizedToken, MINIMAL_ERC20_ABI, this.provider);
+      const provider = this.getProvider();
+      const contract = new ethers.Contract(normalizedToken, MINIMAL_ERC20_ABI, provider);
       
-      // Mengambil balance dan decimals secara paralel dengan catch individual
-      const [balance, decimals] = await Promise.all([
-        contract.balanceOf(normalizedWallet).catch((err) => {
-          console.error(`[TokenService] Balance fetch failed for ${tokenContractAddress}:`, err);
-          return BigInt(0);
-        }),
-        contract.decimals().catch((err) => {
-          console.warn(`[TokenService] Decimals fetch failed for ${tokenContractAddress}, defaulting to 18:`, err.message);
-          return 18;
-        })
-      ]);
+      // Mengambil balance dan decimals
+      const balancePromise = contract.balanceOf(normalizedWallet);
+      const decimalsPromise = contract.decimals().catch(() => 18); // Default 18 jika gagal
+      
+      const [balance, decimals] = await Promise.all([balancePromise, decimalsPromise]);
       
       const formattedBalance = parseFloat(ethers.formatUnits(balance, decimals));
       
-      if (formattedBalance > 0) {
-        console.log(`[TokenService] Success! Balance for ${tokenContractAddress}: ${formattedBalance}`);
+      if (formattedBalance >= 0) {
+        return formattedBalance;
       }
-
-      return formattedBalance;
-    } catch (error) {
-      console.error(`[TokenService] Critical Error reading ${tokenContractAddress}:`, error);
+      return 0;
+    } catch (error: any) {
+      console.error(`[TokenService] Attempt failed for ${tokenContractAddress}:`, error.message);
       
-      // Percobaan ulang dengan provider alternatif jika yang pertama gagal total
-      try {
-        const altProvider = new ethers.JsonRpcProvider(RPC_URLS[1]);
-        const altContract = new ethers.Contract(ethers.getAddress(tokenContractAddress), MINIMAL_ERC20_ABI, altProvider);
-        const balance = await altContract.balanceOf(ethers.getAddress(walletAddress));
-        return parseFloat(ethers.formatUnits(balance, 18));
-      } catch (retryError) {
-        return 0;
+      if (retries > 0) {
+        this.rotateRpc();
+        // Delay sedikit sebelum retry
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return this.getBalance(walletAddress, tokenContractAddress, retries - 1);
       }
+      
+      return 0;
     }
   }
 
@@ -76,15 +75,16 @@ export class TokenService {
     try {
       const normalizedAddress = contractAddress.toLowerCase();
       const response = await fetch(`${DEXSCREENER_API}${normalizedAddress}`, {
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        // Timeout 5 detik
+        signal: AbortSignal.timeout(5000)
       });
       
-      if (!response.ok) throw new Error("DexScreener API Unavailable");
+      if (!response.ok) throw new Error("Price API Unavailable");
       
       const data = await response.json();
       
       if (data.pairs && data.pairs.length > 0) {
-        // Cari pair dengan likuiditas USD tertinggi di jaringan Base
         const basePairs = data.pairs.filter((p: any) => p.chainId === 'base');
         
         if (basePairs.length > 0) {
