@@ -277,6 +277,45 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTwitterSync = async () => {
+    if (!user) return;
+    setIsScanning(true);
+    setScanLogs(["Syncing Twitter identity impact..."]);
+    setScanProgress(20);
+
+    try {
+      const scanResult = await twitterService.scanPosts(user.twitterHandle);
+      setScanProgress(80);
+      
+      const createdAt = new Date(Date.now() - (scanResult.accountAgeDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
+
+      const { total, breakdown } = calculateDetailedPoints(
+        user.baseAppAgeDays, 
+        scanResult.accountAgeDays, 
+        user.validTweetsCount, 
+        user.farcasterAgeDays || 0, 
+        { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 }
+      );
+
+      setUser({
+        ...user,
+        twitterAgeDays: scanResult.accountAgeDays,
+        twitterCreatedAt: createdAt,
+        points: total,
+        pointsBreakdown: breakdown
+      });
+
+      setScanProgress(100);
+      await new Promise(r => setTimeout(r, 500));
+      alert("Twitter impact synced!");
+    } catch (e) {
+      console.error(e);
+      alert("Twitter sync failed.");
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   const handleFarcasterScan = async () => {
     if (!user) return;
     if (!farcasterContextUser) {
@@ -373,6 +412,8 @@ const App: React.FC = () => {
         baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fidAge, 
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
+
+      const twitterCreatedAt = new Date(Date.now() - (scanResult.accountAgeDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
       
       const updatedCount = communityAuditCount + 1;
       setCommunityAuditCount(updatedCount);
@@ -380,7 +421,7 @@ const App: React.FC = () => {
 
       setUser({ 
         address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
-        validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
+        twitterCreatedAt, validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
         rank: 0,
         trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
@@ -418,7 +459,7 @@ const App: React.FC = () => {
       const usdJesse = amtJesse * pJesse;
 
       const { total, breakdown } = calculateDetailedPoints(
-        user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterAgeDays, 
+        user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterAgeDays || 0, 
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
@@ -574,7 +615,7 @@ const App: React.FC = () => {
                           <span className="text-xs font-bold text-blue-100">{handle}</span>
                         </div>
                       </div>
-                      <CheckCircle2 className="w-5 h-5 text-blue-500" />
+                      <CheckCircle2 className="w-5 h-5 text-green-500" />
                     </div>
                   )}
                 </div>
@@ -627,6 +668,33 @@ const App: React.FC = () => {
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
                    <div className="flex items-center gap-3"><Users className="w-5 h-5 text-purple-500" /><h3 className="text-xs font-black uppercase italic">Identity Scanners</h3></div>
                    
+                   {/* Twitter Audit Card */}
+                   <div className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-4">
+                      <div className="flex justify-between items-center">
+                         <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
+                               <Twitter className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div className="flex flex-col">
+                               <span className="text-[10px] font-black uppercase text-gray-500">Twitter Identity</span>
+                               <span className="text-xs font-bold text-white">{user.twitterHandle || 'Not Synced'}</span>
+                            </div>
+                         </div>
+                         <button 
+                            onClick={handleTwitterSync} 
+                            disabled={isScanning}
+                            className="px-4 py-2 bg-blue-600/20 border border-blue-500/40 rounded-xl text-[9px] font-black uppercase text-blue-200 hover:bg-blue-600/30 transition-all flex items-center gap-2"
+                         >
+                            {isScanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                            Sync Profile
+                         </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
+                         <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Created / Age</span><span className="text-[11px] font-bold">{user.twitterCreatedAt || '-'} / {user.twitterAgeDays || 0}d</span></div>
+                         <div className="flex flex-col items-end"><span className="text-[8px] font-black text-blue-600 uppercase">Impact Score</span><span className="text-[11px] font-black text-blue-400">+{user.pointsBreakdown?.social_twitter || 0} Pts</span></div>
+                      </div>
+                   </div>
+
                    {/* Farcaster Audit Card */}
                    <div className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-4">
                       <div className="flex justify-between items-center">

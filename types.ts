@@ -12,6 +12,7 @@ export interface UserStats {
   twitterHandle: string;
   baseAppAgeDays: number;
   twitterAgeDays: number;
+  twitterCreatedAt?: string;
   validTweetsCount: number;
   
   // USD Values for logic
@@ -37,6 +38,9 @@ export interface UserStats {
 
   // Breakdown for Dashboard UI
   pointsBreakdown?: {
+    social_twitter: number;
+    social_fc: number;
+    seniority: number;
     social: number;
     lambo: number;
     nick: number;
