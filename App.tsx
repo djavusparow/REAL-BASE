@@ -43,7 +43,8 @@ import {
   ZapOff,
   Flame,
   Check,
-  Ban
+  Ban,
+  Sparkles
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -128,10 +129,10 @@ const App: React.FC = () => {
   const getFarcasterAddress = useCallback((ctx: any) => {
     if (!ctx) return null;
     
-    // 1. Check top level address (preferred in Frame v2)
+    // Prioritize context address (Frame v2 standard)
     if (ctx.address) return ctx.address;
     
-    // 2. Check within user object
+    // Fallback to user object if address is missing at top level
     const user = ctx.user || ctx;
     if (user.custodyAddress) return user.custodyAddress;
     if (user.verifiedAddresses && user.verifiedAddresses.length > 0) {
@@ -212,23 +213,16 @@ const App: React.FC = () => {
         const context = await sdk.context;
         if (context) {
           setFarcasterContext(context);
+          
+          // Auto-detection of Farcaster user for seamless onboarding
+          const detectedAddr = getFarcasterAddress(context);
+          if (detectedAddr && !localStorage.getItem(STORAGE_KEY_USER)) {
+            // We don't force login but we prepare it
+            console.log("Farcaster identity detected:", detectedAddr);
+          }
         }
         
         loadUserDataFromStorage();
-        
-        // Auto-fill from context if possible
-        if (context && !localStorage.getItem(STORAGE_KEY_USER)) {
-            const detectedAddr = getFarcasterAddress(context);
-            if (detectedAddr) {
-              setAddress(detectedAddr);
-              setIsSignatureVerified(true);
-            }
-            const detectedHandle = context.user?.username ? `@${context.user.username}` : '';
-            if (detectedHandle) {
-              setHandle(detectedHandle);
-              setIsTwitterVerified(true);
-            }
-        }
       } catch (e) { 
         console.warn("Farcaster SDK init warning:", e); 
       } finally {
@@ -266,37 +260,37 @@ const App: React.FC = () => {
   const handleFarcasterAutoLogin = async () => {
     setIsConnecting(true);
     try {
-      // 1. Get Context (ensure fresh if not in state)
       const context = farcasterContext || await sdk.context;
       const fcAddr = getFarcasterAddress(context);
       
       if (!fcAddr) {
-        console.error("Could not find address in Farcaster context", context);
-        setIsConnecting(false);
-        return;
+        throw new Error("No Farcaster address found in context");
       }
 
-      // 2. Perform Real Signature Proof (if provider available)
       setIsSigning(true);
       try {
         const provider = sdk.wallet?.ethProvider;
         if (provider) {
           const web3 = new Web3(provider);
-          const challengeMessage = `Base Impression Proof\nWallet: ${fcAddr}\nTime: ${Date.now()}`;
+          const challengeMessage = `Base Impression Proof\nWallet: ${fcAddr}\nTime: ${Date.now()}\nVerify Farcaster identity for Base Impression.`;
           await web3.eth.personal.sign(challengeMessage, fcAddr, "");
-        } else {
-          console.warn("Farcaster Wallet Provider not detected, using context address only.");
         }
       } catch (signError) {
-        console.warn("Farcaster Signing skipped or failed:", signError);
-        // We continue if we have the address from context, but log the failure
+        console.warn("Farcaster Signature skipped/failed, proceeding with context address", signError);
       }
 
       setAddress(fcAddr);
       setIsSignatureVerified(true);
+      
+      // Auto-populate Farcaster handle if available
+      if (context.user?.username && !handle) {
+        setHandle(`@${context.user.username}`);
+        setIsTwitterVerified(true);
+      }
+      
       setShowWalletSelector(false);
     } catch (e) {
-      console.error("Farcaster login sequence error", e);
+      console.error("Farcaster connection error", e);
     } finally {
       setIsSigning(false);
       setIsConnecting(false);
@@ -314,7 +308,7 @@ const App: React.FC = () => {
       setAddress(linkedAddress);
       setIsConnecting(false);
       setIsSigning(true);
-      const challengeMessage = `Base Impression Proof\nWallet: ${linkedAddress}\nTime: ${Date.now()}`;
+      const challengeMessage = `Base Impression Proof\nWallet: ${linkedAddress}\nTime: ${Date.now()}\nVerify Web3 identity for Base Impression.`;
       await web3.eth.personal.sign(challengeMessage, linkedAddress, "");
       setIsSignatureVerified(true);
       setIsSigning(false);
@@ -503,9 +497,10 @@ const App: React.FC = () => {
                ) : (
                   <button 
                     onClick={() => setShowWalletSelector(true)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase px-6 py-2 rounded-full transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase px-6 py-2 rounded-full transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] flex items-center gap-2"
                   >
-                    Connect Wallet
+                    {farcasterContext ? <Sparkles size={14} /> : <Wallet size={14} />}
+                    {farcasterContext ? 'Login' : 'Connect'}
                   </button>
                )}
             </div>
@@ -542,7 +537,7 @@ const App: React.FC = () => {
                     ) : (
                       <button 
                         onClick={() => setShowWalletSelector(true)}
-                        className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-colors"
+                        className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-black uppercase tracking-widest transition-colors"
                       >
                         Sign Proof
                       </button>
@@ -602,7 +597,6 @@ const App: React.FC = () => {
                {activeTab === 'dashboard' ? (
                  <div className="space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Box 1: Points Display */}
                       <div className="glass-effect p-8 rounded-[3rem] border-blue-500/20 text-center relative overflow-hidden flex flex-col items-center justify-center">
                         <div className="relative z-10">
                           <span className="text-[10px] font-black uppercase text-yellow-400 tracking-widest">MY BASE IMPRESSION</span>
@@ -615,7 +609,6 @@ const App: React.FC = () => {
                         <Flame className="absolute -bottom-6 -right-6 w-32 h-32 text-blue-500/5 rotate-12" />
                       </div>
 
-                      {/* Box 2: Eligibility & Badge Status */}
                       <div className="glass-effect p-8 rounded-[3rem] border-white/10 text-center relative overflow-hidden flex flex-col items-center justify-center gap-4">
                          <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">IMPRESSION STATUS</span>
                          
@@ -726,78 +719,118 @@ const App: React.FC = () => {
 
         {showWalletSelector && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-             <div className="w-full max-w-md bg-[#111] border border-white/10 rounded-[2rem] p-8 space-y-6 animate-in zoom-in-95 duration-200">
+             <div className="w-full max-w-md bg-[#0a0a0a] border border-white/10 rounded-[2.5rem] p-8 space-y-8 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-black uppercase tracking-tighter">Select Wallet</h3>
-                  <button onClick={() => setShowWalletSelector(false)} className="p-2 hover:bg-white/5 rounded-full">
+                  <div>
+                    <h3 className="text-2xl font-black uppercase tracking-tighter italic">Connect Wallet</h3>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Verify Your Onchain Identity</p>
+                  </div>
+                  <button onClick={() => setShowWalletSelector(false)} className="p-2 hover:bg-white/5 rounded-full text-gray-500 transition-colors">
                     <X size={20} />
                   </button>
                 </div>
                 
-                <div className="space-y-3">
+                <div className="space-y-6">
+                  {/* Primary Option: Farcaster (if detected) */}
                   {farcasterContext && (
-                    <button 
-                      onClick={handleFarcasterAutoLogin}
-                      disabled={isConnecting || isSigning}
-                      className="w-full p-4 rounded-2xl bg-gradient-to-r from-purple-600/20 to-purple-800/20 border border-purple-500/30 flex items-center gap-4 hover:scale-[1.02] transition-all disabled:opacity-50"
-                    >
-                      {isConnecting || isSigning ? (
-                        <Loader2 className="w-10 h-10 animate-spin text-purple-400" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold">F</div>
-                      )}
-                      <div className="text-left">
-                        <p className="font-bold">Farcaster Wallet</p>
-                        <p className="text-[10px] text-purple-300 uppercase font-black">
-                          {isSigning ? 'Signing Proof...' : 'Native Connection'}
-                        </p>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-400">Farcaster Detected</span>
                       </div>
-                    </button>
+                      <button 
+                        onClick={handleFarcasterAutoLogin}
+                        disabled={isConnecting || isSigning}
+                        className="w-full p-6 rounded-[1.5rem] bg-gradient-to-br from-purple-600/20 to-indigo-800/20 border border-purple-500/40 flex items-center gap-5 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 relative overflow-hidden group shadow-lg shadow-purple-500/10"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-purple-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        
+                        <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-inner">
+                          {isConnecting || isSigning ? (
+                            <Loader2 className="w-8 h-8 animate-spin text-white" />
+                          ) : (
+                            <div className="text-white font-black text-2xl italic">F</div>
+                          )}
+                        </div>
+
+                        <div className="relative text-left flex-1">
+                          <p className="font-black text-lg uppercase tracking-tight italic">Farcaster Identity</p>
+                          <p className="text-[10px] text-purple-300/70 uppercase font-black tracking-widest">
+                            {isSigning ? 'Requesting Sign...' : 'One-Tap Verification'}
+                          </p>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-purple-400 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    </div>
                   )}
-                  {discoveredProviders.map((detail) => (
-                    <button 
-                      key={detail.info.uuid}
-                      onClick={() => handleConnectAndSign(detail.provider)}
-                      className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-4 hover:bg-white/10 transition-all"
-                    >
-                      <img src={detail.info.icon} alt={detail.info.name} className="w-10 h-10 rounded-xl" />
-                      <div className="text-left">
-                        <p className="font-bold">{detail.info.name}</p>
-                        <p className="text-[10px] text-gray-500 uppercase font-black">Detected Provider</p>
-                      </div>
-                    </button>
-                  ))}
+
+                  {/* Other Web3 Wallets */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Other Wallets</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      {discoveredProviders.length > 0 ? (
+                        discoveredProviders.map((detail) => (
+                          <button 
+                            key={detail.info.uuid}
+                            onClick={() => handleConnectAndSign(detail.provider)}
+                            className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-4 hover:bg-white/10 hover:border-white/20 transition-all group"
+                          >
+                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 flex items-center justify-center border border-white/10">
+                              <img src={detail.info.icon} alt={detail.info.name} className="w-7 h-7" />
+                            </div>
+                            <div className="text-left flex-1">
+                              <p className="font-bold text-sm tracking-tight">{detail.info.name}</p>
+                              <p className="text-[8px] text-gray-500 uppercase font-black tracking-widest">EIP-6963 Compatible</p>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-colors" />
+                          </button>
+                        ))
+                      ) : (
+                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10 border-dashed text-center">
+                          <p className="text-[10px] text-gray-500 font-bold uppercase">No injected wallets detected</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <p className="text-[9px] text-gray-600 text-center font-bold uppercase tracking-widest leading-relaxed">
+                    By connecting, you verify ownership of your assets and contributions on the Base network.
+                  </p>
                 </div>
              </div>
           </div>
         )}
 
         {isScanning && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-lg">
              <div className="w-full max-w-lg space-y-8 text-center">
-                <div className="relative w-32 h-32 mx-auto">
-                  <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full" />
+                <div className="relative w-40 h-40 mx-auto">
+                  <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full" />
                   <div 
                     className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin" 
                   />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-2xl font-black">{scanProgress}%</span>
+                    <span className="text-3xl font-black italic">{scanProgress}%</span>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-3xl font-black uppercase tracking-tighter">Auditing Impression</h3>
-                  <p className="text-gray-400 font-mono text-xs animate-pulse">Running onchain validation sequences...</p>
+                  <h3 className="text-4xl font-black uppercase tracking-tighter italic">Auditing Impression</h3>
+                  <p className="text-blue-500 font-mono text-xs animate-pulse tracking-[0.3em] uppercase">Sequencing Onchain Data</p>
                 </div>
 
-                <div className="bg-black border border-white/10 rounded-2xl p-4 h-48 overflow-y-auto font-mono text-left text-[10px] space-y-1">
+                <div className="bg-black/50 border border-white/10 rounded-3xl p-6 h-56 overflow-y-auto font-mono text-left text-[10px] space-y-1 custom-scrollbar">
                   {scanLogs.map((log, i) => (
-                    <div key={i} className="flex gap-2">
-                      <span className="text-blue-500/50">[{new Date().toLocaleTimeString()}]</span>
-                      <span className={log.includes('Error') ? 'text-red-400' : 'text-gray-300'}>{log}</span>
+                    <div key={i} className="flex gap-2 border-l border-white/10 pl-3 py-0.5">
+                      <span className="text-blue-500/30">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>
+                      <span className={log.includes('Error') ? 'text-red-400 font-bold' : log.includes('Validation') ? 'text-green-400 font-bold' : 'text-gray-400'}>{log}</span>
                     </div>
                   ))}
-                  <div className="animate-pulse">_</div>
+                  <div className="animate-pulse text-blue-500 pl-3">_</div>
                 </div>
              </div>
           </div>
