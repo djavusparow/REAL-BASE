@@ -314,7 +314,7 @@ const App: React.FC = () => {
       const { total, breakdown } = calculateDetailedPoints(
         user.baseAppAgeDays, 
         scanResult.accountAgeDays, 
-        user.validTweetsCount, 
+        scanResult.cappedPoints, 
         user.farcasterId || 0, // Using FID for point calculation
         { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 }
       );
@@ -323,6 +323,8 @@ const App: React.FC = () => {
         ...user,
         twitterAgeDays: scanResult.accountAgeDays,
         twitterCreatedAt: createdAt,
+        validTweetsCount: scanResult.cappedPoints,
+        basepostingPoints: scanResult.basepostingPoints,
         points: total,
         pointsBreakdown: breakdown
       });
@@ -354,9 +356,6 @@ const App: React.FC = () => {
     
     setScanLogs(prev => [...prev, `FID Detected: ${fid}`, `Target: @${username}`]);
     setScanProgress(60);
-    
-    // As per user request, we no longer need to calculate or verify account age for Farcaster
-    // because points are now strictly FID-based and age info is no longer displayed.
     
     setScanProgress(85);
 
@@ -443,7 +442,8 @@ const App: React.FC = () => {
 
       setUser({ 
         address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
-        twitterCreatedAt, validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
+        twitterCreatedAt, validTweetsCount: scanResult.cappedPoints, basepostingPoints: scanResult.basepostingPoints,
+        lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
         rank: 0,
         trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
@@ -712,8 +712,20 @@ const App: React.FC = () => {
                          </button>
                       </div>
                       <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
-                         <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Created / Age</span><span className="text-[11px] font-bold">{user.twitterCreatedAt || '-'} / {user.twitterAgeDays || 0}d</span></div>
-                         <div className="flex flex-col items-end"><span className="text-[8px] font-black text-blue-600 uppercase">Impact Score</span><span className="text-[11px] font-black text-blue-400">+{user.pointsBreakdown?.social_twitter || 0} Pts</span></div>
+                         <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-gray-600 uppercase">Created / Age</span>
+                            <span className="text-[11px] font-bold">{user.twitterCreatedAt || '-'} / {user.twitterAgeDays || 0}d</span>
+                            
+                            {/* Baseposting point item requested by user */}
+                            <div className="mt-2 pt-2 border-t border-white/5 flex flex-col">
+                               <span className="text-[8px] font-black text-blue-400 uppercase">Baseposting</span>
+                               <span className="text-[10px] font-bold text-blue-200">+{user.basepostingPoints || 0} Points</span>
+                            </div>
+                         </div>
+                         <div className="flex flex-col items-end">
+                            <span className="text-[8px] font-black text-blue-600 uppercase">Impact Score</span>
+                            <span className="text-[11px] font-black text-blue-400">+{user.pointsBreakdown?.social_twitter || 0} Pts</span>
+                         </div>
                       </div>
                    </div>
 

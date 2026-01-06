@@ -14,6 +14,7 @@ export interface UserStats {
   twitterAgeDays: number;
   twitterCreatedAt?: string;
   validTweetsCount: number;
+  basepostingPoints: number; // New field for tracked mentions
   
   // USD Values for logic
   lambolessBalance: number; 
