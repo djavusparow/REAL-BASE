@@ -246,6 +246,73 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [user]);
 
+  const handleFarcasterAutoLogin = () => {
+    const fcAddr = getFarcasterAddress(farcasterContextUser);
+    if (!fcAddr) return;
+    setAddress(fcAddr);
+    setIsSignatureVerified(true);
+    if (farcasterContextUser.username) {
+        setHandle(`@${farcasterContextUser.username}`);
+        setIsTwitterVerified(true);
+    }
+    setShowWalletSelector(false);
+  };
+
+  const handleConnectAndSign = async (provider: any) => {
+    setShowWalletSelector(false);
+    setIsConnecting(true);
+    try {
+      const web3 = new Web3(provider);
+      const accounts = await web3.eth.requestAccounts();
+      if (!accounts.length) throw new Error("No accounts linked");
+      const linkedAddress = accounts[0];
+      setAddress(linkedAddress);
+      setIsConnecting(false);
+      setIsSigning(true);
+      const challengeMessage = `Base Impression Auth\nAddress: ${linkedAddress}\nNonce: ${Date.now()}`;
+      await web3.eth.personal.sign(challengeMessage, linkedAddress, "");
+      setIsSignatureVerified(true);
+      setIsSigning(false);
+    } catch (error) {
+      console.error(error);
+      setIsSignatureVerified(false);
+      setIsConnecting(false);
+      setIsSigning(false);
+      alert("Verification failed. Please try again.");
+    }
+  };
+
+  const connectWallet = async () => {
+    const fcAddr = getFarcasterAddress(farcasterContextUser);
+    
+    // 1. If we have Farcaster context, prioritize that
+    if (fcAddr && discoveredProviders.length === 0) {
+      handleFarcasterAutoLogin();
+      return;
+    }
+
+    // 2. If we have multiple options, show selector
+    if ((fcAddr ? 1 : 0) + discoveredProviders.length > 1) {
+      setShowWalletSelector(true);
+      return;
+    }
+
+    // 3. If we have only one external provider
+    if (discoveredProviders.length === 1) {
+      handleConnectAndSign(discoveredProviders[0].provider);
+      return;
+    }
+
+    // 4. Last resort: window.ethereum
+    const winEth = (window as any).ethereum;
+    if (winEth) {
+      handleConnectAndSign(winEth);
+      return;
+    }
+
+    alert("No wallet provider detected. Please open this app in a Web3 browser or Warpcast.");
+  };
+
   const handleTwitterSync = async () => {
     if (!user) return;
     setIsScanning(true);
@@ -479,6 +546,45 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
+      {/* Wallet Selector Modal */}
+      {showWalletSelector && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="w-full max-w-sm glass-effect rounded-[2.5rem] border-white/10 p-8 space-y-6">
+            <div className="flex justify-between items-center">
+               <h3 className="text-xl font-black uppercase italic tracking-tighter">Choose Wallet</h3>
+               <button onClick={() => setShowWalletSelector(false)} className="p-2 hover:bg-white/10 rounded-full"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="grid gap-3">
+              {getFarcasterAddress(farcasterContextUser) && (
+                <button 
+                  onClick={handleFarcasterAutoLogin}
+                  className="w-full bg-purple-600/20 border border-purple-500/30 rounded-2xl py-4 px-5 flex items-center justify-between hover:bg-purple-600/30 transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <img src={farcasterContextUser.pfpUrl} className="w-8 h-8 rounded-full" alt="FC" />
+                    <span className="text-sm font-bold uppercase">Warpcast Wallet</span>
+                  </div>
+                  <CheckCircle2 className="w-5 h-5 text-purple-400" />
+                </button>
+              )}
+              {discoveredProviders.map((p) => (
+                <button 
+                  key={p.info.uuid}
+                  onClick={() => handleConnectAndSign(p.provider)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-5 flex items-center justify-between hover:bg-white/10 transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <img src={p.info.icon} className="w-8 h-8 rounded-lg" alt={p.info.name} />
+                    <span className="text-sm font-bold uppercase">{p.info.name}</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isScanning && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
           <Binary className="w-20 h-20 text-blue-500 animate-pulse mb-10" />
@@ -507,11 +613,16 @@ const App: React.FC = () => {
                 <div className="space-y-2 text-left">
                   <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Profile Identity</label>
                   {!isSignatureVerified ? (
-                    <button onClick={() => { 
-                      const detected = getFarcasterAddress(farcasterContextUser);
-                      if (detected) { setAddress(detected); setIsSignatureVerified(true); } 
-                      else alert("No wallets detected.");
-                    }} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-600/20"><span className="text-xs font-bold uppercase text-blue-200">Sync Wallet</span><Wallet className="w-4 h-4 text-blue-500" /></button>
+                    <button 
+                      onClick={connectWallet} 
+                      disabled={isConnecting || isSigning}
+                      className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-600/20"
+                    >
+                      <span className="text-xs font-bold uppercase text-blue-200">
+                        {isConnecting ? 'Detecting...' : isSigning ? 'Verifying...' : 'Sync Wallet'}
+                      </span>
+                      {isConnecting || isSigning ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" /> : <Wallet className="w-4 h-4 text-blue-500" />}
+                    </button>
                   ) : (
                     <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
                       <div className="flex flex-col"><span className="text-[8px] font-black text-green-500 uppercase">Linked Wallet</span><span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span></div>
