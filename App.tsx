@@ -42,7 +42,8 @@ import {
   Globe,
   ZapOff,
   Flame,
-  Check
+  Check,
+  Ban
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -61,7 +62,7 @@ import {
 import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
 import { geminiService } from './services/geminiService.ts';
-import { twitterService, Tweet } from './services/twitterService.ts';
+import { twitterService } from './services/twitterService.ts';
 import { tokenService } from './services/tokenService.ts';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
@@ -194,6 +195,12 @@ const App: React.FC = () => {
     }
 
     const init = async () => {
+      // Emergency timeout to prevent infinite hang on non-frame environments
+      const timeoutId = setTimeout(() => {
+        console.warn("Farcaster SDK init timed out, forcing ready state");
+        setIsReady(true);
+      }, 3000);
+
       try {
         await sdk.actions.ready();
         const context = await sdk.context;
@@ -216,6 +223,7 @@ const App: React.FC = () => {
       } catch (e) { 
         console.warn("Farcaster SDK init warning:", e); 
       } finally {
+        clearTimeout(timeoutId);
         setIsReady(true);
       }
     };
@@ -246,7 +254,6 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [user]);
 
-  // FULL WALLET LOGIC RESTORED
   const handleFarcasterAutoLogin = () => {
     const fcAddr = getFarcasterAddress(farcasterContextUser);
     if (!fcAddr) return;
@@ -270,467 +277,483 @@ const App: React.FC = () => {
       await web3.eth.personal.sign(challengeMessage, linkedAddress, "");
       setIsSignatureVerified(true);
       setIsSigning(false);
-    } catch (error) {
-      setIsSignatureVerified(false);
+    } catch (e) {
+      console.error("Wallet connection/signing error", e);
       setIsConnecting(false);
       setIsSigning(false);
-      alert("Auth failed.");
     }
   };
 
-  const connectWallet = async () => {
-    const fcAddr = getFarcasterAddress(farcasterContextUser);
-    const providersCount = discoveredProviders.length + (fcAddr ? 1 : 0);
-    
-    if (providersCount === 0) {
-      alert("No wallets detected. Please use a Web3 browser or Farcaster.");
-      return;
-    }
-    
-    if (providersCount === 1) {
-      if (fcAddr) handleFarcasterAutoLogin();
-      else handleConnectAndSign(discoveredProviders[0].provider);
-    } else {
-      setShowWalletSelector(true);
-    }
+  const handleLogout = () => {
+    setUser(null);
+    setAddress('');
+    setHandle('');
+    setIsSignatureVerified(false);
+    setIsTwitterVerified(false);
+    setBadgeImage(null);
+    setAnalysis('');
+    localStorage.removeItem(STORAGE_KEY_USER);
   };
 
-  const handleTwitterSync = async () => {
-    if (!user) return;
+  const startAudit = async () => {
+    if (!handle) return;
     setIsScanning(true);
-    setScanLogs(["Syncing Twitter identity impact..."]);
-    setScanProgress(20);
-
+    setScanProgress(10);
+    setScanLogs(["Initializing scan engine...", "Target: " + handle]);
+    
     try {
-      const scanResult = await twitterService.scanPosts(user.twitterHandle);
-      setScanProgress(80);
+      const results = await twitterService.scanPosts(handle);
+      setScanProgress(50);
+      setScanLogs(prev => [...prev, "Found " + results.foundTweets.length + " candidate posts.", "Applying Baseposting rules..."]);
       
-      const createdAt = new Date(Date.now() - (scanResult.accountAgeDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
+      await new Promise(r => setTimeout(r, 1000));
+      setScanProgress(80);
+      setScanLogs(prev => [...prev, "Validation complete. Total points: " + results.basepostingPoints]);
+      
+      const stats: UserStats = {
+        address,
+        twitterHandle: handle,
+        baseAppAgeDays: 1,
+        twitterAgeDays: results.accountAgeDays,
+        validTweetsCount: results.totalValidPosts,
+        basepostingPoints: results.basepostingPoints,
+        lambolessBalance: 0,
+        points: 0,
+        rank: 0,
+        trustScore: results.trustScore,
+        recentContributions: results.foundTweets.slice(0, 3)
+      };
 
       const { total, breakdown } = calculateDetailedPoints(
-        user.baseAppAgeDays, 
-        scanResult.accountAgeDays, 
-        scanResult.cappedPoints, 
+        stats.baseAppAgeDays,
+        stats.twitterAgeDays,
+        0,
+        0,
+        { lambo: 0, jesse: 0, nick: 0 },
+        stats.basepostingPoints
+      );
+
+      stats.points = total;
+      stats.pointsBreakdown = breakdown;
+      
+      setUser(stats);
+      setScanProgress(100);
+      setScanLogs(prev => [...prev, "Audit finished successfully!"]);
+      
+      setCommunityAuditCount(prev => {
+        const next = prev + 1;
+        localStorage.setItem(STORAGE_KEY_AUDIT_COUNT, next.toString());
+        return next;
+      });
+    } catch (error) {
+      console.error("Audit failed", error);
+      setScanLogs(prev => [...prev, "Error: " + (error as Error).message]);
+    } finally {
+      setTimeout(() => setIsScanning(false), 1500);
+    }
+  };
+
+  const refreshAssets = async () => {
+    if (!user || !address) return;
+    setIsRefreshingAssets(true);
+    try {
+      const [lamboBal, nickBal, jesseBal] = await Promise.all([
+        tokenService.getBalance(address, LAMBOLESS_CONTRACT),
+        tokenService.getBalance(address, NICK_CONTRACT),
+        tokenService.getBalance(address, JESSE_CONTRACT)
+      ]);
+
+      const [lamboPrice, nickPrice, jessePrice] = await Promise.all([
+        tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
+        tokenService.getTokenPrice(NICK_CONTRACT),
+        tokenService.getTokenPrice(JESSE_CONTRACT)
+      ]);
+
+      const tokenUSDValues = {
+        lambo: lamboBal * lamboPrice,
+        nick: nickBal * nickPrice,
+        jesse: jesseBal * jessePrice
+      };
+
+      const { total, breakdown } = calculateDetailedPoints(
+        user.baseAppAgeDays,
+        user.twitterAgeDays,
+        user.validTweetsCount,
         user.farcasterId || 0,
-        { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 },
-        scanResult.basepostingPoints
+        tokenUSDValues,
+        user.basepostingPoints
       );
 
       setUser({
         ...user,
-        twitterAgeDays: scanResult.accountAgeDays,
-        twitterCreatedAt: createdAt,
-        validTweetsCount: scanResult.cappedPoints,
-        basepostingPoints: scanResult.basepostingPoints,
+        lambolessBalance: tokenUSDValues.lambo,
+        nickBalance: tokenUSDValues.nick,
+        jesseBalance: tokenUSDValues.jesse,
+        lambolessAmount: lamboBal,
+        nickAmount: nickBal,
+        jesseAmount: jesseBal,
         points: total,
         pointsBreakdown: breakdown
       });
 
-      setScanProgress(100);
-      await new Promise(r => setTimeout(r, 500));
-      alert("Twitter impact synced!");
     } catch (e) {
-      console.error(e);
-      alert("Twitter sync failed.");
+      console.error("Failed to refresh assets", e);
     } finally {
-      setIsScanning(false);
+      setIsRefreshingAssets(false);
     }
   };
 
-  const handleFarcasterScan = async () => {
-    if (!user) return;
-    if (!farcasterContextUser) {
-      alert("Farcaster context not found. Please open this app within Warpcast.");
-      return;
-    }
-
-    setIsScanning(true);
-    setScanLogs(["Establishing Farcaster Handshake..."]);
-    setScanProgress(15);
-    
-    const fid = farcasterContextUser.fid;
-    const username = farcasterContextUser.username || "anon";
-    
-    setScanLogs(prev => [...prev, `FID Detected: ${fid}`, `Target: @${username}`]);
-    setScanProgress(60);
-    setScanProgress(85);
-
-    const { total, breakdown } = calculateDetailedPoints(
-      user.baseAppAgeDays, 
-      user.twitterAgeDays, 
-      user.validTweetsCount, 
-      fid,
-      { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 },
-      user.basepostingPoints || 0
-    );
-
-    setUser({
-      ...user,
-      farcasterId: fid,
-      farcasterUsername: username,
-      points: total,
-      pointsBreakdown: breakdown
-    });
-
-    setScanProgress(100);
-    await new Promise(r => setTimeout(r, 500));
-    setIsScanning(false);
-    alert("Farcaster identity impact synced!");
-  };
-
-  const handleScan = async () => {
-    const currentAddress = address || getFarcasterAddress(farcasterContextUser);
-    const currentHandle = handle || (farcasterContextUser?.username ? `@${farcasterContextUser.username}` : '');
-    if (!currentAddress || !currentHandle) {
-      alert("Please connect wallet and twitter first.");
-      return;
-    }
-
-    setIsScanning(true);
-    setScanProgress(0);
-    setScanLogs([]);
-    const log = (msg: string) => setScanLogs(p => [...p, msg]);
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-    try {
-      log("Initializing secure audit...");
-      setScanProgress(15);
-      await sleep(600);
-
-      log("Calculating Onchain Presence...");
-      const [amtLambo, amtNick, amtJesse] = await Promise.all([
-        tokenService.getBalance(currentAddress, LAMBOLESS_CONTRACT),
-        tokenService.getBalance(currentAddress, NICK_CONTRACT),
-        tokenService.getBalance(currentAddress, JESSE_CONTRACT)
-      ]);
-      setScanProgress(40);
-      
-      log("Syncing Asset Prices...");
-      const [pLambo, pNick, pJesse] = await Promise.all([
-        tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
-        tokenService.getTokenPrice(NICK_CONTRACT),
-        tokenService.getTokenPrice(JESSE_CONTRACT)
-      ]);
-      
-      const usdLambo = amtLambo * pLambo;
-      const usdNick = amtNick * pNick;
-      const usdJesse = amtJesse * pJesse;
-      setScanProgress(60);
-
-      log("Analyzing Social Impact...");
-      const scanResult = await twitterService.scanPosts(currentHandle);
-      setScanProgress(85);
-      
-      log("Generating Impression Report...");
-      await sleep(400);
-      
-      const baseAge = 150 + Math.floor(Math.random() * 50);
-      const fid = farcasterContextUser?.fid || 0;
-      
-      const { total, breakdown } = calculateDetailedPoints(
-        baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fid, 
-        { lambo: usdLambo, nick: usdNick, jesse: usdJesse },
-        scanResult.basepostingPoints
-      );
-
-      const twitterCreatedAt = new Date(Date.now() - (scanResult.accountAgeDays * 24 * 60 * 60 * 1000)).toLocaleDateString();
-      const updatedCount = communityAuditCount + 1;
-      setCommunityAuditCount(updatedCount);
-      localStorage.setItem(STORAGE_KEY_AUDIT_COUNT, updatedCount.toString());
-
-      setUser({ 
-        address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
-        twitterCreatedAt, validTweetsCount: scanResult.cappedPoints, basepostingPoints: scanResult.basepostingPoints,
-        lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
-        lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
-        rank: 0, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
-        farcasterId: fid, farcasterUsername: farcasterContextUser?.username
-      });
-
-      setScanProgress(100);
-      await sleep(500);
-    } catch (error) { 
-      console.error(error); 
-      alert("Audit failed. Check connection."); 
-    } finally { 
-      setIsScanning(false); 
-    }
-  };
-
-  const handleRefreshAssets = async () => {
-    if (!user) return;
-    setIsRefreshingAssets(true);
-    try {
-      const [amtLambo, amtNick, amtJesse] = await Promise.all([
-        tokenService.getBalance(user.address, LAMBOLESS_CONTRACT),
-        tokenService.getBalance(user.address, NICK_CONTRACT),
-        tokenService.getBalance(user.address, JESSE_CONTRACT)
-      ]);
-      const [pLambo, pNick, pJesse] = await Promise.all([
-        tokenService.getTokenPrice(LAMBOLESS_CONTRACT),
-        tokenService.getTokenPrice(NICK_CONTRACT),
-        tokenService.getTokenPrice(JESSE_CONTRACT)
-      ]);
-
-      const usdLambo = amtLambo * pLambo;
-      const usdNick = amtNick * pNick;
-      const usdJesse = amtJesse * pJesse;
-
-      const { total, breakdown } = calculateDetailedPoints(
-        user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterId || 0, 
-        { lambo: usdLambo, nick: usdNick, jesse: usdJesse },
-        user.basepostingPoints || 0
-      );
-      
-      setUser({ 
-        ...user, 
-        lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
-        lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, 
-        points: total, pointsBreakdown: breakdown
-      });
-    } catch (e) { console.error(e); } finally { setIsRefreshingAssets(false); }
-  };
-
-  const handleRefreshVisual = async () => {
+  const generateBadge = async () => {
     if (!user) return;
     setIsGenerating(true);
     try {
       const tier = getTierFromPoints(user.points);
-      const [img, msg] = await Promise.all([
-        geminiService.generateBadgePreview(tier, user.twitterHandle || user.farcasterUsername || 'Base Builder'), 
+      const [img, copy] = await Promise.all([
+        geminiService.generateBadgePreview(tier, user.twitterHandle),
         geminiService.getImpressionAnalysis(user.points, tier)
       ]);
       setBadgeImage(img);
-      setAnalysis(msg);
-    } catch (e) { console.error(e); } finally { setIsGenerating(false); }
+      setAnalysis(copy);
+    } catch (e) {
+      console.error("Failed to generate badge", e);
+    } finally {
+      setIsGenerating(false);
+    }
   };
-
-  const handleShare = (platform: 'farcaster' | 'twitter') => {
-    if (!user) return;
-    const shareUrl = "https://real-base-2026.vercel.app/";
-    const tier = getTierFromPoints(user.points);
-    const tierName = TIERS[tier].name;
-    const msg = `My Base Impression is live! 🏎️💨\nPoints: ${user.points.toFixed(2)}\nTier: ${tierName}\nJoin now:`;
-    if (platform === 'twitter') sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}&url=${encodeURIComponent(shareUrl)}`);
-    else sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(msg)}&embeds[]=${encodeURIComponent(shareUrl)}`);
-  };
-
-  const currentTier = user ? getTierFromPoints(user.points) : RankTier.NONE;
-  const config = TIERS[currentTier];
 
   const claimEligibility = useMemo(() => {
-    if (!user) return { eligible: false, message: "Run Audit First", icon: <Lock className="w-4 h-4" /> };
-    const now = new Date();
+    if (!user) return { eligible: false, message: "Run Audit First", status: 'NONE' };
     const currentTier = getTierFromPoints(user.points);
-    if (currentTier === RankTier.NONE) return { eligible: false, message: "Entry Threshold Not Met", icon: <Trophy className="w-4 h-4" />, style: "bg-red-950/30 text-red-400 border-red-900/40" };
+    if (currentTier === RankTier.NONE) return { eligible: false, message: "Rank Too Low", status: 'INELIGIBLE' };
     const requirement = TIERS[currentTier];
-    if ((user.lambolessBalance || 0) < requirement.minLamboUsd) return { eligible: false, message: `Need $${requirement.minLamboUsd} in $LAMBOLESS`, icon: <AlertTriangle className="w-4 h-4" />, style: "bg-orange-950/30 text-orange-400 border-orange-900/40" };
-    if (now < CLAIM_START) return { eligible: false, message: "Snapshot Awaited (Jan 16)", icon: <Clock className="w-4 h-4" />, style: "bg-blue-950/30 text-blue-400 border-blue-900/40" };
-    return { eligible: true, message: `Claim ${requirement.name} Badge`, icon: <Zap className="w-4 h-4" />, style: "bg-blue-600 text-white shadow-lg shadow-blue-500/30" };
+    if ((user.lambolessBalance || 0) < requirement.minLamboUsd) return { eligible: false, message: "No $LAMBOLESS", status: 'INELIGIBLE' };
+    return { eligible: true, message: "Eligible", status: 'ELIGIBLE', tierName: requirement.name };
   }, [user]);
 
+  if (!isReady) return (
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
-      {/* Wallet Selector Modal */}
-      {showWalletSelector && (
-        <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xl font-black uppercase italic tracking-tighter">Select Provider</h3>
-              <button onClick={() => setShowWalletSelector(false)}><X className="w-6 h-6 text-gray-500" /></button>
+    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-blue-500/30">
+        <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <BrandLogo />
+              <div className="hidden sm:block">
+                <h1 className="text-lg font-black tracking-tighter uppercase italic">Base Impression</h1>
+                <p className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">Ecosystem Proof</p>
+              </div>
             </div>
-            <div className="space-y-3">
-              {getFarcasterAddress(farcasterContextUser) && (
-                <button onClick={handleFarcasterAutoLogin} className="w-full bg-purple-600/10 border border-purple-500/30 py-4 px-6 rounded-2xl flex items-center justify-between hover:bg-purple-600/20 transition-all">
-                  <span className="font-bold text-sm">Farcaster Wallet</span>
-                  <Activity className="w-5 h-5 text-purple-500" />
-                </button>
-              )}
-              {discoveredProviders.map(p => (
-                <button key={p.info.uuid} onClick={() => handleConnectAndSign(p.provider)} className="w-full bg-blue-600/10 border border-blue-500/30 py-4 px-6 rounded-2xl flex items-center justify-between hover:bg-blue-600/20 transition-all">
-                  <div className="flex items-center gap-3">
-                    <img src={p.info.icon} className="w-6 h-6 rounded-md" alt={p.info.name} />
-                    <span className="font-bold text-sm">{p.info.name}</span>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-blue-500" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isScanning && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
-          <Binary className="w-20 h-20 text-blue-500 animate-pulse mb-10" />
-          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2">Establishing Trust</h2>
-          <div className="w-full max-w-xs space-y-4">
-            <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-600 transition-all duration-700 shadow-[0_0_20px_rgba(37,99,235,1)]" style={{ width: `${scanProgress || 50}%` }} />
-            </div>
-            <p className="text-[10px] font-black uppercase text-blue-400 min-h-[1.5em] tracking-widest">{scanLogs[scanLogs.length - 1] || "Communicating..."}</p>
-          </div>
-        </div>
-      )}
-
-      <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
-        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase mt-0.5">Real-time Verified</span></div></div>
-        {user && <button onClick={() => { setUser(null); localStorage.removeItem(STORAGE_KEY_USER); setAddress(''); setHandle(''); setIsTwitterVerified(false); setIsSignatureVerified(false); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><LogOut className="w-4 h-4 text-gray-500" /></button>}
-      </header>
-
-      <main className="max-w-md mx-auto px-4 mt-8">
-        {!user ? (
-          <div className="space-y-12 text-center">
-            <div className="flex justify-center float-animation"><BrandLogo size="lg" /></div>
-            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Impact.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Reward Portal</p></div>
-            <div className="glass-effect p-8 rounded-[3rem] space-y-6 shadow-2xl">
-              <div className="space-y-4">
-                <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Profile Identity</label>
-                  {!isSignatureVerified ? (
-                    <button onClick={connectWallet} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-600/20"><span className="text-xs font-bold uppercase text-blue-200">Sync Wallet</span><Wallet className="w-4 h-4 text-blue-500" /></button>
-                  ) : (
-                    <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
-                      <div className="flex flex-col"><span className="text-[8px] font-black text-green-500 uppercase">Linked Wallet</span><span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span></div>
-                      <CheckCircle2 className="w-5 h-5 text-green-500" />
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-2 text-left">
-                  <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Social Context</label>
-                  {!isTwitterVerified ? (
-                    <button onClick={() => twitterService.login()} className="w-full bg-blue-400/10 border border-blue-400/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-400/20">
-                      <div className="flex items-center gap-3">
-                        <Twitter className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-bold uppercase text-blue-200">Connect Twitter</span>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-blue-400" />
+            
+            <div className="flex items-center gap-4">
+               {address ? (
+                  <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    <span className="text-xs font-mono text-gray-300">
+                      {address.slice(0, 6)}...{address.slice(-4)}
+                    </span>
+                    <button onClick={handleLogout} className="p-1 hover:text-red-400 transition-colors">
+                      <LogOut size={14} />
                     </button>
-                  ) : (
-                    <div className="w-full bg-blue-500/10 border border-blue-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Twitter className="w-4 h-4 text-blue-400" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] font-black text-blue-500 uppercase">Verified Handle</span>
-                          <span className="text-xs font-bold text-blue-100">{handle}</span>
-                        </div>
-                      </div>
-                      <CheckCircle2 className="w-5 h-5 text-green-500" />
-                    </div>
-                  )}
-                </div>
-              </div>
-              <button onClick={handleScan} disabled={isScanning || !isSignatureVerified || !isTwitterVerified} className={`w-full py-5 rounded-[2rem] font-black uppercase italic text-sm shadow-xl transition-all ${isScanning || !isSignatureVerified || !isTwitterVerified ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white shadow-blue-500/20 active:scale-[0.98]'}`}>{isScanning ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Check Impact'}</button>
+                  </div>
+               ) : (
+                  <button 
+                    onClick={() => setShowWalletSelector(true)}
+                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase px-6 py-2 rounded-full transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]"
+                  >
+                    Connect Wallet
+                  </button>
+               )}
             </div>
-            <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 flex items-center justify-between"><div className="flex items-center gap-3"><Activity className="w-5 h-5 text-green-500" /><span className="text-[10px] font-black uppercase text-gray-400">Audited Builders</span></div><span className="text-xl font-black italic">{communityAuditCount.toLocaleString()}</span></div>
           </div>
-        ) : (
-          <div className="space-y-8">
-            <div className="flex glass-effect p-1.5 rounded-2xl sticky top-20 z-30 backdrop-blur-xl border border-white/5">
-              {(['dashboard', 'claim'] as const).map(t => (<button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 shadow-lg text-white' : 'text-gray-500'}`}>{t}</button>))}
+        </nav>
+
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {!user ? (
+            <div className="max-w-2xl mx-auto py-20 text-center space-y-12">
+               <div className="space-y-4">
+                  <div className="inline-flex p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 mb-4">
+                    <ShieldCheck size={40} />
+                  </div>
+                  <h2 className="text-5xl font-black tracking-tight leading-tight">
+                    ARE YOU <span className="text-blue-500">BUILDING</span> ON BASE?
+                  </h2>
+                  <p className="text-gray-400 text-lg max-w-lg mx-auto leading-relaxed">
+                    Verify your contributions, track your $LAMBOLESS assets, and earn your onchain reputation badge.
+                  </p>
+               </div>
+
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+                  <div className={`p-6 rounded-2xl border transition-all ${isSignatureVerified ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10'}`}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`p-2 rounded-lg ${isSignatureVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}>
+                        <Wallet size={20} />
+                      </div>
+                      <span className="font-bold">Step 1: Wallet</span>
+                    </div>
+                    {isSignatureVerified ? (
+                      <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
+                        <CheckCircle2 size={16} /> Verified
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => setShowWalletSelector(true)}
+                        className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-colors"
+                      >
+                        Sign Proof
+                      </button>
+                    )}
+                  </div>
+
+                  <div className={`p-6 rounded-2xl border transition-all ${isTwitterVerified ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10'}`}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`p-2 rounded-lg ${isTwitterVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}>
+                        <Twitter size={20} />
+                      </div>
+                      <span className="font-bold">Step 2: Socials</span>
+                    </div>
+                    {isTwitterVerified ? (
+                      <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
+                        <CheckCircle2 size={16} /> Linked
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => twitterService.login()}
+                        className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-colors"
+                      >
+                        Link Twitter
+                      </button>
+                    )}
+                  </div>
+               </div>
+
+               {isSignatureVerified && isTwitterVerified && (
+                  <button 
+                    onClick={startAudit}
+                    disabled={isScanning}
+                    className="w-full max-w-sm mx-auto py-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl text-lg font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                  >
+                    {isScanning ? <Loader2 className="animate-spin" /> : <Zap />}
+                    Start Audit
+                  </button>
+               )}
+
+               <div className="flex flex-wrap justify-center gap-8 pt-10 border-t border-white/5">
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-blue-500">{communityAuditCount.toLocaleString()}</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Audits Performed</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-indigo-500">1,500+</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Badges Earned</p>
+                  </div>
+               </div>
             </div>
+          ) : (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+               <div className="flex glass-effect p-1.5 rounded-2xl sticky top-20 z-30 backdrop-blur-xl border border-white/5 mb-8">
+                  {(['dashboard', 'claim'] as const).map(t => (<button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 shadow-lg text-white' : 'text-gray-500'}`}>{t}</button>))}
+               </div>
 
-            {activeTab === 'dashboard' && (
-              <div className="space-y-8 pb-10">
-                <div className="glass-effect p-6 rounded-[3rem] border-blue-500/20 text-center relative overflow-hidden">
-                  <div className="relative z-10">
-                    <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">MY BASE IMPRESSION</span>
-                    <div className="text-5xl font-black italic mt-1 text-blue-500">{user.points.toFixed(2)}</div>
-                    <div className="mt-4 px-10"><div className="h-1 bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-blue-600" style={{ width: `${Math.min((user.points / 2500) * 100, 100)}%` }} /></div></div>
-                    <div className="mt-2 text-[9px] font-bold text-gray-600 uppercase">Season 01 Ranking Proof</div>
-                  </div>
-                  <Flame className="absolute -bottom-4 -right-4 w-24 h-24 text-blue-500/5 rotate-12" />
-                </div>
-
-                <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
-                   <div className="flex items-center gap-3"><Users className="w-5 h-5 text-purple-500" /><h3 className="text-xs font-black uppercase italic">Identity Scanners</h3></div>
-                   
-                   {/* Twitter Identity Section */}
-                   <div className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-4">
-                      <div className="flex justify-between items-center">
-                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center"><Twitter className="w-5 h-5 text-blue-400" /></div>
-                            <div className="flex flex-col">
-                               <span className="text-[10px] font-black uppercase text-gray-500 leading-tight">Twitter Identity</span>
-                               <span className="text-xs font-bold text-white">@{user.twitterHandle.replace('@', '') || 'anon'}</span>
-                            </div>
-                         </div>
-                         <button onClick={handleTwitterSync} disabled={isScanning} className="px-5 py-2.5 bg-blue-600/10 border border-blue-500/30 rounded-xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all min-w-[100px]">
-                            {isScanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                            <span className="leading-tight">Sync<br/>Profile</span>
-                         </button>
+               {activeTab === 'dashboard' ? (
+                 <div className="space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Box 1: Points Display */}
+                      <div className="glass-effect p-8 rounded-[3rem] border-blue-500/20 text-center relative overflow-hidden flex flex-col items-center justify-center">
+                        <div className="relative z-10">
+                          <span className="text-[10px] font-black uppercase text-yellow-400 tracking-widest">MY BASE IMPRESSION</span>
+                          <div className="text-6xl font-black italic mt-2 text-blue-500 drop-shadow-[0_0_15px_rgba(37,99,235,0.4)]">{user.points.toFixed(2)}</div>
+                          <div className="mt-6 w-48 mx-auto h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,1)]" style={{ width: `${Math.min((user.points / 1000) * 100, 100)}%` }} />
+                          </div>
+                          <p className="mt-3 text-[9px] font-bold text-gray-500 uppercase tracking-widest">Season 01 Ranking Proof</p>
+                        </div>
+                        <Flame className="absolute -bottom-6 -right-6 w-32 h-32 text-blue-500/5 rotate-12" />
                       </div>
-                      
-                      <div className="grid grid-cols-2 gap-y-6 border-t border-white/5 pt-5">
-                         <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-gray-600 uppercase tracking-wider">Created / Age</span>
-                            <span className="text-[11px] font-bold text-white mt-1">{user.twitterCreatedAt || '-'} / {user.twitterAgeDays || 0}d</span>
-                         </div>
+
+                      {/* Box 2: Eligibility & Badge Status */}
+                      <div className="glass-effect p-8 rounded-[3rem] border-white/10 text-center relative overflow-hidden flex flex-col items-center justify-center gap-4">
+                         <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">IMPRESSION STATUS</span>
                          
-                         <div className="flex flex-col items-end">
-                            <span className="text-[8px] font-black text-blue-600 uppercase tracking-wider">Impact Score</span>
-                            <span className="text-[11px] font-black text-blue-400 mt-1">+{user.pointsBreakdown?.social_twitter?.toFixed(1) || 0} Pts</span>
+                         <div className="flex flex-col items-center gap-2">
+                           {claimEligibility.status === 'ELIGIBLE' ? (
+                             <>
+                               <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-6 py-2 rounded-full">
+                                 <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                 <span className="text-sm font-black text-green-400 uppercase italic">ELIGIBLE</span>
+                               </div>
+                               <div className="mt-2 text-center">
+                                 <p className="text-[9px] font-black text-gray-500 uppercase">TIER UNLOCKED</p>
+                                 <p className={`text-2xl font-black uppercase italic bg-clip-text text-transparent bg-gradient-to-r ${TIERS[getTierFromPoints(user.points)].color}`}>
+                                   {claimEligibility.tierName}
+                                 </p>
+                               </div>
+                             </>
+                           ) : (
+                             <>
+                               <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-6 py-2 rounded-full">
+                                 <Ban className="w-4 h-4 text-red-500" />
+                                 <span className="text-sm font-black text-red-400 uppercase italic">NOT ELIGIBLE</span>
+                               </div>
+                               <p className="text-[10px] font-bold text-gray-400 mt-2">{claimEligibility.message}</p>
+                             </>
+                           )}
                          </div>
-
-                         {/* Baseposting Section - Aligned with Created/Age per request */}
-                         <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-blue-400 uppercase tracking-wider">Baseposting</span>
-                            <span className="text-[11px] font-bold text-white mt-1">+{user.basepostingPoints || 0} Points</span>
-                         </div>
+                         <Trophy className="absolute -top-6 -left-6 w-32 h-32 text-white/5 -rotate-12" />
                       </div>
-                   </div>
-
-                   {/* Farcaster Section */}
-                   <div className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-4">
-                      <div className="flex justify-between items-center">
-                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 overflow-hidden"><img src={farcasterContextUser?.pfpUrl || "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=40"} className="w-full h-full object-cover" alt="FC PFP" /></div>
-                            <div className="flex flex-col"><span className="text-[10px] font-black uppercase text-gray-500">Farcaster Identity</span><span className="text-xs font-bold text-white">{user.farcasterUsername ? `@${user.farcasterUsername}` : 'Ready to Sync'}</span></div>
-                         </div>
-                         <button onClick={handleFarcasterScan} disabled={isScanning} className="px-4 py-2 bg-purple-600/10 border border-purple-500/30 rounded-xl text-[9px] font-black uppercase text-purple-200 flex items-center gap-2">{isScanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync Profile</button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
-                         <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Farcaster ID</span><span className="text-[11px] font-bold">#{user.farcasterId || '-'}</span></div>
-                         <div className="flex flex-col items-end"><span className="text-[8px] font-black text-purple-600 uppercase">Impact Score</span><span className="text-[11px] font-black text-purple-400">+{user.pointsBreakdown?.social_fc || 0} Pts</span></div>
-                      </div>
-                   </div>
-                </div>
-
-                <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 shadow-2xl shadow-blue-500/5">
-                  <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
-                  {analysis && <p className="text-[10px] italic text-blue-200/60 leading-relaxed bg-white/5 p-4 rounded-2xl">"{analysis}"</p>}
-                  <div className="flex flex-col gap-3">
-                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">Generate NFT Visual</button>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => handleShare('farcaster')} className="py-3 bg-purple-600/10 border border-purple-500/30 rounded-2xl text-[9px] font-black uppercase">Warpcast</button>
-                      <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase">X (Twitter)</button>
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            {activeTab === 'claim' && (
-              <div className="space-y-10 text-center py-6 pb-12">
-                 <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20"><Award className="w-10 h-10 text-blue-500" /></div>
-                 <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
-                 <div className="px-4 space-y-6">
-                    <div className="relative group">
-                      <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
-                      {!badgeImage && !isGenerating && (<div className="absolute inset-0 flex items-center justify-center pointer-events-none"><p className="text-[10px] font-black uppercase text-blue-400/50 bg-black/60 px-4 py-2 rounded-full border border-blue-500/20 backdrop-blur-md">Generate Visual to Preview</p></div>)}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                       <div className="lg:col-span-1 space-y-6">
+                         <BadgeDisplay 
+                           tier={getTierFromPoints(user.points)} 
+                           imageUrl={badgeImage} 
+                           loading={isGenerating} 
+                         />
+                         <button 
+                           onClick={generateBadge}
+                           disabled={isGenerating}
+                           className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 italic tracking-widest"
+                         >
+                           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
+                           Refresh NFT Visual
+                         </button>
+                       </div>
+
+                       <div className="lg:col-span-2 space-y-6">
+                          <div className="glass-effect p-8 rounded-[3rem] border-white/10 space-y-6">
+                            <div className="flex items-center justify-between">
+                               <h4 className="font-black text-lg uppercase tracking-tighter italic">Contribution Breakdown</h4>
+                               <button onClick={refreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/5 rounded-full transition-colors">
+                                 <RefreshCw className={`w-4 h-4 ${isRefreshingAssets ? 'animate-spin' : ''}`} />
+                               </button>
+                            </div>
+
+                            <div className="space-y-5">
+                               {[
+                                 { label: 'Social Impact', pts: user.pointsBreakdown?.social_twitter || 0, color: 'bg-blue-500' },
+                                 { label: 'Farcaster Synergy', pts: user.pointsBreakdown?.social_fc || 0, color: 'bg-purple-500' },
+                                 { label: '$LAMBOLESS Yield', pts: user.pointsBreakdown?.lambo || 0, color: 'bg-yellow-500' },
+                                 { label: 'Onchain Seniority', pts: user.pointsBreakdown?.seniority || 0, color: 'bg-indigo-500' }
+                               ].map((item, i) => (
+                                 <div key={i} className="space-y-2">
+                                   <div className="flex justify-between text-[10px] font-black uppercase italic tracking-widest">
+                                     <span className="text-gray-500">{item.label}</span>
+                                     <span className="text-blue-400">+{item.pts.toFixed(2)} PTS</span>
+                                   </div>
+                                   <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                     <div 
+                                       className={`h-full ${item.color} rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(255,255,255,0.2)]`} 
+                                       style={{ width: `${Math.min((item.pts / Math.max(user.points, 1)) * 100, 100)}%` }} 
+                                     />
+                                   </div>
+                                 </div>
+                               ))}
+                            </div>
+                          </div>
+                       </div>
                     </div>
-                    <div className={`p-8 rounded-[3rem] text-center border transition-all ${config.glowClass} bg-black/40`}>
-                       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Tier Unlocked</span>
-                       <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${config.color}`}>{config.name}</h3>
-                    </div>
-                    {claimEligibility.eligible && (<button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-sm italic flex items-center justify-center gap-2 transition-all hover:bg-blue-500 shadow-xl shadow-blue-500/30 active:scale-95 animate-in fade-in slide-in-from-bottom-2 duration-500">{isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Generate NFT Badge</button>)}
                  </div>
-                 <div className="px-4"><button disabled={!claimEligibility.eligible} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border ${claimEligibility.eligible ? claimEligibility.style : `border-white/5 text-gray-600 bg-white/5`}`}>{claimEligibility.icon}{claimEligibility.message}</button></div>
-              </div>
-            )}
+               ) : (
+                 <div className="space-y-10 text-center py-6 pb-12">
+                   <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20"><Award className="w-10 h-10 text-blue-500" /></div>
+                   <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
+                   <div className="max-w-md mx-auto space-y-8">
+                      <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
+                      <div className={`p-8 rounded-[3rem] text-center border transition-all ${TIERS[getTierFromPoints(user.points)].glowClass} bg-black/40`}>
+                         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Tier Status</span>
+                         <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${TIERS[getTierFromPoints(user.points)].color}`}>
+                           {TIERS[getTierFromPoints(user.points)].name}
+                         </h3>
+                      </div>
+                      <button 
+                        disabled={!claimEligibility.eligible} 
+                        className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border shadow-2xl ${claimEligibility.eligible ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'border-white/5 text-gray-600 bg-white/5'}`}
+                      >
+                        {claimEligibility.eligible ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                        {claimEligibility.eligible ? 'Claim NFT Badge' : claimEligibility.message}
+                      </button>
+                   </div>
+                 </div>
+               )}
+            </div>
+          )}
+        </main>
+
+        {showWalletSelector && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+             <div className="w-full max-w-md bg-[#111] border border-white/10 rounded-[2rem] p-8 space-y-6 animate-in zoom-in-95 duration-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-2xl font-black uppercase tracking-tighter">Select Wallet</h3>
+                  <button onClick={() => setShowWalletSelector(false)} className="p-2 hover:bg-white/5 rounded-full">
+                    <X size={20} />
+                  </button>
+                </div>
+                
+                <div className="space-y-3">
+                  {farcasterContextUser && (
+                    <button 
+                      onClick={handleFarcasterAutoLogin}
+                      className="w-full p-4 rounded-2xl bg-gradient-to-r from-purple-600/20 to-purple-800/20 border border-purple-500/30 flex items-center gap-4 hover:scale-[1.02] transition-all"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold">F</div>
+                      <div className="text-left">
+                        <p className="font-bold">Farcaster Wallet</p>
+                        <p className="text-[10px] text-purple-300 uppercase font-black">Native Connection</p>
+                      </div>
+                    </button>
+                  )}
+                  {discoveredProviders.map((detail) => (
+                    <button 
+                      key={detail.info.uuid}
+                      onClick={() => handleConnectAndSign(detail.provider)}
+                      className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-4 hover:bg-white/10 transition-all"
+                    >
+                      <img src={detail.info.icon} alt={detail.info.name} className="w-10 h-10 rounded-xl" />
+                      <div className="text-left">
+                        <p className="font-bold">{detail.info.name}</p>
+                        <p className="text-[10px] text-gray-500 uppercase font-black">Detected Provider</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+             </div>
           </div>
         )}
-      </main>
+
+        {isScanning && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+             <div className="w-full max-w-lg space-y-8 text-center">
+                <div className="relative w-32 h-32 mx-auto">
+                  <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full" />
+                  <div 
+                    className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin" 
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-2xl font-black">{scanProgress}%</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="text-3xl font-black uppercase tracking-tighter">Auditing Impression</h3>
+                  <p className="text-gray-400 font-mono text-xs animate-pulse">Running onchain validation sequences...</p>
+                </div>
+
+                <div className="bg-black border border-white/10 rounded-2xl p-4 h-48 overflow-y-auto font-mono text-left text-[10px] space-y-1">
+                  {scanLogs.map((log, i) => (
+                    <div key={i} className="flex gap-2">
+                      <span className="text-blue-500/50">[{new Date().toLocaleTimeString()}]</span>
+                      <span className={log.includes('Error') ? 'text-red-400' : 'text-gray-300'}>{log}</span>
+                    </div>
+                  ))}
+                  <div className="animate-pulse">_</div>
+                </div>
+             </div>
+          </div>
+        )}
     </div>
   );
 };
