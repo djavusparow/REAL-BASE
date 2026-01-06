@@ -88,12 +88,15 @@ const App: React.FC = () => {
 
   const getFarcasterAddress = useCallback((ctx: any) => {
     if (!ctx) return null;
+    
+    // Check all possible paths for the address in Frame v2 context
     if (ctx.address) return ctx.address;
-    const user = ctx.user || ctx;
-    if (user.custodyAddress) return user.custodyAddress;
-    if (user.verifiedAddresses && user.verifiedAddresses.length > 0) {
-      return user.verifiedAddresses[0];
+    if (ctx.user?.address) return ctx.user.address;
+    if (ctx.user?.custodyAddress) return ctx.user.custodyAddress;
+    if (ctx.user?.verifiedAddresses && ctx.user.verifiedAddresses.length > 0) {
+      return ctx.user.verifiedAddresses[0];
     }
+    
     return null;
   }, []);
 
@@ -174,16 +177,30 @@ const App: React.FC = () => {
     
     setIsConnecting(true);
     try {
+      // Refresh context
       const context = await sdk.context;
-      const fcAddr = getFarcasterAddress(context);
+      let fcAddr = getFarcasterAddress(context);
+      
+      const provider = sdk.wallet?.ethProvider;
+
+      // Fallback: If context doesn't have the address, ask the provider directly
+      if (!fcAddr && provider) {
+        try {
+          const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
+          if (accounts && accounts.length > 0) {
+            fcAddr = accounts[0];
+          }
+        } catch (err) {
+          console.warn("Failed to fetch address via eth_requestAccounts", err);
+        }
+      }
       
       if (!fcAddr) {
-        alert("No Farcaster address detected. Please ensure you are logged into Warpcast.");
+        alert("Farcaster identity not found. Please make sure you have a verified wallet in Warpcast.");
         setIsConnecting(false);
         return;
       }
 
-      const provider = sdk.wallet?.ethProvider;
       if (provider) {
         setIsSigning(true);
         try {
@@ -191,13 +208,10 @@ const App: React.FC = () => {
           const challengeMessage = `Base Impression Proof\nWallet: ${fcAddr}\nTime: ${Date.now()}\nVerify Farcaster identity for Base Impression.`;
           await web3.eth.personal.sign(challengeMessage, fcAddr, "");
         } catch (signError: any) {
-          console.warn("Signing failed, but we have context address:", signError);
-          // Only show alert if it wasn't a user rejection
-          if (signError.code !== 4001) {
-            console.log("Proceeding with verified context address...");
-          } else {
-            throw signError; // User rejected, stop here
-          }
+          console.warn("Signing error (might be user rejection):", signError);
+          // If user didn't explicitly reject, we can sometimes proceed with just the address
+          // but for "Proof", we really want the signature.
+          if (signError.code === 4001) throw signError; 
         } finally {
           setIsSigning(false);
         }
@@ -214,11 +228,6 @@ const App: React.FC = () => {
       setShowWalletSelector(false);
     } catch (e: any) {
       console.error("Login Error:", e);
-      if (e.code === 4001) {
-        // User cancelled, just stop loading
-      } else {
-        alert("Farcaster login failed. Please try again.");
-      }
     } finally {
       setIsConnecting(false);
       setIsSigning(false);
