@@ -11,54 +11,26 @@ import {
   Loader2, 
   X,
   ArrowRight,
-  Search,
   LogOut,
   Trophy,
   Award,
-  Link2,
   Lock,
-  ExternalLink,
-  Shield,
-  Fingerprint,
-  ChevronRight,
-  TrendingUp,
-  AlertCircle,
-  Clock,
   RefreshCw,
-  ArrowUpDown,
-  Coins,
   Cpu,
-  Binary,
-  Send,
-  Users,
-  AlertTriangle,
-  Filter,
-  Copy,
-  ShoppingCart,
-  ChevronLeft,
-  ChevronRightSquare,
-  History,
-  Activity,
-  Globe,
-  ZapOff,
   Flame,
-  Check,
   Ban,
   Sparkles
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
-import { UserStats, RankTier, LeaderboardEntry } from './types.ts';
+import { UserStats, RankTier } from './types.ts';
 import { 
   TIERS, 
-  MIN_TOKEN_VALUE_USD,
-  CLAIM_START,
   LAMBOLESS_CONTRACT,
   NICK_CONTRACT,
   JESSE_CONTRACT,
   HOURLY_WINDOW_START,
-  HOURLY_WINDOW_END,
-  MULTIPLIERS
+  HOURLY_WINDOW_END
 } from './constants.ts';
 import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
@@ -68,16 +40,6 @@ import { tokenService } from './services/tokenService.ts';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
 const STORAGE_KEY_AUDIT_COUNT = 'base_impression_v1_count';
-
-interface EIP6963ProviderDetail {
-  info: {
-    uuid: string;
-    name: string;
-    icon: string;
-    rdns: string;
-  };
-  provider: any;
-}
 
 const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-40 h-40' : 'w-10 h-10';
@@ -107,7 +69,6 @@ const App: React.FC = () => {
   
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
-  const [discoveredProviders, setDiscoveredProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [showWalletSelector, setShowWalletSelector] = useState(false);
   
   const [isConnecting, setIsConnecting] = useState(false);
@@ -120,7 +81,6 @@ const App: React.FC = () => {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [badgeImage, setBadgeImage] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
 
@@ -182,16 +142,6 @@ const App: React.FC = () => {
       processCallback();
     }
 
-    const onAnnouncement = (event: any) => {
-      setDiscoveredProviders(prev => {
-        const detail = event.detail as EIP6963ProviderDetail;
-        if (prev.some(p => p.info.uuid === detail.info.uuid)) return prev;
-        return [...prev, detail];
-      });
-    };
-    window.addEventListener("eip6963:announceProvider", onAnnouncement);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-
     const savedCount = localStorage.getItem(STORAGE_KEY_AUDIT_COUNT);
     if (savedCount) {
       setCommunityAuditCount(parseInt(savedCount));
@@ -199,7 +149,6 @@ const App: React.FC = () => {
 
     const init = async () => {
       const timeoutId = setTimeout(() => {
-        console.warn("Farcaster SDK init timed out, forcing ready state");
         setIsReady(true);
       }, 3000);
 
@@ -218,35 +167,37 @@ const App: React.FC = () => {
       }
     };
     init();
-    return () => window.removeEventListener("eip6963:announceProvider", onAnnouncement);
   }, [getFarcasterAddress, loadUserDataFromStorage]);
 
   const handleFarcasterAutoLogin = async () => {
-    // Prevent double invocation
     if (isConnecting || isSigning) return;
     
     setIsConnecting(true);
     try {
-      // Refresh context directly from SDK to ensure latest data
       const context = await sdk.context;
       const fcAddr = getFarcasterAddress(context);
       
       if (!fcAddr) {
-        console.error("No Farcaster address found in context");
+        alert("No Farcaster address detected. Please ensure you are logged into Warpcast.");
         setIsConnecting(false);
         return;
       }
 
-      // Try signing, but don't block login if provider fails on mobile
       const provider = sdk.wallet?.ethProvider;
       if (provider) {
         setIsSigning(true);
         try {
           const web3 = new Web3(provider);
-          const challengeMessage = `Base Impression Proof\nWallet: ${fcAddr}\nTime: ${Date.now()}\nVerify Farcaster identity.`;
+          const challengeMessage = `Base Impression Proof\nWallet: ${fcAddr}\nTime: ${Date.now()}\nVerify Farcaster identity for Base Impression.`;
           await web3.eth.personal.sign(challengeMessage, fcAddr, "");
-        } catch (signError) {
-          console.warn("Signature skipped or failed, using verified context address", signError);
+        } catch (signError: any) {
+          console.warn("Signing failed, but we have context address:", signError);
+          // Only show alert if it wasn't a user rejection
+          if (signError.code !== 4001) {
+            console.log("Proceeding with verified context address...");
+          } else {
+            throw signError; // User rejected, stop here
+          }
         } finally {
           setIsSigning(false);
         }
@@ -255,37 +206,20 @@ const App: React.FC = () => {
       setAddress(fcAddr);
       setIsSignatureVerified(true);
       
-      if (context.user?.username) {
+      if (context.user?.username && !handle) {
         setHandle(`@${context.user.username}`);
         setIsTwitterVerified(true);
       }
       
       setShowWalletSelector(false);
-    } catch (e) {
-      console.error("Critical Farcaster login error:", e);
+    } catch (e: any) {
+      console.error("Login Error:", e);
+      if (e.code === 4001) {
+        // User cancelled, just stop loading
+      } else {
+        alert("Farcaster login failed. Please try again.");
+      }
     } finally {
-      setIsConnecting(false);
-      setIsSigning(false);
-    }
-  };
-
-  const handleConnectAndSign = async (provider: any) => {
-    setShowWalletSelector(false);
-    setIsConnecting(true);
-    try {
-      const web3 = new Web3(provider);
-      const accounts = await web3.eth.requestAccounts();
-      if (!accounts.length) throw new Error("No accounts linked");
-      const linkedAddress = accounts[0];
-      setAddress(linkedAddress);
-      setIsConnecting(false);
-      setIsSigning(true);
-      const challengeMessage = `Base Impression Proof\nWallet: ${linkedAddress}\nTime: ${Date.now()}\nVerify Web3 identity.`;
-      await web3.eth.personal.sign(challengeMessage, linkedAddress, "");
-      setIsSignatureVerified(true);
-      setIsSigning(false);
-    } catch (e) {
-      console.error("Wallet connection/signing error", e);
       setIsConnecting(false);
       setIsSigning(false);
     }
@@ -298,7 +232,6 @@ const App: React.FC = () => {
     setIsSignatureVerified(false);
     setIsTwitterVerified(false);
     setBadgeImage(null);
-    setAnalysis('');
     localStorage.removeItem(STORAGE_KEY_USER);
   };
 
@@ -415,12 +348,8 @@ const App: React.FC = () => {
     setIsGenerating(true);
     try {
       const tier = getTierFromPoints(user.points);
-      const [img, copy] = await Promise.all([
-        geminiService.generateBadgePreview(tier, user.twitterHandle),
-        geminiService.getImpressionAnalysis(user.points, tier)
-      ]);
+      const img = await geminiService.generateBadgePreview(tier, user.twitterHandle);
       setBadgeImage(img);
-      setAnalysis(copy);
     } catch (e) {
       console.error("Failed to generate badge", e);
     } finally {
@@ -471,8 +400,8 @@ const App: React.FC = () => {
                     onClick={() => setShowWalletSelector(true)}
                     className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase px-6 py-2 rounded-full transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] flex items-center gap-2"
                   >
-                    {farcasterContext ? <Sparkles size={14} /> : <Wallet size={14} />}
-                    {farcasterContext ? 'Login' : 'Connect'}
+                    <Sparkles size={14} />
+                    Login
                   </button>
                )}
             </div>
@@ -500,7 +429,7 @@ const App: React.FC = () => {
                       <div className={`p-2 rounded-lg ${isSignatureVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}>
                         <Wallet size={20} />
                       </div>
-                      <span className="font-bold">Step 1: Wallet</span>
+                      <span className="font-bold uppercase text-xs tracking-widest">Step 1: Wallet</span>
                     </div>
                     {isSignatureVerified ? (
                       <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
@@ -521,7 +450,7 @@ const App: React.FC = () => {
                       <div className={`p-2 rounded-lg ${isTwitterVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}>
                         <Twitter size={20} />
                       </div>
-                      <span className="font-bold">Step 2: Socials</span>
+                      <span className="font-bold uppercase text-xs tracking-widest">Step 2: Socials</span>
                     </div>
                     {isTwitterVerified ? (
                       <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
@@ -542,7 +471,7 @@ const App: React.FC = () => {
                   <button 
                     onClick={startAudit}
                     disabled={isScanning}
-                    className="w-full max-w-sm mx-auto py-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl text-lg font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                    className="w-full max-sm mx-auto py-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl text-lg font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
                   >
                     {isScanning ? <Loader2 className="animate-spin" /> : <Zap />}
                     Start Audit
@@ -550,7 +479,6 @@ const App: React.FC = () => {
                )}
             </div>
           ) : (
-            /* Dashboard UI remains unchanged */
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                <div className="flex glass-effect p-1.5 rounded-2xl sticky top-20 z-30 backdrop-blur-xl border border-white/5 mb-8">
                   {(['dashboard', 'claim'] as const).map(t => (<button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 shadow-lg text-white' : 'text-gray-500'}`}>{t}</button>))}
@@ -584,10 +512,60 @@ const App: React.FC = () => {
                          </div>
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                       <div className="lg:col-span-1 space-y-6">
+                         <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
+                         <button onClick={generateBadge} disabled={isGenerating} className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 italic tracking-widest">
+                           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cpu className="w-4 h-4" />}
+                           Refresh NFT Visual
+                         </button>
+                       </div>
+                       <div className="lg:col-span-2 glass-effect p-8 rounded-[3rem] border-white/10 space-y-6">
+                          <div className="flex items-center justify-between">
+                             <h4 className="font-black text-lg uppercase tracking-tighter italic">Contribution Breakdown</h4>
+                             <button onClick={refreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/5 rounded-full transition-colors">
+                               <RefreshCw className={`w-4 h-4 ${isRefreshingAssets ? 'animate-spin' : ''}`} />
+                             </button>
+                          </div>
+                          <div className="space-y-5">
+                             {[
+                               { label: 'Social Impact', pts: user.pointsBreakdown?.social_twitter || 0, color: 'bg-blue-500' },
+                               { label: 'Farcaster Synergy', pts: user.pointsBreakdown?.social_fc || 0, color: 'bg-purple-500' },
+                               { label: '$LAMBOLESS Yield', pts: user.pointsBreakdown?.lambo || 0, color: 'bg-yellow-500' },
+                               { label: 'Onchain Seniority', pts: user.pointsBreakdown?.seniority || 0, color: 'bg-indigo-500' }
+                             ].map((item, i) => (
+                               <div key={i} className="space-y-2">
+                                 <div className="flex justify-between text-[10px] font-black uppercase italic tracking-widest">
+                                   <span className="text-gray-500">{item.label}</span>
+                                   <span className="text-blue-400">+{item.pts.toFixed(2)} PTS</span>
+                                 </div>
+                                 <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                                   <div className={`h-full ${item.color} rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(255,255,255,0.2)]`} style={{ width: `${Math.min((item.pts / Math.max(user.points, 1)) * 100, 100)}%` }} />
+                                 </div>
+                               </div>
+                             ))}
+                          </div>
+                       </div>
+                    </div>
                  </div>
                ) : (
                  <div className="space-y-10 text-center py-6 pb-12">
-                   {/* Claim UI remains unchanged */}
+                    <Award className="w-16 h-16 text-blue-500 mx-auto" />
+                    <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
+                    <div className="max-w-md mx-auto space-y-8">
+                       <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
+                       <div className={`p-8 rounded-[3rem] text-center border bg-black/40 border-white/10`}>
+                          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Tier Status</span>
+                          <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${TIERS[getTierFromPoints(user.points)].color}`}>
+                            {TIERS[getTierFromPoints(user.points)].name}
+                          </h3>
+                       </div>
+                       <button disabled={!claimEligibility.eligible} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border shadow-2xl ${claimEligibility.eligible ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'border-white/5 text-gray-600 bg-white/5'}`}>
+                         {claimEligibility.eligible ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                         {claimEligibility.eligible ? 'Claim NFT Badge' : claimEligibility.message}
+                       </button>
+                    </div>
                  </div>
                )}
             </div>
@@ -600,7 +578,7 @@ const App: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-2xl font-black uppercase tracking-tighter italic">Connect Wallet</h3>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Verify Your Onchain Identity</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Verify Your Farcaster Identity</p>
                   </div>
                   <button onClick={() => setShowWalletSelector(false)} className="p-2 hover:bg-white/5 rounded-full text-gray-500 transition-colors">
                     <X size={20} />
@@ -611,7 +589,7 @@ const App: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-400">Farcaster Detected</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-400">Farcaster Account Only</span>
                     </div>
                     <button 
                       onClick={handleFarcasterAutoLogin}
@@ -628,47 +606,23 @@ const App: React.FC = () => {
                       <div className="relative text-left flex-1">
                         <p className="font-black text-lg uppercase tracking-tight italic">Farcaster Identity</p>
                         <p className="text-[10px] text-purple-300/70 uppercase font-black tracking-widest">
-                          {isSigning ? 'Requesting Sign...' : isConnecting ? 'Authenticating...' : 'One-Tap Verification'}
+                          {isSigning ? 'Requesting Sign...' : isConnecting ? 'Connecting...' : 'One-Tap Verification'}
                         </p>
                       </div>
                       <ArrowRight className="w-5 h-5 text-purple-400 group-hover:translate-x-1 transition-transform" />
                     </button>
                   </div>
+                </div>
 
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Other Wallets</span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-3">
-                      {discoveredProviders.length > 0 ? (
-                        discoveredProviders.map((detail) => (
-                          <button 
-                            key={detail.info.uuid}
-                            onClick={() => handleConnectAndSign(detail.provider)}
-                            className="w-full p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-4 hover:bg-white/10 hover:border-white/20 transition-all group"
-                          >
-                            <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/5 flex items-center justify-center border border-white/10">
-                              <img src={detail.info.icon} alt={detail.info.name} className="w-7 h-7" />
-                            </div>
-                            <div className="text-left flex-1">
-                              <p className="font-bold text-sm tracking-tight">{detail.info.name}</p>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-gray-600 group-hover:text-white transition-colors" />
-                          </button>
-                        ))
-                      ) : (
-                        <div className="p-4 rounded-2xl bg-white/5 border border-white/10 border-dashed text-center">
-                          <p className="text-[10px] text-gray-500 font-bold uppercase">No injected wallets detected</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <div className="pt-2 text-center">
+                  <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                    Access is limited to verified Farcaster accounts.
+                  </p>
                 </div>
              </div>
           </div>
         )}
         
-        {/* Loading overlay for scanning assets */}
         {isScanning && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-lg">
              <div className="w-full max-w-lg space-y-8 text-center">
@@ -679,9 +633,7 @@ const App: React.FC = () => {
                     <span className="text-3xl font-black italic">{scanProgress}%</span>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <h3 className="text-4xl font-black uppercase tracking-tighter italic">Auditing Impression</h3>
-                </div>
+                <h3 className="text-4xl font-black uppercase tracking-tighter italic">Auditing Impression</h3>
                 <div className="bg-black/50 border border-white/10 rounded-3xl p-6 h-56 overflow-y-auto font-mono text-left text-[10px] space-y-1">
                   {scanLogs.map((log, i) => (
                     <div key={i} className="flex gap-2 border-l border-white/10 pl-3 py-0.5 text-gray-400">
