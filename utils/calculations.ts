@@ -13,6 +13,44 @@ export const calculateAccountAgeDays = (registrationDate: Date): number => {
 };
 
 /**
+ * Estimates Farcaster account age in days based on FID.
+ * Farcaster growth has been non-linear, with significant acceleration post-Feb 2024.
+ */
+export const estimateFarcasterAge = (fid: number): number => {
+  if (!fid) return 0;
+  
+  const now = new Date();
+  const genesisDate = new Date("2020-07-25"); // Approximate Farcaster genesis
+  const totalDaysSinceGenesis = (now.getTime() - genesisDate.getTime()) / (1000 * 60 * 60 * 24);
+
+  // Heuristic based on FID milestones:
+  // FID 1-10k: 2020 - Late 2022
+  // FID 100k: Oct 2023
+  // FID 250k: Feb 2024 (Frame Launch)
+  // FID 500k: May 2024
+  // FID 1M+: Feb 2025
+  
+  let estimatedDays = 0;
+  if (fid <= 10000) {
+    // Very early adopters (Senior builders)
+    estimatedDays = totalDaysSinceGenesis - (fid / 10000) * 300;
+  } else if (fid <= 100000) {
+    // Early adopters
+    const dayRef = totalDaysSinceGenesis - 400; // Late 2023 ref
+    estimatedDays = dayRef * (1 - (fid - 10000) / 90000);
+  } else if (fid <= 250000) {
+    // Pre-frames boom
+    estimatedDays = 400 * (1 - (fid - 100000) / 150000);
+  } else {
+    // Post-frames/Current growth phase
+    // FID 1M is ~30 days old as of March 2025
+    estimatedDays = Math.max(1, 380 * Math.pow(1 - Math.min(fid / 1200000, 1), 1.5));
+  }
+
+  return Math.floor(estimatedDays);
+};
+
+/**
  * Points Calculation Formula
  * Returns total points and a breakdown for display.
  */

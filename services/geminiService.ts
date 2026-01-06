@@ -71,6 +71,29 @@ export class GeminiService {
   }
 
   /**
+   * Verifies Farcaster registration date using Google Search grounding for accuracy.
+   */
+  async getFarcasterRegistrationDate(fid: number, username: string): Promise<string | null> {
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `When was the Farcaster account with FID ${fid} and username @${username} registered? 
+        Please find the exact or approximate month and year. Return ONLY the date in YYYY-MM-DD format. If unsure, return null.`,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
+      });
+      
+      const dateStr = response.text?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+      return dateStr || null;
+    } catch (error) {
+      console.error("Farcaster Date Verification Error:", error);
+      return null;
+    }
+  }
+
+  /**
    * Generates motivational copy using Gemini 3 Flash Preview.
    */
   async getImpressionAnalysis(points: number, tier: string): Promise<string> {

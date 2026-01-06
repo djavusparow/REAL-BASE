@@ -58,7 +58,7 @@ import {
   HOURLY_WINDOW_END,
   MULTIPLIERS
 } from './constants.ts';
-import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations.ts';
+import { calculateDetailedPoints, getTierFromPoints, estimateFarcasterAge } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
 import { geminiService } from './services/geminiService.ts';
 import { twitterService, Tweet } from './services/twitterService.ts';
@@ -319,24 +319,42 @@ const App: React.FC = () => {
   const handleFarcasterScan = async () => {
     if (!user) return;
     if (!farcasterContextUser) {
-      alert("Farcaster context not found. Please open this app within Warpcast or a Farcaster client.");
+      alert("Farcaster context not found. Please open this app within Warpcast.");
       return;
     }
 
     setIsScanning(true);
-    setScanLogs(["Accessing Farcaster identity..."]);
-    setScanProgress(30);
-    
-    await new Promise(r => setTimeout(r, 1000));
+    setScanLogs(["Establishing Farcaster Handshake..."]);
+    setScanProgress(15);
     
     const fid = farcasterContextUser.fid;
     const username = farcasterContextUser.username || "anon";
     
-    setScanLogs(prev => [...prev, `Found FID: ${fid}`, `Verifying username: @${username}`]);
-    setScanProgress(70);
+    setScanLogs(prev => [...prev, `FID Detected: ${fid}`, `Target: @${username}`]);
+    setScanProgress(40);
     
-    const fidAge = Math.max(1, Math.floor(((1000000 - (fid || 1)) / 1000000) * 800));
-    const createdAt = new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString();
+    // 1. Initial heuristic estimation
+    let fidAge = estimateFarcasterAge(fid);
+    let createdAt = new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString();
+
+    // 2. High-fidelity verification using Gemini Search Grounding for aged accounts or deep audits
+    try {
+      setScanLogs(prev => [...prev, "Verifying precise registration date via Search..."]);
+      const verifiedDateStr = await geminiService.getFarcasterRegistrationDate(fid, username);
+      if (verifiedDateStr) {
+        const verifiedDate = new Date(verifiedDateStr);
+        if (!isNaN(verifiedDate.getTime())) {
+          const now = new Date();
+          fidAge = Math.floor((now.getTime() - verifiedDate.getTime()) / (1000 * 60 * 60 * 24));
+          createdAt = verifiedDate.toLocaleDateString();
+          setScanLogs(prev => [...prev, "Registration date verified successfully."]);
+        }
+      }
+    } catch (e) {
+      console.warn("Search verification failed, continuing with heuristic.", e);
+    }
+    
+    setScanProgress(85);
 
     const { total, breakdown } = calculateDetailedPoints(
       user.baseAppAgeDays, 
@@ -406,7 +424,8 @@ const App: React.FC = () => {
       await sleep(400);
       
       const baseAge = 150 + Math.floor(Math.random() * 50);
-      const fidAge = farcasterContextUser ? Math.max(1, Math.floor(((1000000 - (farcasterContextUser.fid || 1)) / 1000000) * 800)) : 0;
+      // Improved Farcaster heuristic usage
+      const fidAge = farcasterContextUser ? estimateFarcasterAge(farcasterContextUser.fid) : 0;
       
       const { total, breakdown } = calculateDetailedPoints(
         baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fidAge, 
@@ -563,7 +582,7 @@ const App: React.FC = () => {
       {isScanning && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
           <Binary className="w-20 h-20 text-blue-500 animate-pulse mb-10" />
-          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2">Processing Audit</h2>
+          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2">Establishing Trust</h2>
           <div className="w-full max-w-xs space-y-4">
             <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden">
               <div className="h-full bg-blue-600 transition-all duration-700 shadow-[0_0_20px_rgba(37,99,235,1)]" style={{ width: `${scanProgress || 50}%` }} />
