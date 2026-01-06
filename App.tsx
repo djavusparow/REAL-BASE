@@ -246,6 +246,55 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [user]);
 
+  // FULL WALLET LOGIC RESTORED
+  const handleFarcasterAutoLogin = () => {
+    const fcAddr = getFarcasterAddress(farcasterContextUser);
+    if (!fcAddr) return;
+    setAddress(fcAddr);
+    setIsSignatureVerified(true);
+    setShowWalletSelector(false);
+  };
+
+  const handleConnectAndSign = async (provider: any) => {
+    setShowWalletSelector(false);
+    setIsConnecting(true);
+    try {
+      const web3 = new Web3(provider);
+      const accounts = await web3.eth.requestAccounts();
+      if (!accounts.length) throw new Error("No accounts linked");
+      const linkedAddress = accounts[0];
+      setAddress(linkedAddress);
+      setIsConnecting(false);
+      setIsSigning(true);
+      const challengeMessage = `Base Impression Proof\nWallet: ${linkedAddress}\nTime: ${Date.now()}`;
+      await web3.eth.personal.sign(challengeMessage, linkedAddress, "");
+      setIsSignatureVerified(true);
+      setIsSigning(false);
+    } catch (error) {
+      setIsSignatureVerified(false);
+      setIsConnecting(false);
+      setIsSigning(false);
+      alert("Auth failed.");
+    }
+  };
+
+  const connectWallet = async () => {
+    const fcAddr = getFarcasterAddress(farcasterContextUser);
+    const providersCount = discoveredProviders.length + (fcAddr ? 1 : 0);
+    
+    if (providersCount === 0) {
+      alert("No wallets detected. Please use a Web3 browser or Farcaster.");
+      return;
+    }
+    
+    if (providersCount === 1) {
+      if (fcAddr) handleFarcasterAutoLogin();
+      else handleConnectAndSign(discoveredProviders[0].provider);
+    } else {
+      setShowWalletSelector(true);
+    }
+  };
+
   const handleTwitterSync = async () => {
     if (!user) return;
     setIsScanning(true);
@@ -332,7 +381,10 @@ const App: React.FC = () => {
   const handleScan = async () => {
     const currentAddress = address || getFarcasterAddress(farcasterContextUser);
     const currentHandle = handle || (farcasterContextUser?.username ? `@${farcasterContextUser.username}` : '');
-    if (!currentAddress) return;
+    if (!currentAddress || !currentHandle) {
+      alert("Please connect wallet and twitter first.");
+      return;
+    }
 
     setIsScanning(true);
     setScanProgress(0);
@@ -479,6 +531,35 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
+      {/* Wallet Selector Modal */}
+      {showWalletSelector && (
+        <div className="fixed inset-0 z-[110] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-[#111] border border-white/10 w-full max-w-sm rounded-[2.5rem] p-8 space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xl font-black uppercase italic tracking-tighter">Select Provider</h3>
+              <button onClick={() => setShowWalletSelector(false)}><X className="w-6 h-6 text-gray-500" /></button>
+            </div>
+            <div className="space-y-3">
+              {getFarcasterAddress(farcasterContextUser) && (
+                <button onClick={handleFarcasterAutoLogin} className="w-full bg-purple-600/10 border border-purple-500/30 py-4 px-6 rounded-2xl flex items-center justify-between hover:bg-purple-600/20 transition-all">
+                  <span className="font-bold text-sm">Farcaster Wallet</span>
+                  <Activity className="w-5 h-5 text-purple-500" />
+                </button>
+              )}
+              {discoveredProviders.map(p => (
+                <button key={p.info.uuid} onClick={() => handleConnectAndSign(p.provider)} className="w-full bg-blue-600/10 border border-blue-500/30 py-4 px-6 rounded-2xl flex items-center justify-between hover:bg-blue-600/20 transition-all">
+                  <div className="flex items-center gap-3">
+                    <img src={p.info.icon} className="w-6 h-6 rounded-md" alt={p.info.name} />
+                    <span className="font-bold text-sm">{p.info.name}</span>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-blue-500" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isScanning && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
           <Binary className="w-20 h-20 text-blue-500 animate-pulse mb-10" />
@@ -507,11 +588,7 @@ const App: React.FC = () => {
                 <div className="space-y-2 text-left">
                   <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Profile Identity</label>
                   {!isSignatureVerified ? (
-                    <button onClick={() => { 
-                      const detected = getFarcasterAddress(farcasterContextUser);
-                      if (detected) { setAddress(detected); setIsSignatureVerified(true); } 
-                      else alert("No wallets detected.");
-                    }} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-600/20"><span className="text-xs font-bold uppercase text-blue-200">Sync Wallet</span><Wallet className="w-4 h-4 text-blue-500" /></button>
+                    <button onClick={connectWallet} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-600/20"><span className="text-xs font-bold uppercase text-blue-200">Sync Wallet</span><Wallet className="w-4 h-4 text-blue-500" /></button>
                   ) : (
                     <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
                       <div className="flex flex-col"><span className="text-[8px] font-black text-green-500 uppercase">Linked Wallet</span><span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span></div>
@@ -575,7 +652,7 @@ const App: React.FC = () => {
                             <div className="w-10 h-10 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center"><Twitter className="w-5 h-5 text-blue-400" /></div>
                             <div className="flex flex-col">
                                <span className="text-[10px] font-black uppercase text-gray-500 leading-tight">Twitter Identity</span>
-                               <span className="text-xs font-bold text-white">@{handle.replace('@', '') || 'anon'}</span>
+                               <span className="text-xs font-bold text-white">@{user.twitterHandle.replace('@', '') || 'anon'}</span>
                             </div>
                          </div>
                          <button onClick={handleTwitterSync} disabled={isScanning} className="px-5 py-2.5 bg-blue-600/10 border border-blue-500/30 rounded-xl text-[9px] font-black uppercase text-blue-200 flex items-center justify-center gap-2 hover:bg-blue-600/20 transition-all min-w-[100px]">
@@ -595,11 +672,10 @@ const App: React.FC = () => {
                             <span className="text-[11px] font-black text-blue-400 mt-1">+{user.pointsBreakdown?.social_twitter?.toFixed(1) || 0} Pts</span>
                          </div>
 
-                         <div className="col-span-2 pt-5 border-t border-white/5">
-                            <div className="flex flex-col">
-                               <span className="text-[8px] font-black text-blue-400 uppercase tracking-wider">Baseposting</span>
-                               <span className="text-[11px] font-bold text-white mt-1">+{user.basepostingPoints || 0} Points</span>
-                            </div>
+                         {/* Baseposting Section - Aligned with Created/Age per request */}
+                         <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-blue-400 uppercase tracking-wider">Baseposting</span>
+                            <span className="text-[11px] font-bold text-white mt-1">+{user.basepostingPoints || 0} Points</span>
                          </div>
                       </div>
                    </div>
