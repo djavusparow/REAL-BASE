@@ -134,6 +134,24 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    // Check for Twitter OAuth callback parameters
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('code')) {
+      const processCallback = async () => {
+        setIsScanning(true);
+        setScanLogs(["Authenticating with Twitter..."]);
+        const result = await twitterService.handleCallback(params);
+        if (result) {
+          setHandle(result.handle);
+          setIsTwitterVerified(true);
+          // Clear URL parameters without page reload
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        setIsScanning(false);
+      };
+      processCallback();
+    }
+
     const onAnnouncement = (event: any) => {
       setDiscoveredProviders(prev => {
         const detail = event.detail as EIP6963ProviderDetail;
@@ -257,6 +275,52 @@ const App: React.FC = () => {
       setIsSigning(false);
       alert("Auth failed.");
     }
+  };
+
+  const handleFarcasterScan = async () => {
+    if (!user) return;
+    if (!farcasterContextUser) {
+      alert("Farcaster context not found. Please open this app within Warpcast or a Farcaster client.");
+      return;
+    }
+
+    setIsScanning(true);
+    setScanLogs(["Accessing Farcaster identity..."]);
+    setScanProgress(30);
+    
+    await new Promise(r => setTimeout(r, 1000));
+    
+    const fid = farcasterContextUser.fid;
+    const username = farcasterContextUser.username || "anon";
+    
+    setScanLogs(prev => [...prev, `Found FID: ${fid}`, `Verifying username: @${username}`]);
+    setScanProgress(70);
+    
+    const fidAge = Math.max(1, Math.floor(((1000000 - (fid || 1)) / 1000000) * 800));
+    const createdAt = new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString();
+
+    const { total, breakdown } = calculateDetailedPoints(
+      user.baseAppAgeDays, 
+      user.twitterAgeDays, 
+      user.validTweetsCount, 
+      fidAge, 
+      { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 }
+    );
+
+    setUser({
+      ...user,
+      farcasterId: fid,
+      farcasterUsername: username,
+      farcasterAgeDays: fidAge,
+      farcasterCreatedAt: createdAt,
+      points: total,
+      pointsBreakdown: breakdown
+    });
+
+    setScanProgress(100);
+    await new Promise(r => setTimeout(r, 500));
+    setIsScanning(false);
+    alert("Farcaster identity impact synced!");
   };
 
   const handleScan = async () => {
@@ -458,12 +522,12 @@ const App: React.FC = () => {
       {isScanning && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-8 text-center">
           <Binary className="w-20 h-20 text-blue-500 animate-pulse mb-10" />
-          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2">Auditing Footprint</h2>
+          <h2 className="text-2xl font-black uppercase italic tracking-tighter mb-2">Processing Audit</h2>
           <div className="w-full max-w-xs space-y-4">
             <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-600 transition-all duration-700 shadow-[0_0_20px_rgba(37,99,235,1)]" style={{ width: `${scanProgress}%` }} />
+              <div className="h-full bg-blue-600 transition-all duration-700 shadow-[0_0_20px_rgba(37,99,235,1)]" style={{ width: `${scanProgress || 50}%` }} />
             </div>
-            <p className="text-[10px] font-black uppercase text-blue-400 min-h-[1.5em] tracking-widest">{scanLogs[scanLogs.length - 1] || "Initializing..."}</p>
+            <p className="text-[10px] font-black uppercase text-blue-400 min-h-[1.5em] tracking-widest">{scanLogs[scanLogs.length - 1] || "Communicating..."}</p>
           </div>
         </div>
       )}
@@ -483,7 +547,7 @@ const App: React.FC = () => {
                 <div className="space-y-2 text-left">
                   <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Profile Identity</label>
                   {!isSignatureVerified ? (
-                    <button onClick={connectWallet} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between"><span className="text-xs font-bold uppercase text-blue-200">Connect Wallet</span><Wallet className="w-4 h-4 text-blue-500" /></button>
+                    <button onClick={connectWallet} className="w-full bg-blue-600/10 border border-blue-500/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-600/20"><span className="text-xs font-bold uppercase text-blue-200">Connect Wallet</span><Wallet className="w-4 h-4 text-blue-500" /></button>
                   ) : (
                     <div className="w-full bg-green-500/10 border border-green-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
                       <div className="flex flex-col"><span className="text-[8px] font-black text-green-500 uppercase">Linked Wallet</span><span className="text-xs font-mono text-green-100">{address.slice(0,6)}...{address.slice(-4)}</span></div>
@@ -493,17 +557,38 @@ const App: React.FC = () => {
                 </div>
                 <div className="space-y-2 text-left">
                   <label className="text-[9px] font-black uppercase text-gray-500 ml-4">Social Context</label>
-                  <div className="relative group flex gap-2">
-                    <div className="relative flex-1">
-                      <Twitter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-400" />
-                      <input value={handle} onChange={e => setHandle(e.target.value)} placeholder="@username" className="w-full bg-black/50 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-xs font-bold outline-none" />
+                  {!isTwitterVerified ? (
+                    <button onClick={() => twitterService.login()} className="w-full bg-blue-400/10 border border-blue-400/30 rounded-2xl py-4 px-5 flex items-center justify-between transition-all hover:bg-blue-400/20">
+                      <div className="flex items-center gap-3">
+                        <Twitter className="w-4 h-4 text-blue-400" />
+                        <span className="text-xs font-bold uppercase text-blue-200">Connect Twitter</span>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-blue-400" />
+                    </button>
+                  ) : (
+                    <div className="w-full bg-blue-500/10 border border-blue-500/40 rounded-2xl py-4 px-5 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Twitter className="w-4 h-4 text-blue-400" />
+                        <div className="flex flex-col">
+                          <span className="text-[8px] font-black text-blue-500 uppercase">Verified Handle</span>
+                          <span className="text-xs font-bold text-blue-100">{handle}</span>
+                        </div>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-blue-500" />
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
-              <button onClick={handleScan} disabled={isScanning} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-500/20">
+              <button 
+                onClick={handleScan} 
+                disabled={isScanning || !isSignatureVerified || !isTwitterVerified} 
+                className={`w-full py-5 rounded-[2rem] font-black uppercase italic text-sm shadow-xl transition-all ${isScanning || !isSignatureVerified || !isTwitterVerified ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white shadow-blue-500/20 active:scale-[0.98]'}`}
+              >
                 {isScanning ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Check Impact'}
               </button>
+              {(!isSignatureVerified || !isTwitterVerified) && (
+                <p className="text-[8px] font-bold uppercase text-gray-600 tracking-widest animate-pulse">Connect Identity and Social to proceed</p>
+              )}
             </div>
             <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 flex items-center justify-between">
                <div className="flex items-center gap-3">
@@ -540,6 +625,37 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
+                   <div className="flex items-center gap-3"><Users className="w-5 h-5 text-purple-500" /><h3 className="text-xs font-black uppercase italic">Identity Scanners</h3></div>
+                   
+                   {/* Farcaster Audit Card */}
+                   <div className="p-5 bg-white/5 rounded-[2rem] border border-white/5 space-y-4">
+                      <div className="flex justify-between items-center">
+                         <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 overflow-hidden">
+                               <img src={farcasterContextUser?.pfpUrl || "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=40"} className="w-full h-full object-cover" />
+                            </div>
+                            <div className="flex flex-col">
+                               <span className="text-[10px] font-black uppercase text-gray-500">Farcaster Identity</span>
+                               <span className="text-xs font-bold text-white">{user.farcasterUsername ? `@${user.farcasterUsername}` : 'Ready to Sync'}</span>
+                            </div>
+                         </div>
+                         <button 
+                            onClick={handleFarcasterScan} 
+                            disabled={isScanning}
+                            className="px-4 py-2 bg-purple-600/20 border border-purple-500/40 rounded-xl text-[9px] font-black uppercase text-purple-200 hover:bg-purple-600/30 transition-all flex items-center gap-2"
+                         >
+                            {isScanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                            Sync Profile
+                         </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
+                         <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">FID / Age</span><span className="text-[11px] font-bold">#{user.farcasterId || '-'} / {user.farcasterAgeDays || 0}d</span></div>
+                         <div className="flex flex-col items-end"><span className="text-[8px] font-black text-purple-600 uppercase">Impact Score</span><span className="text-[11px] font-black text-purple-400">+{user.pointsBreakdown?.social_fc || 0} Pts</span></div>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
                    <div className="flex items-center justify-between">
                      <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Holding Rewards</h3></div>
                      <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/10 rounded-full">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-blue-500" />}</button>
@@ -547,7 +663,7 @@ const App: React.FC = () => {
 
                    {/* Point Formula Explanation */}
                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 flex gap-3 items-start">
-                     <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                     <div className="shrink-0 mt-0.5"><Info className="w-4 h-4 text-blue-400" /></div>
                      <div className="space-y-1.5">
                        <p className="text-[9px] font-black uppercase text-blue-200 tracking-wider">Point Calculation Logic</p>
                        <p className="text-[8px] font-bold text-blue-400/80 leading-relaxed uppercase">

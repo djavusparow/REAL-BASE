@@ -24,11 +24,9 @@ export const calculateDetailedPoints = (
   tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
 ): { total: number; breakdown: any } => {
   // 1. Social & Seniority Base Points
-  const socialPoints = 
-    (baseAppAgeDays * 0.10) + 
-    (twitterAgeDays * 0.15) + 
-    (cappedContributionPoints * 0.30) + 
-    (farcasterAgeDays * 0.20);
+  const twitterPoints = (twitterAgeDays * 0.15) + (cappedContributionPoints * 0.30);
+  const farcasterPoints = farcasterAgeDays * 0.20;
+  const seniorityPoints = baseAppAgeDays * 0.10;
   
   // 2. Real-time Hourly Asset Points
   const now = new Date();
@@ -44,12 +42,15 @@ export const calculateDetailedPoints = (
   const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * hoursElapsed;
   const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * hoursElapsed;
   
-  const total = socialPoints + lamboPoints + nickPoints + jessePoints;
+  const total = twitterPoints + farcasterPoints + seniorityPoints + lamboPoints + nickPoints + jessePoints;
   
   return {
     total: parseFloat(total.toFixed(4)),
     breakdown: {
-      social: parseFloat(socialPoints.toFixed(4)),
+      social_twitter: parseFloat(twitterPoints.toFixed(4)),
+      social_fc: parseFloat(farcasterPoints.toFixed(4)),
+      seniority: parseFloat(seniorityPoints.toFixed(4)),
+      social: parseFloat((twitterPoints + farcasterPoints).toFixed(4)), // legacy support
       lambo: parseFloat(lamboPoints.toFixed(4)),
       nick: parseFloat(nickPoints.toFixed(4)),
       jesse: parseFloat(jessePoints.toFixed(4))
