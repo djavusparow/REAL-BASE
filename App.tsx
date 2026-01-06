@@ -41,7 +41,8 @@ import {
   Activity,
   Globe,
   ZapOff,
-  Flame
+  Flame,
+  Check
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -308,7 +309,6 @@ const App: React.FC = () => {
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
-      // Update Live Audit Count
       const updatedCount = communityAuditCount + 1;
       setCommunityAuditCount(updatedCount);
       localStorage.setItem(STORAGE_KEY_AUDIT_COUNT, updatedCount.toString());
@@ -317,7 +317,7 @@ const App: React.FC = () => {
         address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
         validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
-        rank: 0, // No longer used for rank logic
+        rank: 0,
         trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
         farcasterId: farcasterContextUser?.fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
         farcasterCreatedAt: farcasterContextUser?.fid ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
@@ -426,7 +426,7 @@ const App: React.FC = () => {
     if (!isLamboEligible) {
       return { 
         eligible: false, 
-        message: `Hold min $${requirement.minLamboUsd} in $LAMBOLESS`, 
+        message: `Need $${requirement.minLamboUsd} in $LAMBOLESS`, 
         icon: <AlertTriangle className="w-4 h-4" />, 
         style: "bg-orange-950/30 text-orange-400 border-orange-900/40" 
       };
@@ -468,7 +468,7 @@ const App: React.FC = () => {
       )}
 
       <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
-        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase mt-0.5">Real-time Impact</span></div></div>
+        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase mt-0.5">Real-time Verified</span></div></div>
         {user && <button onClick={() => { setUser(null); localStorage.removeItem(STORAGE_KEY_USER); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><LogOut className="w-4 h-4 text-gray-500" /></button>}
       </header>
 
@@ -476,7 +476,7 @@ const App: React.FC = () => {
         {!user ? (
           <div className="space-y-12 text-center">
             <div className="flex justify-center float-animation"><BrandLogo size="lg" /></div>
-            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Impact.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Activity Proof</p></div>
+            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Impact.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Reward Portal</p></div>
             <div className="glass-effect p-8 rounded-[3rem] space-y-6 shadow-2xl">
               <div className="space-y-4">
                 <div className="space-y-2 text-left">
@@ -501,13 +501,13 @@ const App: React.FC = () => {
                 </div>
               </div>
               <button onClick={handleScan} disabled={isScanning} className="w-full py-5 bg-blue-600 rounded-[2rem] font-black uppercase italic text-sm shadow-xl shadow-blue-500/20">
-                {isScanning ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Start Audit'}
+                {isScanning ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Check Impact'}
               </button>
             </div>
             <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 flex items-center justify-between">
                <div className="flex items-center gap-3">
                   <Activity className="w-5 h-5 text-green-500" />
-                  <span className="text-[10px] font-black uppercase text-gray-400">Total Impact Audits</span>
+                  <span className="text-[10px] font-black uppercase text-gray-400">Audited Builders</span>
                </div>
                <span className="text-xl font-black italic">{communityAuditCount.toLocaleString()}</span>
             </div>
@@ -526,21 +526,21 @@ const App: React.FC = () => {
               <div className="space-y-8 pb-10">
                 <div className="glass-effect p-6 rounded-[3rem] border-blue-500/20 text-center relative overflow-hidden">
                   <div className="relative z-10">
-                    <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Accumulated Impact</span>
+                    <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">My Total Points</span>
                     <div className="text-5xl font-black italic mt-1 text-blue-500">{user.points.toFixed(2)}</div>
                     <div className="mt-4 px-10">
                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                           <div className="h-full bg-blue-600" style={{ width: `${Math.min((user.points / 2500) * 100, 100)}%` }} />
                        </div>
                     </div>
-                    <div className="mt-2 text-[9px] font-bold text-gray-600 uppercase">Season 01 Progress</div>
+                    <div className="mt-2 text-[9px] font-bold text-gray-600 uppercase">Season 01 Ranking Proof</div>
                   </div>
                   <Flame className="absolute -bottom-4 -right-4 w-24 h-24 text-blue-500/5 rotate-12" />
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
                    <div className="flex items-center justify-between">
-                     <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Wallet Snapshots</h3></div>
+                     <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Holding Rewards</h3></div>
                      <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/10 rounded-full">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-blue-500" />}</button>
                    </div>
                    <div className="space-y-4">
@@ -576,7 +576,7 @@ const App: React.FC = () => {
                   <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
                   {analysis && <p className="text-[10px] italic text-blue-200/60 leading-relaxed bg-white/5 p-4 rounded-2xl">"{analysis}"</p>}
                   <div className="flex flex-col gap-3">
-                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">Generate Badge Visual</button>
+                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">Generate NFT Visual</button>
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => handleShare('farcaster')} className="py-3 bg-purple-600/10 border border-purple-500/30 rounded-2xl text-[9px] font-black uppercase">Warpcast</button>
                       <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase">X (Twitter)</button>
@@ -591,46 +591,59 @@ const App: React.FC = () => {
                  <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20"><Award className="w-10 h-10 text-blue-500" /></div>
                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
                  
-                 <div className="px-4">
+                 <div className="px-4 space-y-6">
+                    <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
+                    
                     <div className={`p-8 rounded-[3rem] text-center border transition-all ${config.glowClass} bg-black/40`}>
-                       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Achieved Level</span>
+                       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Tier Unlocked</span>
                        <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${config.color}`}>
                           {config.name}
                        </h3>
                        <div className="mt-4 flex flex-col items-center gap-1">
-                          <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Total Badge Supply</span>
-                          <span className="text-xs font-black italic">{config.supply > 0 ? `${config.supply.toLocaleString()} Reserved` : 'N/A'}</span>
+                          <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Available Supply</span>
+                          <span className="text-xs font-black italic">{config.supply > 0 ? `${config.supply.toLocaleString()} NFT Badges` : 'None'}</span>
                        </div>
                     </div>
+
+                    <button 
+                      onClick={handleRefreshVisual} 
+                      disabled={isGenerating} 
+                      className="w-full py-4 bg-blue-600/10 border border-blue-500/30 text-blue-400 rounded-2xl font-black uppercase text-[10px] italic flex items-center justify-center gap-2"
+                    >
+                      {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      Generate NFT Visual
+                    </button>
                  </div>
 
                  <div className="grid gap-4 px-4">
-                    {/* Point Check */}
-                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'border-green-500/30' : 'border-red-500/30 bg-red-950/10'}`}>
-                      <div className="flex flex-col items-start gap-1">
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">Point Requirement</span>
-                        <div className="flex items-center gap-2">
-                           <Trophy className={`w-3 h-3 ${user.points >= 100 ? 'text-green-500' : 'text-red-500'}`} />
-                           <span className={`text-sm font-black ${user.points >= 100 ? 'text-green-400' : 'text-red-400'}`}>{user.points.toFixed(0)} / {TIERS[currentTier === RankTier.NONE ? RankTier.BRONZE : currentTier].minPoints} Pts</span>
+                    {/* Points Requirement Checklist */}
+                    <div className="space-y-3">
+                      <h4 className="text-[10px] font-black uppercase text-gray-500 text-left ml-4">Eligibility Checklist</h4>
+                      <div className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'border-green-500/30' : 'border-red-500/30'}`}>
+                        <div className="flex items-center gap-3">
+                           {user.points >= TIERS[currentTier === RankTier.NONE ? RankTier.BRONZE : currentTier].minPoints ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertCircle className="w-4 h-4 text-red-500" />}
+                           <div className="flex flex-col items-start">
+                             <span className="text-[9px] font-black uppercase text-gray-400">Points Range</span>
+                             <span className="text-xs font-bold text-white">{user.points.toFixed(2)} / {TIERS[currentTier === RankTier.NONE ? RankTier.BRONZE : currentTier].minPoints} pts</span>
+                           </div>
                         </div>
+                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${user.points >= 100 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
+                          {user.points >= 100 ? 'PASS' : 'FAIL'}
+                        </span>
                       </div>
-                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${user.points >= 100 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
-                        {user.points >= 100 ? 'Verified' : 'Low Score'}
-                      </span>
-                    </div>
 
-                    {/* Lambo Balance Check */}
-                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'border-green-500/30' : 'border-orange-500/30 bg-orange-950/10'}`}>
-                      <div className="flex flex-col items-start gap-1">
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">$LAMBOLESS Value</span>
-                        <div className="flex items-center gap-2">
-                           <Coins className={`w-3 h-3 ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'text-green-500' : 'text-orange-500'}`} />
-                           <span className={`text-sm font-black ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'text-green-400' : 'text-orange-400'}`}>${(user.lambolessBalance || 0).toFixed(2)} / ${config.minLamboUsd}</span>
+                      <div className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'border-green-500/30' : 'border-orange-500/30'}`}>
+                        <div className="flex items-center gap-3">
+                           {(user.lambolessBalance || 0) >= config.minLamboUsd ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertTriangle className="w-4 h-4 text-orange-500" />}
+                           <div className="flex flex-col items-start">
+                             <span className="text-[9px] font-black uppercase text-gray-400">$LAMBOLESS HOLDINGS</span>
+                             <span className="text-xs font-bold text-white">${(user.lambolessBalance || 0).toFixed(2)} / ${config.minLamboUsd}</span>
+                           </div>
                         </div>
+                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'bg-green-600/20 text-green-400' : 'bg-orange-600/20 text-orange-400'}`}>
+                          {(user.lambolessBalance || 0) >= config.minLamboUsd ? 'PASS' : 'FAIL'}
+                        </span>
                       </div>
-                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'bg-green-600/20 text-green-400' : 'bg-orange-600/20 text-orange-400'}`}>
-                        {(user.lambolessBalance || 0) >= config.minLamboUsd ? 'Verified' : 'Insufficient'}
-                      </span>
                     </div>
                  </div>
 
@@ -646,7 +659,7 @@ const App: React.FC = () => {
 
                  {currentTier === RankTier.NONE && (
                    <p className="text-[10px] text-red-500/60 font-bold uppercase tracking-widest px-10">
-                     Increase your impact to at least 100 Points to unlock Bronze rewards!
+                     Increase your impact to 100+ points and $2.5 $LAMBOLESS to unlock the Bronze NFT Badge!
                    </p>
                  )}
               </div>

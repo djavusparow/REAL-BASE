@@ -10,22 +10,22 @@ export class GeminiService {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let colorDesc = "";
-      if (tier === 'PLATINUM') colorDesc = "shimmering holographic rainbow colors with high-gloss reflection";
-      else if (tier === 'GOLD') colorDesc = "luxury polished 24k gold metallic finish";
-      else if (tier === 'SILVER') colorDesc = "sleek brushed silver and chrome metallic finish";
-      else if (tier === 'BRONZE') colorDesc = "deep mystic purple neon and bronze fusion";
+      if (tier === 'PLATINUM') colorDesc = "shimmering holographic rainbow colors, iridescent metallic finish";
+      else if (tier === 'GOLD') colorDesc = "polished reflective luxury gold metallic finish";
+      else if (tier === 'SILVER') colorDesc = "sleek high-gloss metallic silver and chrome finish";
+      else if (tier === 'BRONZE') colorDesc = "vibrant neon purple and deep bronze metallic fusion";
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
             {
-              text: `A professional 3D NFT badge for the "BASE IMPRESSION" project. 
-              The centerpiece is a futuristic Lamborghini supercar silhouette. 
-              The text "BASE IMPRESSION" is clearly visible and integrated into the design. 
-              The badge color theme is ${colorDesc}. 
-              The username "${handle}" is elegantly etched at the bottom. 
-              Style: Clean, premium, tech-focused, cinematic lighting, Unreal Engine 5 render.`
+              text: `A premium 3D digital collectible NFT badge for "BASE IMPRESSION". 
+              The main visual feature is a detailed, aggressive modern Lamborghini supercar. 
+              The text "BASE IMPRESSION" must be clearly and boldly rendered as part of the badge design. 
+              The entire badge and car are themed in ${colorDesc}. 
+              The username "${handle}" is precisely laser-etched on a metallic plate at the bottom. 
+              Style: Automotive photography aesthetic, cinematic studio lighting, high contrast, 8k resolution, futuristic tech vibe.`
             }
           ]
         },
