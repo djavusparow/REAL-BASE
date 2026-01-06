@@ -353,28 +353,10 @@ const App: React.FC = () => {
     const username = farcasterContextUser.username || "anon";
     
     setScanLogs(prev => [...prev, `FID Detected: ${fid}`, `Target: @${username}`]);
-    setScanProgress(40);
+    setScanProgress(60);
     
-    // 1. Initial heuristic estimation
-    let fidAge = estimateFarcasterAge(fid);
-    let createdAt = new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString();
-
-    // 2. High-fidelity verification using Gemini Search Grounding
-    try {
-      setScanLogs(prev => [...prev, "Verifying precise registration date via Search..."]);
-      const verifiedDateStr = await geminiService.getFarcasterRegistrationDate(fid, username);
-      if (verifiedDateStr) {
-        const verifiedDate = new Date(verifiedDateStr);
-        if (!isNaN(verifiedDate.getTime())) {
-          const now = new Date();
-          fidAge = Math.floor((now.getTime() - verifiedDate.getTime()) / (1000 * 60 * 60 * 24));
-          createdAt = verifiedDate.toLocaleDateString();
-          setScanLogs(prev => [...prev, "Registration date verified successfully."]);
-        }
-      }
-    } catch (e) {
-      console.warn("Search verification failed, continuing with heuristic.", e);
-    }
+    // As per user request, we no longer need to calculate or verify account age for Farcaster
+    // because points are now strictly FID-based and age info is no longer displayed.
     
     setScanProgress(85);
 
@@ -390,8 +372,8 @@ const App: React.FC = () => {
       ...user,
       farcasterId: fid,
       farcasterUsername: username,
-      farcasterAgeDays: fidAge,
-      farcasterCreatedAt: createdAt,
+      farcasterAgeDays: undefined, 
+      farcasterCreatedAt: undefined,
       points: total,
       pointsBreakdown: breakdown
     });
@@ -447,7 +429,6 @@ const App: React.FC = () => {
       
       const baseAge = 150 + Math.floor(Math.random() * 50);
       const fid = farcasterContextUser?.fid || 0;
-      const fidAge = fid > 0 ? estimateFarcasterAge(fid) : 0;
       
       const { total, breakdown } = calculateDetailedPoints(
         baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fid, 
@@ -466,8 +447,8 @@ const App: React.FC = () => {
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
         rank: 0,
         trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
-        farcasterId: fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
-        farcasterCreatedAt: fid > 0 ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
+        farcasterId: fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: undefined,
+        farcasterCreatedAt: undefined
       });
 
       setScanProgress(100);
@@ -758,7 +739,7 @@ const App: React.FC = () => {
                          </button>
                       </div>
                       <div className="grid grid-cols-2 gap-4 border-t border-white/5 pt-4">
-                         <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">FID / Age</span><span className="text-[11px] font-bold">#{user.farcasterId || '-'} / {user.farcasterAgeDays || 0}d</span></div>
+                         <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Farcaster ID</span><span className="text-[11px] font-bold">#{user.farcasterId || '-'}</span></div>
                          <div className="flex flex-col items-end"><span className="text-[8px] font-black text-purple-600 uppercase">Impact Score</span><span className="text-[11px] font-black text-purple-400">+{user.pointsBreakdown?.social_fc || 0} Pts</span></div>
                       </div>
                    </div>
@@ -856,14 +837,16 @@ const App: React.FC = () => {
                        </div>
                     </div>
 
-                    <button 
-                      onClick={handleRefreshVisual} 
-                      disabled={isGenerating} 
-                      className="w-full py-4 bg-blue-600/10 border border-blue-500/30 text-blue-400 rounded-2xl font-black uppercase text-[10px] italic flex items-center justify-center gap-2 transition-all hover:bg-blue-600/20"
-                    >
-                      {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      Generate NFT Visual
-                    </button>
+                    {claimEligibility.eligible && (
+                      <button 
+                        onClick={handleRefreshVisual} 
+                        disabled={isGenerating} 
+                        className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-sm italic flex items-center justify-center gap-2 transition-all hover:bg-blue-500 shadow-xl shadow-blue-500/30 active:scale-95 animate-in fade-in slide-in-from-bottom-2 duration-500"
+                      >
+                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                        Generate NFT Badge
+                      </button>
+                    )}
                  </div>
 
                  <div className="grid gap-4 px-4">

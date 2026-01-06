@@ -14,16 +14,26 @@ export const calculateAccountAgeDays = (registrationDate: Date): number => {
 
 /**
  * Calculates points based on Farcaster ID (FID) tiers.
+ * Updated tiers as per user request:
+ * FID 1 - 5000: 225 pts
+ * FID 5001 - 25000: 150 pts
+ * FID 25001 - 75000: 125 pts
+ * FID 75001 - 175000: 100 pts
+ * FID 175001 - 375000: 75 pts
+ * FID 375001 - 775000: 50 pts
+ * FID 775001 - 1500000: 25 pts
+ * FID 1500001 - 5000000: 15 pts
  */
 export const calculateFidPoints = (fid: number): number => {
   if (!fid || fid <= 0) return 0;
-  if (fid <= 25000) return 500;
-  if (fid <= 75000) return 400;
-  if (fid <= 175000) return 300;
-  if (fid <= 375000) return 200;
-  if (fid <= 775000) return 100;
-  if (fid <= 1500000) return 50;
-  if (fid <= 5000000) return 35;
+  if (fid <= 5000) return 225;
+  if (fid <= 25000) return 150;
+  if (fid <= 75000) return 125;
+  if (fid <= 175000) return 100;
+  if (fid <= 375000) return 75;
+  if (fid <= 775000) return 50;
+  if (fid <= 1500000) return 25;
+  if (fid <= 5000000) return 15;
   return 10; // Default for very high FIDs
 };
 
