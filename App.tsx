@@ -55,7 +55,8 @@ import {
   NICK_CONTRACT,
   JESSE_CONTRACT,
   HOURLY_WINDOW_START,
-  HOURLY_WINDOW_END
+  HOURLY_WINDOW_END,
+  MULTIPLIERS
 } from './constants.ts';
 import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
@@ -543,6 +544,23 @@ const App: React.FC = () => {
                      <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Holding Rewards</h3></div>
                      <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/10 rounded-full">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-blue-500" />}</button>
                    </div>
+
+                   {/* Point Formula Explanation */}
+                   <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 flex gap-3 items-start">
+                     <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                     <div className="space-y-1.5">
+                       <p className="text-[9px] font-black uppercase text-blue-200 tracking-wider">Point Calculation Logic</p>
+                       <p className="text-[8px] font-bold text-blue-400/80 leading-relaxed uppercase">
+                         Points = (Holdings USD) × (Rate) × (Hours since Jan 5, 07:00 UTC)
+                       </p>
+                       <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 border-t border-blue-500/10">
+                          <span className="text-[8px] font-black text-blue-300">$LAMBO: {MULTIPLIERS.LAMBOLESS}/hr</span>
+                          <span className="text-[8px] font-black text-purple-300">$NICK: {MULTIPLIERS.NICK}/hr</span>
+                          <span className="text-[8px] font-black text-green-300">$JESSE: {MULTIPLIERS.JESSE}/hr</span>
+                       </div>
+                     </div>
+                   </div>
+
                    <div className="space-y-4">
                      {[
                        { name: '$LAMBOLESS', amount: user.lambolessAmount || 0, val: user.lambolessBalance || 0, pts: user.pointsBreakdown?.lambo || 0, color: 'text-blue-400', contract: LAMBOLESS_CONTRACT },
@@ -592,7 +610,16 @@ const App: React.FC = () => {
                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
                  
                  <div className="px-4 space-y-6">
-                    <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
+                    <div className="relative group">
+                      <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
+                      {!badgeImage && !isGenerating && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                           <p className="text-[10px] font-black uppercase text-blue-400/50 bg-black/60 px-4 py-2 rounded-full border border-blue-500/20 backdrop-blur-md">
+                             Generate Visual to Preview
+                           </p>
+                        </div>
+                      )}
+                    </div>
                     
                     <div className={`p-8 rounded-[3rem] text-center border transition-all ${config.glowClass} bg-black/40`}>
                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Tier Unlocked</span>
@@ -608,7 +635,7 @@ const App: React.FC = () => {
                     <button 
                       onClick={handleRefreshVisual} 
                       disabled={isGenerating} 
-                      className="w-full py-4 bg-blue-600/10 border border-blue-500/30 text-blue-400 rounded-2xl font-black uppercase text-[10px] italic flex items-center justify-center gap-2"
+                      className="w-full py-4 bg-blue-600/10 border border-blue-500/30 text-blue-400 rounded-2xl font-black uppercase text-[10px] italic flex items-center justify-center gap-2 transition-all hover:bg-blue-600/20"
                     >
                       {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                       Generate NFT Visual
@@ -616,10 +643,9 @@ const App: React.FC = () => {
                  </div>
 
                  <div className="grid gap-4 px-4">
-                    {/* Points Requirement Checklist */}
                     <div className="space-y-3">
                       <h4 className="text-[10px] font-black uppercase text-gray-500 text-left ml-4">Eligibility Checklist</h4>
-                      <div className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'border-green-500/30' : 'border-red-500/30'}`}>
+                      <div className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border ${user.points >= TIERS[currentTier === RankTier.NONE ? RankTier.BRONZE : currentTier].minPoints ? 'border-green-500/30' : 'border-red-500/30'}`}>
                         <div className="flex items-center gap-3">
                            {user.points >= TIERS[currentTier === RankTier.NONE ? RankTier.BRONZE : currentTier].minPoints ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertCircle className="w-4 h-4 text-red-500" />}
                            <div className="flex flex-col items-start">
@@ -648,6 +674,10 @@ const App: React.FC = () => {
                  </div>
 
                  <div className="px-4">
+                   <div className="mb-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase text-blue-400 bg-blue-400/5 py-2 rounded-xl border border-blue-400/10">
+                     <Info className="w-3 h-3" />
+                     <span>Free Claim (Gas Fee Only)</span>
+                   </div>
                    <button 
                       disabled={!claimEligibility.eligible} 
                       className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border ${claimEligibility.eligible ? claimEligibility.style : `border-white/5 text-gray-600 bg-white/5`}`}
