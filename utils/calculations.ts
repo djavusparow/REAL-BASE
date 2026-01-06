@@ -13,6 +13,21 @@ export const calculateAccountAgeDays = (registrationDate: Date): number => {
 };
 
 /**
+ * Calculates points based on Farcaster ID (FID) tiers.
+ */
+export const calculateFidPoints = (fid: number): number => {
+  if (!fid || fid <= 0) return 0;
+  if (fid <= 25000) return 500;
+  if (fid <= 75000) return 400;
+  if (fid <= 175000) return 300;
+  if (fid <= 375000) return 200;
+  if (fid <= 775000) return 100;
+  if (fid <= 1500000) return 50;
+  if (fid <= 5000000) return 35;
+  return 10; // Default for very high FIDs
+};
+
+/**
  * Estimates Farcaster account age in days based on FID.
  * Farcaster growth has been non-linear, with significant acceleration post-Feb 2024.
  */
@@ -53,17 +68,19 @@ export const estimateFarcasterAge = (fid: number): number => {
 /**
  * Points Calculation Formula
  * Returns total points and a breakdown for display.
+ * 
+ * Note: farcasterId replaces the previous farcasterAgeDays for point calculation.
  */
 export const calculateDetailedPoints = (
   baseAppAgeDays: number, 
   twitterAgeDays: number, 
   cappedContributionPoints: number,
-  farcasterAgeDays: number = 0,
-  tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
+  farcasterId: number = 0,
+  tokenUSDValues: { lambo: number; jesse: number; nick: number } = { lambo: 0, jesse: 0, nick: 0 }
 ): { total: number; breakdown: any } => {
   // 1. Social & Seniority Base Points
   const twitterPoints = (twitterAgeDays * 0.15) + (cappedContributionPoints * 0.30);
-  const farcasterPoints = farcasterAgeDays * 0.20;
+  const farcasterPoints = calculateFidPoints(farcasterId);
   const seniorityPoints = baseAppAgeDays * 0.10;
   
   // 2. Real-time Hourly Asset Points
@@ -77,8 +94,8 @@ export const calculateDetailedPoints = (
   }
 
   const lamboPoints = tokenUSDValues.lambo * MULTIPLIERS.LAMBOLESS * hoursElapsed;
-  const nickPoints = tokenUSDValues.nick * MULTIPLIERS.NICK * hoursElapsed;
-  const jessePoints = tokenUSDValues.jesse * MULTIPLIERS.JESSE * hoursElapsed;
+  const nickPoints = (tokenUSDValues.nick || 0) * MULTIPLIERS.NICK * hoursElapsed;
+  const jessePoints = (tokenUSDValues.jesse || 0) * MULTIPLIERS.JESSE * hoursElapsed;
   
   const total = twitterPoints + farcasterPoints + seniorityPoints + lamboPoints + nickPoints + jessePoints;
   
@@ -88,7 +105,7 @@ export const calculateDetailedPoints = (
       social_twitter: parseFloat(twitterPoints.toFixed(4)),
       social_fc: parseFloat(farcasterPoints.toFixed(4)),
       seniority: parseFloat(seniorityPoints.toFixed(4)),
-      social: parseFloat((twitterPoints + farcasterPoints).toFixed(4)), // legacy support
+      social: parseFloat((twitterPoints + farcasterPoints).toFixed(4)), 
       lambo: parseFloat(lamboPoints.toFixed(4)),
       nick: parseFloat(nickPoints.toFixed(4)),
       jesse: parseFloat(jessePoints.toFixed(4))

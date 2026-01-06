@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Twitter, 
   Wallet, 
@@ -124,14 +124,48 @@ const App: React.FC = () => {
 
   const [communityAuditCount, setCommunityAuditCount] = useState(1);
 
-  const getFarcasterAddress = (ctx: any) => {
+  const getFarcasterAddress = useCallback((ctx: any) => {
     if (!ctx) return null;
     return (
       ctx.address || 
       ctx.custodyAddress || 
       (ctx.verifiedAddresses && ctx.verifiedAddresses.length > 0 ? ctx.verifiedAddresses[0] : null)
     );
-  };
+  }, []);
+
+  /**
+   * Loads user data from localStorage
+   */
+  const loadUserDataFromStorage = useCallback(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_USER);
+    if (saved) {
+      try {
+        const data = JSON.parse(saved) as UserStats;
+        setUser(data);
+        if (data.twitterHandle) { 
+          setHandle(data.twitterHandle); 
+          setIsTwitterVerified(true); 
+        }
+        if (data.address) { 
+          setAddress(data.address); 
+          setIsSignatureVerified(true); 
+        }
+      } catch (e) { 
+        console.error("Failed to parse user data from storage", e); 
+      }
+    }
+  }, []);
+
+  /**
+   * Automatic Saving Effect
+   */
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(STORAGE_KEY_USER);
+    }
+  }, [user]);
 
   useEffect(() => {
     // Check for Twitter OAuth callback parameters
@@ -173,8 +207,13 @@ const App: React.FC = () => {
         const context = await sdk.context;
         if (context?.user) {
           setFarcasterContextUser(context.user);
-          const saved = localStorage.getItem(STORAGE_KEY_USER);
-          if (!saved) {
+        }
+        
+        // Initial load from storage
+        loadUserDataFromStorage();
+
+        // If after loading from storage we still don't have a user, try to pre-fill from Farcaster
+        if (context?.user && !localStorage.getItem(STORAGE_KEY_USER)) {
             const detectedAddr = getFarcasterAddress(context.user);
             if (detectedAddr) {
               setAddress(detectedAddr);
@@ -185,16 +224,16 @@ const App: React.FC = () => {
               setHandle(detectedHandle);
               setIsTwitterVerified(true);
             }
-          }
         }
-      } catch (e) { console.warn(e); } finally {
-        loadUserDataFromStorage();
+      } catch (e) { 
+        console.warn("Farcaster SDK init warning:", e); 
+      } finally {
         setIsReady(true);
       }
     };
     init();
     return () => window.removeEventListener("eip6963:announceProvider", onAnnouncement);
-  }, []);
+  }, [getFarcasterAddress, loadUserDataFromStorage]);
 
   useEffect(() => {
     if (!user) return;
@@ -207,7 +246,7 @@ const App: React.FC = () => {
             prev.baseAppAgeDays || 0,
             prev.twitterAgeDays || 0,
             prev.validTweetsCount || 0,
-            prev.farcasterAgeDays || 0,
+            prev.farcasterId || 0, // Using FID for point calculation
             { lambo: prev.lambolessBalance || 0, nick: prev.nickBalance || 0, jesse: prev.jesseBalance || 0 }
           );
           if (total !== prev.points) return { ...prev, points: total, pointsBreakdown: breakdown };
@@ -217,23 +256,6 @@ const App: React.FC = () => {
     }, 60000);
     return () => clearInterval(interval);
   }, [user]);
-
-  useEffect(() => {
-    if (user) localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
-    else localStorage.removeItem(STORAGE_KEY_USER);
-  }, [user]);
-
-  const loadUserDataFromStorage = () => {
-    const saved = localStorage.getItem(STORAGE_KEY_USER);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved) as UserStats;
-        setUser(data);
-        if (data.twitterHandle) { setHandle(data.twitterHandle); setIsTwitterVerified(true); }
-        if (data.address) { setAddress(data.address); setIsSignatureVerified(true); }
-      } catch (e) { console.error(e); }
-    }
-  };
 
   const connectWallet = async () => {
     const fcAddr = getFarcasterAddress(farcasterContextUser);
@@ -293,7 +315,7 @@ const App: React.FC = () => {
         user.baseAppAgeDays, 
         scanResult.accountAgeDays, 
         user.validTweetsCount, 
-        user.farcasterAgeDays || 0, 
+        user.farcasterId || 0, // Using FID for point calculation
         { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 }
       );
 
@@ -337,7 +359,7 @@ const App: React.FC = () => {
     let fidAge = estimateFarcasterAge(fid);
     let createdAt = new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString();
 
-    // 2. High-fidelity verification using Gemini Search Grounding for aged accounts or deep audits
+    // 2. High-fidelity verification using Gemini Search Grounding
     try {
       setScanLogs(prev => [...prev, "Verifying precise registration date via Search..."]);
       const verifiedDateStr = await geminiService.getFarcasterRegistrationDate(fid, username);
@@ -360,7 +382,7 @@ const App: React.FC = () => {
       user.baseAppAgeDays, 
       user.twitterAgeDays, 
       user.validTweetsCount, 
-      fidAge, 
+      fid, // Correctly pass FID for tier-based points
       { lambo: user.lambolessBalance || 0, nick: user.nickBalance || 0, jesse: user.jesseBalance || 0 }
     );
 
@@ -424,11 +446,11 @@ const App: React.FC = () => {
       await sleep(400);
       
       const baseAge = 150 + Math.floor(Math.random() * 50);
-      // Improved Farcaster heuristic usage
-      const fidAge = farcasterContextUser ? estimateFarcasterAge(farcasterContextUser.fid) : 0;
+      const fid = farcasterContextUser?.fid || 0;
+      const fidAge = fid > 0 ? estimateFarcasterAge(fid) : 0;
       
       const { total, breakdown } = calculateDetailedPoints(
-        baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fidAge, 
+        baseAge, scanResult.accountAgeDays, scanResult.cappedPoints, fid, 
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
 
@@ -444,8 +466,8 @@ const App: React.FC = () => {
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
         rank: 0,
         trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
-        farcasterId: farcasterContextUser?.fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
-        farcasterCreatedAt: farcasterContextUser?.fid ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
+        farcasterId: fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
+        farcasterCreatedAt: fid > 0 ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
       });
 
       setScanProgress(100);
@@ -478,7 +500,7 @@ const App: React.FC = () => {
       const usdJesse = amtJesse * pJesse;
 
       const { total, breakdown } = calculateDetailedPoints(
-        user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterAgeDays || 0, 
+        user.baseAppAgeDays, user.twitterAgeDays, user.validTweetsCount, user.farcasterId || 0, 
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
@@ -594,7 +616,7 @@ const App: React.FC = () => {
 
       <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
         <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase mt-0.5">Real-time Verified</span></div></div>
-        {user && <button onClick={() => { setUser(null); localStorage.removeItem(STORAGE_KEY_USER); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><LogOut className="w-4 h-4 text-gray-500" /></button>}
+        {user && <button onClick={() => { setUser(null); localStorage.removeItem(STORAGE_KEY_USER); setAddress(''); setHandle(''); setIsTwitterVerified(false); setIsSignatureVerified(false); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><LogOut className="w-4 h-4 text-gray-500" /></button>}
       </header>
 
       <main className="max-w-md mx-auto px-4 mt-8">
@@ -719,7 +741,7 @@ const App: React.FC = () => {
                       <div className="flex justify-between items-center">
                          <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 overflow-hidden">
-                               <img src={farcasterContextUser?.pfpUrl || "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=40"} className="w-full h-full object-cover" />
+                               <img src={farcasterContextUser?.pfpUrl || "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=40"} className="w-full h-full object-cover" alt="FC PFP" />
                             </div>
                             <div className="flex flex-col">
                                <span className="text-[10px] font-black uppercase text-gray-500">Farcaster Identity</span>
@@ -748,7 +770,6 @@ const App: React.FC = () => {
                      <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/10 rounded-full">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-blue-500" />}</button>
                    </div>
 
-                   {/* Point Formula Explanation */}
                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 flex gap-3 items-start">
                      <div className="shrink-0 mt-0.5"><Info className="w-4 h-4 text-blue-400" /></div>
                      <div className="space-y-1.5">
