@@ -21,10 +21,6 @@ export const MIN_TOKEN_VALUE_USD = 2.5;
 
 /**
  * POINT MULTIPLIERS (Per $1 per 1 hour)
- * Updated per instructions:
- * LAMBOLESS: 0.005/hour
- * NICK: 0.0001/hour
- * JESSE: 0.0001/hour
  */
 export const MULTIPLIERS = {
   LAMBOLESS: 0.005,
@@ -33,7 +29,7 @@ export const MULTIPLIERS = {
 };
 
 /**
- * EVENT TIMELINE & HOURLY WINDOW
+ * EVENT TIMELINE
  */
 export const HOURLY_WINDOW_START = new Date("2026-01-05T07:00:00Z");
 export const HOURLY_WINDOW_END = new Date("2026-01-15T23:59:00Z");
@@ -44,53 +40,64 @@ export const FINAL_SNAPSHOT = new Date("2026-01-16T00:01:00Z");
 export const CLAIM_START = new Date("2026-01-16T02:00:00Z");
 
 /**
- * TIER DEFINITIONS
+ * TIER DEFINITIONS - UPDATED TO POINT-BASED
  */
-export const TIERS: Record<RankTier, BadgeConfig> = {
+export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoints: number, supply: number, minLamboUsd: number }> = {
   [RankTier.PLATINUM]: {
     name: "Platinum",
     color: "from-indigo-500 via-purple-500 to-pink-500",
-    description: "Sparkling Rainbow - Top 5",
-    range: "1 - 5",
-    glowClass: "rainbow-border shadow-[0_0_20px_rgba(255,255,255,0.8)]"
+    description: "Sparkling Rainbow - Elite Impact",
+    range: "751 - 2500 Pts",
+    glowClass: "rainbow-border shadow-[0_0_20px_rgba(255,255,255,0.8)]",
+    minPoints: 751,
+    maxPoints: 2500,
+    supply: 500,
+    minLamboUsd: 0.25
   },
   [RankTier.GOLD]: {
     name: "Gold",
     color: "from-yellow-400 via-yellow-600 to-yellow-800",
-    description: "Shiny Gold - Top 25",
-    range: "6 - 25",
-    glowClass: "bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)]"
+    description: "Shiny Gold - High Impact",
+    range: "351 - 750 Pts",
+    glowClass: "bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)]",
+    minPoints: 351,
+    maxPoints: 750,
+    supply: 1500,
+    minLamboUsd: 0.25
   },
   [RankTier.SILVER]: {
     name: "Silver",
     color: "from-gray-300 via-gray-500 to-gray-700",
-    description: "Polished Silver - Top 500",
-    range: "26 - 500",
-    glowClass: "bg-gray-400 shadow-[0_0_20px_rgba(156,163,175,0.5)]"
+    description: "Polished Silver - Solid Impact",
+    range: "151 - 350 Pts",
+    glowClass: "bg-gray-400 shadow-[0_0_20px_rgba(156,163,175,0.5)]",
+    minPoints: 151,
+    maxPoints: 350,
+    supply: 3000,
+    minLamboUsd: 0.25
   },
   [RankTier.BRONZE]: {
     name: "Bronze",
     color: "from-purple-600 via-purple-800 to-purple-900",
-    description: "Mystic Purple - Top 1000",
-    range: "501 - 1000",
-    glowClass: "bg-purple-600 shadow-[0_0_20px_rgba(147,51,234,0.5)]"
+    description: "Mystic Purple - Active Entry",
+    range: "100 - 150 Pts",
+    glowClass: "bg-purple-600 shadow-[0_0_20px_rgba(147,51,234,0.5)]",
+    minPoints: 100,
+    maxPoints: 150,
+    supply: 5000,
+    minLamboUsd: 2.5
   },
   [RankTier.NONE]: {
     name: "Member",
     color: "from-gray-700 to-gray-900",
-    description: "Keep pushing!",
-    range: "1000+",
-    glowClass: "bg-gray-800"
+    description: "Keep building!",
+    range: "0 - 99 Pts",
+    glowClass: "bg-gray-800",
+    minPoints: 0,
+    maxPoints: 99,
+    supply: 0,
+    minLamboUsd: 0
   }
 };
 
-/**
- * VERIFIED SYNCED MEMBERS
- */
-export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [
-  { rank: 1, handle: "@jessepollak", points: 1540.25, tier: RankTier.PLATINUM, accountAgeDays: 4500, baseAppAgeDays: 800 },
-  { rank: 2, handle: "@brian_armstrong", points: 1422.80, tier: RankTier.PLATINUM, accountAgeDays: 5200, baseAppAgeDays: 900 },
-  { rank: 3, handle: "@basegod", points: 1105.12, tier: RankTier.PLATINUM, accountAgeDays: 200, baseAppAgeDays: 150 },
-  { rank: 4, handle: "@lambofarmer", points: 980.45, tier: RankTier.PLATINUM, accountAgeDays: 1200, baseAppAgeDays: 400 },
-  { rank: 5, handle: "@warpcast_king", points: 855.90, tier: RankTier.PLATINUM, accountAgeDays: 800, baseAppAgeDays: 200 },
-];
+export const MOCKED_LEADERBOARD: LeaderboardEntry[] = [];

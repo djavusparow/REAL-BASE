@@ -8,15 +8,24 @@ export class GeminiService {
   async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      let colorDesc = "";
+      if (tier === 'PLATINUM') colorDesc = "shimmering holographic rainbow colors with high-gloss reflection";
+      else if (tier === 'GOLD') colorDesc = "luxury polished 24k gold metallic finish";
+      else if (tier === 'SILVER') colorDesc = "sleek brushed silver and chrome metallic finish";
+      else if (tier === 'BRONZE') colorDesc = "deep mystic purple neon and bronze fusion";
+
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
             {
-              text: `A cinematic, ultra-high-definition 3D NFT badge for the "BASE IMPRESSION" project. 
-              The badge centerpiece is a sleek, neon-lit blue Lamborghini and a glowing Farcaster logo. 
-              Tier level: ${tier}. Lighting: ${tier === 'PLATINUM' ? 'Hyper-reflective holographic' : 'Futuristic ambient'}. 
-              The text "${handle}" is laser-etched in the base. 4K resolution, Unreal Engine 5 render style.`
+              text: `A professional 3D NFT badge for the "BASE IMPRESSION" project. 
+              The centerpiece is a futuristic Lamborghini supercar silhouette. 
+              The text "BASE IMPRESSION" is clearly visible and integrated into the design. 
+              The badge color theme is ${colorDesc}. 
+              The username "${handle}" is elegantly etched at the bottom. 
+              Style: Clean, premium, tech-focused, cinematic lighting, Unreal Engine 5 render.`
             }
           ]
         },
@@ -64,36 +73,19 @@ export class GeminiService {
   /**
    * Generates motivational copy using Gemini 3 Flash Preview.
    */
-  async getImpressionAnalysis(points: number, rank: number): Promise<string> {
+  async getImpressionAnalysis(points: number, tier: string): Promise<string> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Analyze my stats for the BASE IMPRESSION event: Points ${points}, Rank #${rank}. 
+        contents: `Analyze my stats for the BASE IMPRESSION event: Points ${points}, Tier reached: ${tier}. 
         Write a hyper-energetic, punchy motivational message (max 2 sentences). 
-        Mention 'Onchain Summer' and my potential as a Base ecosystem builder.`
+        Mention 'Base ecosystem' and my growth as a builder.`
       });
       return response.text || "You're carving a path on Base. The snapshot is watching!";
     } catch (error) {
       console.error("Gemini Text Generation Error:", error);
       return "Your footprint on Base is growing. Keep building the future!";
-    }
-  }
-
-  /**
-   * Generates a secure verification challenge.
-   */
-  async generateVerificationChallenge(handle: string): Promise<string> {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Generate a short, unique 8-character alphanumeric verification code for a user named ${handle}. 
-        Return ONLY the code.`
-      });
-      return response.text?.trim() || Math.random().toString(36).substring(7).toUpperCase();
-    } catch {
-      return Math.random().toString(36).substring(7).toUpperCase();
     }
   }
 }

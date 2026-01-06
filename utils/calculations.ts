@@ -1,8 +1,7 @@
 
-import { RankTier, UserStats } from '../types.ts';
-import { MULTIPLIERS, HOURLY_WINDOW_START, HOURLY_WINDOW_END } from '../constants.ts';
+import { RankTier } from '../types.ts';
+import { MULTIPLIERS, HOURLY_WINDOW_START, HOURLY_WINDOW_END, TIERS } from '../constants.ts';
 
-// Add the missing calculateAccountAgeDays utility function
 /**
  * Calculates the number of days between the registration date and now.
  */
@@ -59,22 +58,19 @@ export const calculateDetailedPoints = (
 };
 
 /**
- * Legacy compatibility wrapper
+ * Returns the corresponding tier based on accumulated points.
  */
-export const calculatePoints = (
-  baseAppAgeDays: number, 
-  twitterAgeDays: number, 
-  cappedContributionPoints: number,
-  farcasterAgeDays: number = 0,
-  tokenUSDValues: { lambo: number; nick: number; jesse: number } = { lambo: 0, nick: 0, jesse: 0 }
-): number => {
-  return calculateDetailedPoints(baseAppAgeDays, twitterAgeDays, cappedContributionPoints, farcasterAgeDays, tokenUSDValues).total;
+export const getTierFromPoints = (points: number): RankTier => {
+  if (points >= TIERS[RankTier.PLATINUM].minPoints) return RankTier.PLATINUM;
+  if (points >= TIERS[RankTier.GOLD].minPoints) return RankTier.GOLD;
+  if (points >= TIERS[RankTier.SILVER].minPoints) return RankTier.SILVER;
+  if (points >= TIERS[RankTier.BRONZE].minPoints) return RankTier.BRONZE;
+  return RankTier.NONE;
 };
 
+/**
+ * Deprecated: Use getTierFromPoints
+ */
 export const getTierFromRank = (rank: number): RankTier => {
-  if (rank <= 5) return RankTier.PLATINUM;
-  if (rank <= 25) return RankTier.GOLD;
-  if (rank <= 500) return RankTier.SILVER;
-  if (rank <= 1000) return RankTier.BRONZE;
   return RankTier.NONE;
 };

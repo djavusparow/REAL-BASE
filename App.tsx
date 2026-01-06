@@ -40,14 +40,14 @@ import {
   History,
   Activity,
   Globe,
-  ZapOff
+  ZapOff,
+  Flame
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
 import { UserStats, RankTier, LeaderboardEntry } from './types.ts';
 import { 
   TIERS, 
-  MOCKED_LEADERBOARD,
   MIN_TOKEN_VALUE_USD,
   CLAIM_START,
   LAMBOLESS_CONTRACT,
@@ -56,14 +56,13 @@ import {
   HOURLY_WINDOW_START,
   HOURLY_WINDOW_END
 } from './constants.ts';
-import { calculateDetailedPoints, getTierFromRank } from './utils/calculations.ts';
+import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
 import { geminiService } from './services/geminiService.ts';
 import { twitterService, Tweet } from './services/twitterService.ts';
 import { tokenService } from './services/tokenService.ts';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
-const STORAGE_KEY_REGISTRY = 'base_impression_v1_registry';
 const STORAGE_KEY_AUDIT_COUNT = 'base_impression_v1_count';
 
 interface EIP6963ProviderDetail {
@@ -112,7 +111,7 @@ const App: React.FC = () => {
   const [isSignatureVerified, setIsSignatureVerified] = useState(false);
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'leaderboard' | 'claim'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'claim'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLogs, setScanLogs] = useState<string[]>([]);
@@ -121,13 +120,7 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
 
-  // Community Registry states
   const [communityAuditCount, setCommunityAuditCount] = useState(1);
-  const [verifiedRegistry, setVerifiedRegistry] = useState<LeaderboardEntry[]>([]);
-  const [lbPage, setLbPage] = useState(1);
-  const [lbSortOrder, setLbSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [lbSearch, setLbSearch] = useState('');
-  const [lbTierFilter, setLbTierFilter] = useState<RankTier | 'ALL'>('ALL');
 
   const getFarcasterAddress = (ctx: any) => {
     if (!ctx) return null;
@@ -148,17 +141,6 @@ const App: React.FC = () => {
     };
     window.addEventListener("eip6963:announceProvider", onAnnouncement);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
-
-    // Initial Load of Registry and Stats
-    const savedRegistry = localStorage.getItem(STORAGE_KEY_REGISTRY);
-    if (savedRegistry) {
-      try {
-        setVerifiedRegistry(JSON.parse(savedRegistry));
-      } catch (e) { console.error("Registry load error", e); }
-    } else {
-      // Seed with official accounts on first load only
-      setVerifiedRegistry(MOCKED_LEADERBOARD.map(e => ({ ...e, auditedAt: new Date(Date.now() - 86400000).toISOString() })));
-    }
 
     const savedCount = localStorage.getItem(STORAGE_KEY_AUDIT_COUNT);
     if (savedCount) {
@@ -216,15 +198,10 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [user]);
 
-  // Persistence management
   useEffect(() => {
     if (user) localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
     else localStorage.removeItem(STORAGE_KEY_USER);
   }, [user]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_REGISTRY, JSON.stringify(verifiedRegistry));
-  }, [verifiedRegistry]);
 
   const loadUserDataFromStorage = () => {
     const saved = localStorage.getItem(STORAGE_KEY_USER);
@@ -331,40 +308,17 @@ const App: React.FC = () => {
         { lambo: usdLambo, nick: usdNick, jesse: usdJesse }
       );
       
-      // Update Persistent Registry with Real Audited Account
-      const newEntry: LeaderboardEntry = {
-        rank: 0,
-        handle: currentHandle,
-        points: total,
-        tier: getTierFromRank(0),
-        accountAgeDays: scanResult.accountAgeDays,
-        baseAppAgeDays: baseAge,
-        auditedAt: new Date().toISOString()
-      };
-
-      setVerifiedRegistry(prev => {
-        const filtered = prev.filter(p => p.handle !== currentHandle);
-        const updated = [...filtered, newEntry].sort((a, b) => b.points - a.points);
-        return updated.map((item, index) => ({
-          ...item,
-          rank: index + 1,
-          tier: getTierFromRank(index + 1)
-        }));
-      });
-
       // Update Live Audit Count
       const updatedCount = communityAuditCount + 1;
       setCommunityAuditCount(updatedCount);
       localStorage.setItem(STORAGE_KEY_AUDIT_COUNT, updatedCount.toString());
 
-      // Get Final Rank from refreshed registry
-      const finalRank = verifiedRegistry.findIndex(r => r.handle === currentHandle) + 1 || 1;
-
       setUser({ 
         address: currentAddress, twitterHandle: currentHandle, baseAppAgeDays: baseAge, twitterAgeDays: scanResult.accountAgeDays, 
         validTweetsCount: scanResult.cappedPoints, lambolessBalance: usdLambo, nickBalance: usdNick, jesseBalance: usdJesse,
         lambolessAmount: amtLambo, nickAmount: amtNick, jesseAmount: amtJesse, points: total, pointsBreakdown: breakdown,
-        rank: finalRank, trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
+        rank: 0, // No longer used for rank logic
+        trustScore: scanResult.trustScore, recentContributions: scanResult.foundTweets,
         farcasterId: farcasterContextUser?.fid, farcasterUsername: farcasterContextUser?.username, farcasterAgeDays: fidAge,
         farcasterCreatedAt: farcasterContextUser?.fid ? new Date(Date.now() - (fidAge * 24 * 60 * 60 * 1000)).toLocaleDateString() : undefined
       });
@@ -373,7 +327,7 @@ const App: React.FC = () => {
       await sleep(500);
     } catch (error) { 
       console.error(error); 
-      alert("Audit protocol failed. Check connection."); 
+      alert("Audit failed. Check connection."); 
     } finally { 
       setIsScanning(false); 
     }
@@ -414,21 +368,6 @@ const App: React.FC = () => {
         points: total, 
         pointsBreakdown: breakdown
       });
-
-      // Update registry with new score
-      setVerifiedRegistry(prev => {
-        const entry = prev.find(p => p.handle === (user.twitterHandle || `@${user.farcasterUsername}`));
-        if (entry) {
-          entry.points = total;
-          const updated = [...prev].sort((a, b) => b.points - a.points);
-          return updated.map((item, index) => ({
-            ...item,
-            rank: index + 1,
-            tier: getTierFromRank(index + 1)
-          }));
-        }
-        return prev;
-      });
     } catch (e) { console.error(e); } finally { setIsRefreshingAssets(false); }
   };
 
@@ -436,10 +375,10 @@ const App: React.FC = () => {
     if (!user) return;
     setIsGenerating(true);
     try {
-      const tier = getTierFromRank(user.rank);
+      const tier = getTierFromPoints(user.points);
       const [img, msg] = await Promise.all([
         geminiService.generateBadgePreview(tier, user.twitterHandle || user.farcasterUsername || 'Base Builder'), 
-        geminiService.getImpressionAnalysis(user.points, user.rank)
+        geminiService.getImpressionAnalysis(user.points, tier)
       ]);
       setBadgeImage(img);
       setAnalysis(msg);
@@ -449,8 +388,9 @@ const App: React.FC = () => {
   const handleShare = (platform: 'farcaster' | 'twitter') => {
     if (!user) return;
     const shareUrl = "https://real-base-2026.vercel.app/";
-    const tierName = TIERS[getTierFromRank(user.rank)].name;
-    const msg = `My Base Impression is live! 🏎️💨\nRank: #${user.rank}\nPoints: ${user.points.toFixed(2)}\nTier: ${tierName}\nJoin now:`;
+    const tier = getTierFromPoints(user.points);
+    const tierName = TIERS[tier].name;
+    const msg = `My Base Impression is live! 🏎️💨\nPoints: ${user.points.toFixed(2)}\nTier: ${tierName}\nJoin now:`;
     if (platform === 'twitter') sdk.actions.openUrl(`https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}&url=${encodeURIComponent(shareUrl)}`);
     else sdk.actions.openUrl(`https://warpcast.com/~/compose?text=${encodeURIComponent(msg)}&embeds[]=${encodeURIComponent(shareUrl)}`);
   };
@@ -465,34 +405,52 @@ const App: React.FC = () => {
     sdk.actions.openUrl(uniswapUrl);
   };
 
-  const filteredAndSortedLeaderboard = useMemo(() => {
-    let list = [...verifiedRegistry];
-    if (lbSearch) list = list.filter(l => l.handle.toLowerCase().includes(lbSearch.toLowerCase()));
-    if (lbTierFilter !== 'ALL') list = list.filter(l => l.tier === lbTierFilter);
-    list.sort((a, b) => lbSortOrder === 'desc' ? b.points - a.points : a.points - b.points);
-    return list;
-  }, [verifiedRegistry, lbSearch, lbTierFilter, lbSortOrder]);
-
-  const lbTotalPages = Math.ceil(filteredAndSortedLeaderboard.length / 10);
-  const currentLbPageData = useMemo(() => {
-    const start = (lbPage - 1) * 10;
-    return filteredAndSortedLeaderboard.slice(start, start + 10);
-  }, [filteredAndSortedLeaderboard, lbPage]);
-
-  useEffect(() => { setLbPage(1); }, [lbSearch, lbTierFilter, lbSortOrder]);
-
   const claimEligibility = useMemo(() => {
     if (!user) return { eligible: false, message: "Run Audit First", icon: <Lock className="w-4 h-4" /> };
-    const now = new Date();
-    const isRankEligible = user.rank <= 1000;
-    const isTokenEligible = (user.lambolessAmount || 0) >= 1; 
     
-    if (!isRankEligible) return { eligible: false, message: "Rank Too Low (Need Top 1000)", icon: <Trophy className="w-4 h-4" />, style: "bg-red-950/30 text-red-400 border-red-900/40" };
-    if (!isTokenEligible) return { eligible: false, message: "Not Enough $LAMBOLESS (Need 1+)", icon: <AlertTriangle className="w-4 h-4" />, style: "bg-orange-950/30 text-orange-400 border-orange-900/40" };
-    if (now < CLAIM_START) return { eligible: false, message: "Awaiting Snapshot (Jan 16)", icon: <Clock className="w-4 h-4" />, style: "bg-blue-950/30 text-blue-400 border-blue-900/40" };
+    const now = new Date();
+    const currentTier = getTierFromPoints(user.points);
+    
+    if (currentTier === RankTier.NONE) {
+      return { 
+        eligible: false, 
+        message: "Entry Threshold Not Met", 
+        icon: <Trophy className="w-4 h-4" />, 
+        style: "bg-red-950/30 text-red-400 border-red-900/40" 
+      };
+    }
 
-    return { eligible: true, message: "Claim Your Badge", icon: <Zap className="w-4 h-4" />, style: "bg-blue-600 text-white shadow-lg shadow-blue-500/30" };
+    const requirement = TIERS[currentTier];
+    const isLamboEligible = (user.lambolessBalance || 0) >= requirement.minLamboUsd;
+    
+    if (!isLamboEligible) {
+      return { 
+        eligible: false, 
+        message: `Hold min $${requirement.minLamboUsd} in $LAMBOLESS`, 
+        icon: <AlertTriangle className="w-4 h-4" />, 
+        style: "bg-orange-950/30 text-orange-400 border-orange-900/40" 
+      };
+    }
+    
+    if (now < CLAIM_START) {
+      return { 
+        eligible: false, 
+        message: "Snapshot Awaited (Jan 16)", 
+        icon: <Clock className="w-4 h-4" />, 
+        style: "bg-blue-950/30 text-blue-400 border-blue-900/40" 
+      };
+    }
+
+    return { 
+      eligible: true, 
+      message: `Claim ${requirement.name} Badge`, 
+      icon: <Zap className="w-4 h-4" />, 
+      style: "bg-blue-600 text-white shadow-lg shadow-blue-500/30" 
+    };
   }, [user]);
+
+  const currentTier = user ? getTierFromPoints(user.points) : RankTier.NONE;
+  const config = TIERS[currentTier];
 
   return (
     <div className="min-h-screen bg-black text-white font-['Space_Grotesk'] pb-24">
@@ -509,37 +467,8 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {showWalletSelector && (
-        <div className="fixed inset-0 z-[70] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4">
-          <div className="w-full max-w-sm glass-effect rounded-[3rem] p-8 border-blue-500/20 space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xl font-black uppercase italic tracking-tighter">Choose Source</h3>
-              <button onClick={() => setShowWalletSelector(false)} className="p-2 bg-white/5 rounded-full"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="grid gap-4 max-h-[60vh] overflow-y-auto px-1">
-              {getFarcasterAddress(farcasterContextUser) && (
-                <div onClick={handleFarcasterAutoLogin} className="glass-effect p-6 rounded-[2rem] border border-purple-500/60 bg-purple-950/20 hover:bg-purple-900/40 cursor-pointer transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-[#8a63d2] rounded-2xl flex items-center justify-center shadow-lg"><Fingerprint className="w-7 h-7 text-white" /></div>
-                    <div className="flex flex-col"><span className="text-sm font-black uppercase">Farcaster</span><span className="text-[9px] text-purple-400 font-bold uppercase mt-0.5">@{farcasterContextUser.username}</span></div>
-                  </div>
-                </div>
-              )}
-              {discoveredProviders.map((dp) => (
-                <div key={dp.info.uuid} className="glass-effect p-5 rounded-[2rem] border border-white/10 hover:border-blue-500/30 cursor-pointer" onClick={() => handleConnectAndSign(dp.provider)}>
-                  <div className="flex items-center gap-4">
-                    {dp.info.icon ? <img src={dp.info.icon} alt={dp.info.name} className="w-10 h-10 rounded-xl" /> : <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-xs font-black">EX</div>}
-                    <div className="flex flex-col"><span className="text-xs font-black uppercase">{dp.info.name}</span><span className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">EIP-6963</span></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       <header className="sticky top-0 z-40 glass-effect px-4 py-4 flex justify-between items-center bg-black/60 backdrop-blur-md border-b border-white/5">
-        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase mt-0.5">Real-time Verified</span></div></div>
+        <div className="flex items-center gap-3"><BrandLogo size="sm" /><div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-tighter leading-none">Base Impression</span><span className="text-[8px] font-bold text-blue-500 uppercase mt-0.5">Real-time Impact</span></div></div>
         {user && <button onClick={() => { setUser(null); localStorage.removeItem(STORAGE_KEY_USER); }} className="p-2 hover:bg-white/5 rounded-lg transition-colors"><LogOut className="w-4 h-4 text-gray-500" /></button>}
       </header>
 
@@ -547,7 +476,7 @@ const App: React.FC = () => {
         {!user ? (
           <div className="space-y-12 text-center">
             <div className="flex justify-center float-animation"><BrandLogo size="lg" /></div>
-            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Impact.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • REAL ACCOUNT PROOF</p></div>
+            <div className="space-y-3"><h1 className="text-5xl font-black uppercase italic tracking-tight leading-none">Onchain<br/>Impact.</h1><p className="text-[11px] text-gray-500 font-bold uppercase tracking-[0.3em]">Season 01 • Activity Proof</p></div>
             <div className="glass-effect p-8 rounded-[3rem] space-y-6 shadow-2xl">
               <div className="space-y-4">
                 <div className="space-y-2 text-left">
@@ -575,12 +504,10 @@ const App: React.FC = () => {
                 {isScanning ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Start Audit'}
               </button>
             </div>
-
-            {/* Live Stats for Unlogged Users */}
             <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 flex items-center justify-between">
                <div className="flex items-center gap-3">
                   <Activity className="w-5 h-5 text-green-500" />
-                  <span className="text-[10px] font-black uppercase text-gray-400">Network Audits</span>
+                  <span className="text-[10px] font-black uppercase text-gray-400">Total Impact Audits</span>
                </div>
                <span className="text-xl font-black italic">{communityAuditCount.toLocaleString()}</span>
             </div>
@@ -588,7 +515,7 @@ const App: React.FC = () => {
         ) : (
           <div className="space-y-8">
             <div className="flex glass-effect p-1.5 rounded-2xl sticky top-20 z-30 backdrop-blur-xl border border-white/5">
-              {(['dashboard', 'leaderboard', 'claim'] as const).map(t => (
+              {(['dashboard', 'claim'] as const).map(t => (
                 <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 shadow-lg text-white' : 'text-gray-500'}`}>
                   {t}
                 </button>
@@ -597,41 +524,28 @@ const App: React.FC = () => {
 
             {activeTab === 'dashboard' && (
               <div className="space-y-8 pb-10">
-                {/* Live Community Impact Section */}
-                <div className="glass-effect p-6 rounded-[3rem] border-green-500/20 relative overflow-hidden bg-gradient-to-br from-green-500/5 to-transparent">
-                   <div className="absolute top-0 right-0 p-4">
-                      <div className="flex items-center gap-1.5">
-                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
-                         <span className="text-[8px] font-black uppercase text-green-500 tracking-tighter">Live Base Network</span>
-                      </div>
-                   </div>
-                   <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-green-500/10 rounded-2xl flex items-center justify-center">
-                         <Activity className="w-6 h-6 text-green-500" />
-                      </div>
-                      <div className="flex flex-col">
-                         <span className="text-[9px] font-black uppercase text-gray-500">Global Verified Builders</span>
-                         <div className="flex items-baseline gap-2">
-                            <span className="text-3xl font-black italic">{communityAuditCount.toLocaleString()}</span>
-                            <span className="text-[10px] font-bold text-green-400 uppercase">Successful Audits</span>
-                         </div>
-                      </div>
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-blue-500/20 text-center shadow-xl shadow-blue-500/5"><span className="text-[9px] font-black uppercase text-gray-500">Impact Score</span><div className="text-3xl font-black italic mt-1">{user.points.toFixed(2)}</div></div>
-                  <div className="glass-effect p-6 rounded-[2.5rem] border-purple-500/20 text-center"><span className="text-[9px] font-black uppercase text-gray-500">Real Rank</span><div className="text-3xl font-black italic mt-1 text-blue-400">#{user.rank}</div></div>
+                <div className="glass-effect p-6 rounded-[3rem] border-blue-500/20 text-center relative overflow-hidden">
+                  <div className="relative z-10">
+                    <span className="text-[9px] font-black uppercase text-gray-500 tracking-widest">Accumulated Impact</span>
+                    <div className="text-5xl font-black italic mt-1 text-blue-500">{user.points.toFixed(2)}</div>
+                    <div className="mt-4 px-10">
+                       <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-600" style={{ width: `${Math.min((user.points / 2500) * 100, 100)}%` }} />
+                       </div>
+                    </div>
+                    <div className="mt-2 text-[9px] font-bold text-gray-600 uppercase">Season 01 Progress</div>
+                  </div>
+                  <Flame className="absolute -bottom-4 -right-4 w-24 h-24 text-blue-500/5 rotate-12" />
                 </div>
 
                 <div className="glass-effect p-8 rounded-[3rem] border-blue-500/10 space-y-5">
                    <div className="flex items-center justify-between">
-                     <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Holding Rewards</h3></div>
+                     <div className="flex items-center gap-3"><Coins className="w-5 h-5 text-blue-500" /><h3 className="text-xs font-black uppercase italic">Wallet Snapshots</h3></div>
                      <button onClick={handleRefreshAssets} disabled={isRefreshingAssets} className="p-2 hover:bg-white/10 rounded-full">{isRefreshingAssets ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 text-blue-500" />}</button>
                    </div>
                    <div className="space-y-4">
                      {[
-                       { name: '$LAMBOLESS', amount: user.lambolessAmount || 0, val: user.lambolessBalance, pts: user.pointsBreakdown?.lambo || 0, color: 'text-blue-400', contract: LAMBOLESS_CONTRACT },
+                       { name: '$LAMBOLESS', amount: user.lambolessAmount || 0, val: user.lambolessBalance || 0, pts: user.pointsBreakdown?.lambo || 0, color: 'text-blue-400', contract: LAMBOLESS_CONTRACT },
                        { name: '$NICK', amount: user.nickAmount || 0, val: user.nickBalance || 0, pts: user.pointsBreakdown?.nick || 0, color: 'text-purple-400', contract: NICK_CONTRACT },
                        { name: '$JESSE', amount: user.jesseAmount || 0, val: user.jesseBalance || 0, pts: user.pointsBreakdown?.jesse || 0, color: 'text-green-400', contract: JESSE_CONTRACT },
                      ].map((item, i) => (
@@ -650,8 +564,8 @@ const App: React.FC = () => {
                            </button>
                          </div>
                          <div className="flex justify-between items-center border-t border-white/5 pt-4">
-                            <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Holdings</span><span className="text-[11px] font-bold">{item.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>
-                            <div className="flex flex-col items-end"><span className="text-[8px] font-black text-blue-600 uppercase">Points</span><span className="text-[11px] font-black text-blue-400">+{item.pts.toFixed(4)}</span></div>
+                            <div className="flex flex-col"><span className="text-[8px] font-black text-gray-600 uppercase">Balance (USD)</span><span className="text-[11px] font-bold">${item.val.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                            <div className="flex flex-col items-end"><span className="text-[8px] font-black text-blue-600 uppercase">Impact contribution</span><span className="text-[11px] font-black text-blue-400">+{item.pts.toFixed(4)} Pts</span></div>
                          </div>
                        </div>
                      ))}
@@ -659,10 +573,10 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="glass-effect p-10 rounded-[4rem] text-center space-y-6 shadow-2xl shadow-blue-500/5">
-                  <BadgeDisplay tier={getTierFromRank(user.rank)} imageUrl={badgeImage} loading={isGenerating} />
+                  <BadgeDisplay tier={currentTier} imageUrl={badgeImage} loading={isGenerating} />
                   {analysis && <p className="text-[10px] italic text-blue-200/60 leading-relaxed bg-white/5 p-4 rounded-2xl">"{analysis}"</p>}
                   <div className="flex flex-col gap-3">
-                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">Refresh Identity Visual</button>
+                    <button onClick={handleRefreshVisual} disabled={isGenerating} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-[10px] italic">Generate Badge Visual</button>
                     <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => handleShare('farcaster')} className="py-3 bg-purple-600/10 border border-purple-500/30 rounded-2xl text-[9px] font-black uppercase">Warpcast</button>
                       <button onClick={() => handleShare('twitter')} className="py-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl text-[9px] font-black uppercase">X (Twitter)</button>
@@ -672,165 +586,50 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'leaderboard' && (
-               <div className="space-y-6 pb-12">
-                 <div className="flex items-center justify-between px-4">
-                    <div className="flex items-center gap-2">
-                       <Globe className="w-3.5 h-3.5 text-blue-500" />
-                       <span className="text-[10px] font-black uppercase tracking-widest text-blue-100">Verified Builders Registry</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                       <span className="w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_5px_rgba(59,130,246,1)]" />
-                       <span className="text-[8px] font-black uppercase text-gray-500 tracking-tighter">Real Accounts Only</span>
-                    </div>
-                 </div>
-
-                 <div className="glass-effect p-6 rounded-[2.5rem] border-white/5 space-y-4">
-                   <div className="relative">
-                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                     <input 
-                       value={lbSearch} 
-                       onChange={e => setLbSearch(e.target.value)} 
-                       placeholder="Search audited builders..." 
-                       className="w-full bg-black/40 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-xs font-bold outline-none focus:border-blue-500/50"
-                     />
-                   </div>
-                   
-                   <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                     {(['ALL', RankTier.PLATINUM, RankTier.GOLD, RankTier.SILVER, RankTier.BRONZE] as const).map(t => (
-                       <button 
-                        key={t} 
-                        onClick={() => setLbTierFilter(t)} 
-                        className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase border transition-all whitespace-nowrap ${lbTierFilter === t ? 'bg-blue-600 border-blue-400' : 'bg-white/5 border-white/10 text-gray-500'}`}
-                       >
-                         {t === 'ALL' ? 'Everyone' : TIERS[t].name}
-                       </button>
-                     ))}
-                   </div>
-
-                   <div className="flex justify-between items-center">
-                     <button 
-                        onClick={() => setLbSortOrder(lbSortOrder === 'desc' ? 'asc' : 'desc')} 
-                        className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl border border-white/10 text-[9px] font-black uppercase"
-                     >
-                       <ArrowUpDown className="w-3 h-3 text-blue-500" />
-                       Points {lbSortOrder === 'desc' ? 'High → Low' : 'Low → High'}
-                     </button>
-                     <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">{filteredAndSortedLeaderboard.length} BUILDERS</span>
-                   </div>
-                 </div>
-
-                 <div className="space-y-3">
-                   {currentLbPageData.length > 0 ? currentLbPageData.map((l, i) => (
-                     <div key={l.handle} className={`p-5 glass-effect rounded-[2rem] flex justify-between items-center border border-white/5 transition-all hover:border-blue-500/20 ${user && (user.twitterHandle === l.handle || `@${user.farcasterUsername}` === l.handle) ? 'border-blue-500/40 bg-blue-600/5' : ''}`}>
-                       <div className="flex items-center gap-4">
-                         <div className="relative flex items-center justify-center w-8">
-                            <span className={`text-[11px] font-black italic ${l.rank <= 3 ? 'text-blue-400' : 'text-gray-500'}`}>#{l.rank}</span>
-                         </div>
-                         <div className="flex flex-col">
-                           <span className="text-xs font-bold truncate max-w-[140px] flex items-center gap-1.5">
-                             {l.handle}
-                             {l.auditedAt && <ShieldCheck className="w-3 h-3 text-blue-500" />}
-                           </span>
-                           <div className="flex items-center gap-2">
-                              <span className={`text-[7px] font-black uppercase ${TIERS[l.tier].color.includes('indigo') ? 'text-purple-400' : TIERS[l.tier].color.includes('yellow') ? 'text-yellow-500' : 'text-gray-400'}`}>
-                                {TIERS[l.tier].name}
-                              </span>
-                              {l.auditedAt && (
-                                <span className="text-[6px] text-gray-600 font-bold uppercase">• Verified Audit</span>
-                              )}
-                           </div>
-                         </div>
-                       </div>
-                       <div className="flex flex-col items-end">
-                         <div className="flex items-center gap-1">
-                           <Zap className="w-3 h-3 text-blue-500 fill-blue-500/20" />
-                           <span className="text-[12px] font-black text-blue-500">{l.points.toFixed(2)}</span>
-                         </div>
-                         <span className="text-[7px] font-black text-gray-600 uppercase tracking-tighter">IMPRESSION PTS</span>
-                       </div>
-                     </div>
-                   )) : (
-                     <div className="py-24 text-center glass-effect rounded-[3rem] border-white/5 space-y-4">
-                        <ZapOff className="w-12 h-12 text-gray-800 mx-auto" />
-                        <div className="space-y-1">
-                           <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">No verified audits found</p>
-                           <p className="text-[8px] font-bold text-gray-600 uppercase">Be the first to secure your footprint!</p>
-                        </div>
-                     </div>
-                   )}
-                 </div>
-
-                 {lbTotalPages > 1 && (
-                   <div className="flex items-center justify-center gap-6 pt-4">
-                     <button 
-                        disabled={lbPage === 1} 
-                        onClick={() => setLbPage(lbPage - 1)} 
-                        className={`p-3 rounded-2xl border transition-all ${lbPage === 1 ? 'border-white/5 text-gray-800' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
-                     >
-                       <ChevronLeft className="w-5 h-5" />
-                     </button>
-                     <div className="flex flex-col items-center min-w-[60px]">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">PAGE</span>
-                       <span className="text-xl font-black italic">{lbPage} <span className="text-gray-700 font-normal">/ {lbTotalPages}</span></span>
-                     </div>
-                     <button 
-                        disabled={lbPage === lbTotalPages} 
-                        onClick={() => setLbPage(lbPage + 1)} 
-                        className={`p-3 rounded-2xl border transition-all ${lbPage === lbTotalPages ? 'border-white/5 text-gray-800' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
-                     >
-                       <ChevronRight className="w-5 h-5" />
-                     </button>
-                   </div>
-                 )}
-               </div>
-            )}
-
             {activeTab === 'claim' && (
               <div className="space-y-10 text-center py-6 pb-12">
                  <div className="w-24 h-24 bg-blue-600/10 rounded-full flex items-center justify-center mx-auto border border-blue-500/20"><Award className="w-10 h-10 text-blue-500" /></div>
                  <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
-                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest px-8 leading-relaxed">
-                   Eligible users can claim their Season 01 Tiered NFT Badge based on their final verified rank.
-                 </p>
+                 
+                 <div className="px-4">
+                    <div className={`p-8 rounded-[3rem] text-center border transition-all ${config.glowClass} bg-black/40`}>
+                       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Achieved Level</span>
+                       <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${config.color}`}>
+                          {config.name}
+                       </h3>
+                       <div className="mt-4 flex flex-col items-center gap-1">
+                          <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Total Badge Supply</span>
+                          <span className="text-xs font-black italic">{config.supply > 0 ? `${config.supply.toLocaleString()} Reserved` : 'N/A'}</span>
+                       </div>
+                    </div>
+                 </div>
 
                  <div className="grid gap-4 px-4">
-                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${user.rank <= 1000 ? 'border-green-500/30' : 'border-red-500/30 bg-red-950/10'}`}>
+                    {/* Point Check */}
+                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'border-green-500/30' : 'border-red-500/30 bg-red-950/10'}`}>
                       <div className="flex flex-col items-start gap-1">
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">Verified Rank</span>
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">Point Requirement</span>
                         <div className="flex items-center gap-2">
-                           <Trophy className={`w-3 h-3 ${user.rank <= 1000 ? 'text-green-500' : 'text-red-500'}`} />
-                           <span className={`text-sm font-black ${user.rank <= 1000 ? 'text-green-400' : 'text-red-400'}`}>#{user.rank}</span>
+                           <Trophy className={`w-3 h-3 ${user.points >= 100 ? 'text-green-500' : 'text-red-500'}`} />
+                           <span className={`text-sm font-black ${user.points >= 100 ? 'text-green-400' : 'text-red-400'}`}>{user.points.toFixed(0)} / {TIERS[currentTier === RankTier.NONE ? RankTier.BRONZE : currentTier].minPoints} Pts</span>
                         </div>
                       </div>
-                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${user.rank <= 1000 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
-                        {user.rank <= 1000 ? 'Rank Verified' : 'Rank Out of Range'}
+                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${user.points >= 100 ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}`}>
+                        {user.points >= 100 ? 'Verified' : 'Low Score'}
                       </span>
                     </div>
 
-                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${(user.lambolessAmount || 0) >= 1 ? 'border-green-500/30' : 'border-orange-500/30 bg-orange-950/10'}`}>
+                    {/* Lambo Balance Check */}
+                    <div className={`p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'border-green-500/30' : 'border-orange-500/30 bg-orange-950/10'}`}>
                       <div className="flex flex-col items-start gap-1">
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">$LAMBOLESS Balance</span>
+                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">$LAMBOLESS Value</span>
                         <div className="flex items-center gap-2">
-                           <Coins className={`w-3 h-3 ${(user.lambolessAmount || 0) >= 1 ? 'text-green-500' : 'text-orange-500'}`} />
-                           <span className={`text-sm font-black ${(user.lambolessAmount || 0) >= 1 ? 'text-green-400' : 'text-orange-400'}`}>{(user.lambolessAmount || 0).toLocaleString()}</span>
+                           <Coins className={`w-3 h-3 ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'text-green-500' : 'text-orange-500'}`} />
+                           <span className={`text-sm font-black ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'text-green-400' : 'text-orange-400'}`}>${(user.lambolessBalance || 0).toFixed(2)} / ${config.minLamboUsd}</span>
                         </div>
                       </div>
-                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${(user.lambolessAmount || 0) >= 1 ? 'bg-green-600/20 text-green-400' : 'bg-orange-600/20 text-orange-400'}`}>
-                        {(user.lambolessAmount || 0) >= 1 ? 'Verified' : 'Insufficient'}
-                      </span>
-                    </div>
-
-                    <div className="p-6 glass-effect rounded-[2.5rem] flex justify-between items-center border border-white/5">
-                      <div className="flex flex-col items-start gap-1">
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-tight">Snapshot Status</span>
-                        <div className="flex items-center gap-2">
-                           <History className="w-3 h-3 text-blue-500" />
-                           <span className="text-sm font-black text-blue-400">Jan 16, 2026</span>
-                        </div>
-                      </div>
-                      <span className="text-[8px] font-black uppercase px-2 py-1 rounded-lg bg-blue-600/20 text-blue-400">
-                        {new Date() < CLAIM_START ? 'Pending' : 'Live'}
+                      <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${(user.lambolessBalance || 0) >= config.minLamboUsd ? 'bg-green-600/20 text-green-400' : 'bg-orange-600/20 text-orange-400'}`}>
+                        {(user.lambolessBalance || 0) >= config.minLamboUsd ? 'Verified' : 'Insufficient'}
                       </span>
                     </div>
                  </div>
@@ -845,9 +644,9 @@ const App: React.FC = () => {
                    </button>
                  </div>
 
-                 {user.rank > 1000 && (
+                 {currentTier === RankTier.NONE && (
                    <p className="text-[10px] text-red-500/60 font-bold uppercase tracking-widest px-10">
-                     Increase your impact by tweeting with #BaseImpression or holding more verified assets!
+                     Increase your impact to at least 100 Points to unlock Bronze rewards!
                    </p>
                  )}
               </div>
