@@ -102,7 +102,7 @@ const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [user, setUser] = useState<UserStats | null>(null);
-  const [farcasterContextUser, setFarcasterContextUser] = useState<any>(null);
+  const [farcasterContext, setFarcasterContext] = useState<any>(null);
   
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
@@ -127,11 +127,18 @@ const App: React.FC = () => {
 
   const getFarcasterAddress = useCallback((ctx: any) => {
     if (!ctx) return null;
-    return (
-      ctx.address || 
-      ctx.custodyAddress || 
-      (ctx.verifiedAddresses && ctx.verifiedAddresses.length > 0 ? ctx.verifiedAddresses[0] : null)
-    );
+    
+    // 1. Check top level address (preferred in Frame v2)
+    if (ctx.address) return ctx.address;
+    
+    // 2. Check within user object
+    const user = ctx.user || ctx;
+    if (user.custodyAddress) return user.custodyAddress;
+    if (user.verifiedAddresses && user.verifiedAddresses.length > 0) {
+      return user.verifiedAddresses[0];
+    }
+    
+    return null;
   }, []);
 
   const loadUserDataFromStorage = useCallback(() => {
@@ -195,7 +202,6 @@ const App: React.FC = () => {
     }
 
     const init = async () => {
-      // Emergency timeout to prevent infinite hang on non-frame environments
       const timeoutId = setTimeout(() => {
         console.warn("Farcaster SDK init timed out, forcing ready state");
         setIsReady(true);
@@ -204,17 +210,20 @@ const App: React.FC = () => {
       try {
         await sdk.actions.ready();
         const context = await sdk.context;
-        if (context?.user) {
-          setFarcasterContextUser(context.user);
+        if (context) {
+          setFarcasterContext(context);
         }
+        
         loadUserDataFromStorage();
-        if (context?.user && !localStorage.getItem(STORAGE_KEY_USER)) {
-            const detectedAddr = getFarcasterAddress(context.user);
+        
+        // Auto-fill from context if possible
+        if (context && !localStorage.getItem(STORAGE_KEY_USER)) {
+            const detectedAddr = getFarcasterAddress(context);
             if (detectedAddr) {
               setAddress(detectedAddr);
               setIsSignatureVerified(true);
             }
-            const detectedHandle = context.user.username ? `@${context.user.username}` : '';
+            const detectedHandle = context.user?.username ? `@${context.user.username}` : '';
             if (detectedHandle) {
               setHandle(detectedHandle);
               setIsTwitterVerified(true);
@@ -255,11 +264,22 @@ const App: React.FC = () => {
   }, [user]);
 
   const handleFarcasterAutoLogin = () => {
-    const fcAddr = getFarcasterAddress(farcasterContextUser);
-    if (!fcAddr) return;
-    setAddress(fcAddr);
-    setIsSignatureVerified(true);
-    setShowWalletSelector(false);
+    setIsConnecting(true);
+    try {
+      const fcAddr = getFarcasterAddress(farcasterContext);
+      if (!fcAddr) {
+        console.error("Could not find address in Farcaster context", farcasterContext);
+        setIsConnecting(false);
+        return;
+      }
+      setAddress(fcAddr);
+      setIsSignatureVerified(true);
+      setShowWalletSelector(false);
+    } catch (e) {
+      console.error("Farcaster login error", e);
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const handleConnectAndSign = async (provider: any) => {
@@ -694,12 +714,17 @@ const App: React.FC = () => {
                 </div>
                 
                 <div className="space-y-3">
-                  {farcasterContextUser && (
+                  {farcasterContext && (
                     <button 
                       onClick={handleFarcasterAutoLogin}
-                      className="w-full p-4 rounded-2xl bg-gradient-to-r from-purple-600/20 to-purple-800/20 border border-purple-500/30 flex items-center gap-4 hover:scale-[1.02] transition-all"
+                      disabled={isConnecting}
+                      className="w-full p-4 rounded-2xl bg-gradient-to-r from-purple-600/20 to-purple-800/20 border border-purple-500/30 flex items-center gap-4 hover:scale-[1.02] transition-all disabled:opacity-50"
                     >
-                      <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold">F</div>
+                      {isConnecting ? (
+                        <Loader2 className="w-10 h-10 animate-spin text-purple-400" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold">F</div>
+                      )}
                       <div className="text-left">
                         <p className="font-bold">Farcaster Wallet</p>
                         <p className="text-[10px] text-purple-300 uppercase font-black">Native Connection</p>
