@@ -14,15 +14,6 @@ export const calculateAccountAgeDays = (registrationDate: Date): number => {
 
 /**
  * Calculates points based on Farcaster ID (FID) tiers.
- * Updated tiers as per user request:
- * FID 1 - 5000: 225 pts
- * FID 5001 - 25000: 150 pts
- * FID 25001 - 75000: 125 pts
- * FID 75001 - 175000: 100 pts
- * FID 175001 - 375000: 75 pts
- * FID 375001 - 775000: 50 pts
- * FID 775001 - 1500000: 25 pts
- * FID 1500001 - 5000000: 15 pts
  */
 export const calculateFidPoints = (fid: number): number => {
   if (!fid || fid <= 0) return 0;
@@ -34,62 +25,23 @@ export const calculateFidPoints = (fid: number): number => {
   if (fid <= 775000) return 50;
   if (fid <= 1500000) return 25;
   if (fid <= 5000000) return 15;
-  return 10; // Default for very high FIDs
-};
-
-/**
- * Estimates Farcaster account age in days based on FID.
- * Farcaster growth has been non-linear, with significant acceleration post-Feb 2024.
- */
-export const estimateFarcasterAge = (fid: number): number => {
-  if (!fid) return 0;
-  
-  const now = new Date();
-  const genesisDate = new Date("2020-07-25"); // Approximate Farcaster genesis
-  const totalDaysSinceGenesis = (now.getTime() - genesisDate.getTime()) / (1000 * 60 * 60 * 24);
-
-  // Heuristic based on FID milestones:
-  // FID 1-10k: 2020 - Late 2022
-  // FID 100k: Oct 2023
-  // FID 250k: Feb 2024 (Frame Launch)
-  // FID 500k: May 2024
-  // FID 1M+: Feb 2025
-  
-  let estimatedDays = 0;
-  if (fid <= 10000) {
-    // Very early adopters (Senior builders)
-    estimatedDays = totalDaysSinceGenesis - (fid / 10000) * 300;
-  } else if (fid <= 100000) {
-    // Early adopters
-    const dayRef = totalDaysSinceGenesis - 400; // Late 2023 ref
-    estimatedDays = dayRef * (1 - (fid - 10000) / 90000);
-  } else if (fid <= 250000) {
-    // Pre-frames boom
-    estimatedDays = 400 * (1 - (fid - 100000) / 150000);
-  } else {
-    // Post-frames/Current growth phase
-    // FID 1M is ~30 days old as of March 2025
-    estimatedDays = Math.max(1, 380 * Math.pow(1 - Math.min(fid / 1200000, 1), 1.5));
-  }
-
-  return Math.floor(estimatedDays);
+  return 10;
 };
 
 /**
  * Points Calculation Formula
  * Returns total points and a breakdown for display.
- * 
- * Note: farcasterId replaces the previous farcasterAgeDays for point calculation.
  */
 export const calculateDetailedPoints = (
   baseAppAgeDays: number, 
   twitterAgeDays: number, 
-  cappedContributionPoints: number,
+  cappedContributionPoints: number, // Historical/General Twitter points
   farcasterId: number = 0,
-  tokenUSDValues: { lambo: number; jesse: number; nick: number } = { lambo: 0, jesse: 0, nick: 0 }
+  tokenUSDValues: { lambo: number; jesse: number; nick: number } = { lambo: 0, jesse: 0, nick: 0 },
+  basepostingPoints: number = 0 // New direct point addition
 ): { total: number; breakdown: any } => {
   // 1. Social & Seniority Base Points
-  const twitterPoints = (twitterAgeDays * 0.15) + (cappedContributionPoints * 0.30);
+  const twitterBaseScore = (twitterAgeDays * 0.15) + (cappedContributionPoints * 0.30);
   const farcasterPoints = calculateFidPoints(farcasterId);
   const seniorityPoints = baseAppAgeDays * 0.10;
   
@@ -107,25 +59,24 @@ export const calculateDetailedPoints = (
   const nickPoints = (tokenUSDValues.nick || 0) * MULTIPLIERS.NICK * hoursElapsed;
   const jessePoints = (tokenUSDValues.jesse || 0) * MULTIPLIERS.JESSE * hoursElapsed;
   
-  const total = twitterPoints + farcasterPoints + seniorityPoints + lamboPoints + nickPoints + jessePoints;
+  // Rule #10: Each valid tweet = 1 point (basepostingPoints is already capped at 5/day in service)
+  const total = twitterBaseScore + farcasterPoints + seniorityPoints + lamboPoints + nickPoints + jessePoints + basepostingPoints;
   
   return {
     total: parseFloat(total.toFixed(4)),
     breakdown: {
-      social_twitter: parseFloat(twitterPoints.toFixed(4)),
+      social_twitter: parseFloat((twitterBaseScore + basepostingPoints).toFixed(4)),
       social_fc: parseFloat(farcasterPoints.toFixed(4)),
       seniority: parseFloat(seniorityPoints.toFixed(4)),
-      social: parseFloat((twitterPoints + farcasterPoints).toFixed(4)), 
+      social: parseFloat((twitterBaseScore + farcasterPoints + basepostingPoints).toFixed(4)), 
       lambo: parseFloat(lamboPoints.toFixed(4)),
       nick: parseFloat(nickPoints.toFixed(4)),
-      jesse: parseFloat(jessePoints.toFixed(4))
+      jesse: parseFloat(jessePoints.toFixed(4)),
+      baseposting: basepostingPoints
     }
   };
 };
 
-/**
- * Returns the corresponding tier based on accumulated points.
- */
 export const getTierFromPoints = (points: number): RankTier => {
   if (points >= TIERS[RankTier.PLATINUM].minPoints) return RankTier.PLATINUM;
   if (points >= TIERS[RankTier.GOLD].minPoints) return RankTier.GOLD;
@@ -134,9 +85,6 @@ export const getTierFromPoints = (points: number): RankTier => {
   return RankTier.NONE;
 };
 
-/**
- * Deprecated: Use getTierFromPoints
- */
-export const getTierFromRank = (rank: number): RankTier => {
-  return RankTier.NONE;
+export const estimateFarcasterAge = (fid: number): number => {
+    return 0; // Deprecated as per user request
 };
