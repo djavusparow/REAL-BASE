@@ -41,7 +41,8 @@ export const CLAIM_START = new Date("2026-01-16T02:00:00Z");
 
 /**
  * TIER DEFINITIONS - UPDATED TO SPECIFIC POINT AND TOKEN REQS
- * Supply updated as per user request: P: 25, G: 100, S: 350, B: 1025
+ * Supply: P: 25, G: 100, S: 350, B: 1025
+ * Requirement: $2.5 $LAMBOLESS across all tiers.
  */
 export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoints: number, supply: number, minLamboUsd: number }> = {
   [RankTier.PLATINUM]: {
@@ -53,7 +54,7 @@ export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoint
     minPoints: 751,
     maxPoints: 2500,
     supply: 25,
-    minLamboUsd: 0.25
+    minLamboUsd: 2.5
   },
   [RankTier.GOLD]: {
     name: "Gold",
@@ -64,7 +65,7 @@ export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoint
     minPoints: 351,
     maxPoints: 750,
     supply: 100,
-    minLamboUsd: 0.25
+    minLamboUsd: 2.5
   },
   [RankTier.SILVER]: {
     name: "Silver",
@@ -75,7 +76,7 @@ export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoint
     minPoints: 151,
     maxPoints: 350,
     supply: 350,
-    minLamboUsd: 0.25
+    minLamboUsd: 2.5
   },
   [RankTier.BRONZE]: {
     name: "Bronze",
