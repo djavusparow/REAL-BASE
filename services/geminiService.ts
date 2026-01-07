@@ -2,39 +2,44 @@ import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
   /**
-   * Generates a ultra-high-quality premium badge visual using Gemini.
-   * Optimized for Gemini 3 Pro / 2.5 Flash Image models.
+   * Generates a high-fidelity NFT badge based on the specific shield design provided.
    */
   async generateBadgePreview(tier: string, handle: string, retryAttempt: number = 0): Promise<string | null> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Priority: gemini-3-pro-image-preview for high resolution and artistic complexity
+      // Use Gemini 3 Pro for maximum aesthetic alignment
       const modelName = retryAttempt === 0 ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
       
-      let aestheticDesc = "";
-      let coreColor = "";
-      
+      let metalType = "";
+      let carColor = "";
+      let glowColor = "";
+
       if (tier === 'PLATINUM') {
-        aestheticDesc = "an ethereal floating diamond artifact with infinite internal reflections and iridescent holographic liquid. Translucent obsidian glass frame.";
-        coreColor = "shimmering diamond, rainbow prism, white laser glow";
+        metalType = "pure polished Platinum and iridescent glass";
+        carColor = "white iridescent supercar";
+        glowColor = "bright rainbow holographic shimmer";
       } else if (tier === 'GOLD') {
-        aestheticDesc = "a levitating core of molten sun-gold encased in a thick, perfectly polished crystal geometric sphere. Micro-circuits etched in gold.";
-        coreColor = "warm amber radiance, 24k gold metallic, solar flare glow";
+        metalType = "24k polished gold with a sun-brushed texture";
+        carColor = "vibrant gold supercar";
+        glowColor = "warm golden aura and lens flare";
       } else if (tier === 'SILVER') {
-        aestheticDesc = "a futuristic orb of liquid mercury and frosted sapphire glass. Sharp metallic edges with soft blue neon inner lighting.";
-        coreColor = "cool azure, brushed chrome, arctic silver reflections";
+        metalType = "brushed metallic silver and chrome";
+        carColor = "sleek silver supercar";
+        glowColor = "cool blue and white metallic reflections";
       } else if (tier === 'BRONZE') {
-        aestheticDesc = "a cybernetic relic made of deep amethyst resin and aged copper. Pulsing purple energy veins visible through semi-transparent layers.";
-        coreColor = "neon violet, copper antique, dark purple obsidian";
+        metalType = "deep bronze and polished copper";
+        carColor = "metallic bronze supercar";
+        glowColor = "warm amber and purple neon undertones";
       }
 
-      // Mastery Level Prompt for Crypto-Aesthetic
-      const prompt = `A ultra-premium 3D digital medallion NFT badge for elite crypto builders. 
-           Design: ${aestheticDesc}. 
-           Centerpiece: A glowing, minimalist "B" logo (representing Base) floating inside the core. 
-           Materials: ${coreColor}, high-refractive index glass, liquid metal, and holographic energy.
-           Visual Style: Octane Render, 8k, highly detailed textures, depth of field, studio lighting on black background, futuristic, luxury, masterpiece. 
-           The design should look like a rare high-value digital asset.`;
+      const prompt = `A ultra-high-quality professional NFT badge design. 
+           The badge is a vertical hexagonal SHIELD shape made of ${metalType}.
+           TOP SECTION: Bold text that says "NFT BADGE".
+           CENTER SECTION: A highly detailed ${carColor} (Lamborghini style) parked in front of a circular metallic ring.
+           BOTTOM SECTION: Large bold text that says "BASE" and "IMPRESSION" below it.
+           FOOTER: A separate text label at the very bottom says "${tier}".
+           AESTHETIC: High-end luxury photography style, soft bokeh background, studio lighting, ray-tracing, 8k resolution, crisp edges, cinematic atmosphere. 
+           The final result must look exactly like a physical luxury badge. ${glowColor}.`;
 
       const response = await ai.models.generateContent({
         model: modelName,
@@ -44,20 +49,17 @@ export class GeminiService {
         config: {
           imageConfig: {
             aspectRatio: "1:1",
-            imageSize: "1K" // High quality for Pro model
+            imageSize: "1K"
           }
         }
       });
 
       if (!response.candidates || response.candidates.length === 0) {
-        throw new Error("No candidates returned from Gemini");
+        throw new Error("No candidates");
       }
 
       const candidate = response.candidates[0];
-      
-      // Handle safety or empty content
       if (candidate.finishReason === 'SAFETY' || !candidate.content?.parts) {
-        console.warn("Safety filter triggered or no parts, retrying with fallback model...");
         if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
         return null;
       }
@@ -71,7 +73,7 @@ export class GeminiService {
       if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
       return null;
     } catch (error) {
-      console.error(`Gemini Image Generation Error:`, error);
+      console.error(`Gemini Generation Error:`, error);
       if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
       return null;
     }
