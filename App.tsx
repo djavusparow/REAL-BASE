@@ -403,7 +403,7 @@ const App: React.FC = () => {
       if (img) {
         setBadgeImage(img);
       } else {
-        alert("Gagal membuat visual. Silakan coba lagi.");
+        alert("Failed to generate visual. Please try again.");
       }
     } catch (e) {
       console.error("Badge Generation Failed", e);
@@ -438,7 +438,7 @@ const App: React.FC = () => {
 
     } catch (e) {
       console.error("Minting error", e);
-      alert("Transaksi gagal. Pastikan saldo gas mencukupi.");
+      alert("Transaction failed. Please ensure you have enough gas.");
     } finally {
       setIsMinting(false);
     }
@@ -604,7 +604,7 @@ const App: React.FC = () => {
                           <div className="flex items-center justify-between">
                              <h4 className="font-black text-lg uppercase italic">Claim Checklist</h4>
                              <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest bg-blue-500/5 px-3 py-1 rounded-full border border-blue-500/10">
-                                Hanya Gas Fee
+                                Gas Fee Only
                              </span>
                           </div>
                           <div className="space-y-10">
@@ -621,7 +621,7 @@ const App: React.FC = () => {
                                </div>
                              )}
 
-                             {/* Requirement 1: Points */}
+                             {/* Requirement 1: Base Points */}
                              <div className="space-y-3">
                                 <div className="flex justify-between items-end">
                                   <div className="flex flex-col">
@@ -664,7 +664,7 @@ const App: React.FC = () => {
                                  className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] flex items-center justify-center gap-3 transition-all border ${isGenerating || isMinted ? 'bg-white/5 border-white/5 text-gray-500' : 'bg-white/10 border-white/20 text-white hover:bg-white/20 shadow-lg shadow-white/5'}`}
                                >
                                  {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-                                 {isGenerating ? 'Menghasilkan NFT...' : isMinted ? 'Visual Tersimpan' : 'Buat Preview NFT Badge'}
+                                 {isGenerating ? 'Generating NFT...' : isMinted ? 'Visual Secured' : 'GENERATE NFT BADGE PREVIEW'}
                                </button>
 
                                <div className="space-y-2">
@@ -680,7 +680,7 @@ const App: React.FC = () => {
                                     >
                                       <div className="flex items-center gap-3">
                                          {isMinting ? <Loader2 className="w-4 h-4 animate-spin" /> : claimEligibility.eligible && badgeImage ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                                         {isMinting ? 'Sedang Minting...' : !badgeImage && claimEligibility.eligible ? 'Buat Visual Untuk Klaim' : claimEligibility.buttonText}
+                                         {isMinting ? 'Minting in Progress...' : !badgeImage && claimEligibility.eligible ? 'GENERATE VISUAL TO CLAIM' : claimEligibility.buttonText}
                                       </div>
                                       {claimEligibility.eligible && badgeImage && !isMinting && (
                                          <span className="text-[8px] opacity-80 mt-1">FREE CLAIM + GAS FEE</span>
@@ -688,13 +688,13 @@ const App: React.FC = () => {
                                     </button>
                                   )}
                                   <p className="text-[9px] font-bold text-gray-500 uppercase italic tracking-wider flex items-center justify-center gap-1.5">
-                                     <Info size={10} /> CLAIM GRATIS — HANYA GAS FEE
+                                     <Info size={10} /> FREE CLAIM — GAS FEE ONLY
                                   </p>
                                </div>
                                
                                {!claimEligibility.eligible && claimEligibility.reasons.length > 0 && (
                                  <p className="text-[9px] text-center font-bold text-gray-500 uppercase italic px-4 mt-2">
-                                   * Lengkapi persyaratan di atas untuk membuka klaim gratis Anda.
+                                   * Complete the requirements above to unlock your free claim.
                                  </p>
                                )}
                              </div>
