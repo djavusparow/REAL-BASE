@@ -1,28 +1,28 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
   /**
-   * Generates a high-quality badge visual using Gemini 3 Pro Image.
+   * Generates a high-quality badge visual using Gemini.
+   * Fallback to Flash model if Pro fails.
    */
   async generateBadgePreview(tier: string, handle: string, retryAttempt: number = 0): Promise<string | null> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const modelName = 'gemini-3-pro-image-preview';
+      // Use Flash for faster/more reliable generation as primary or fallback
+      const modelName = retryAttempt === 0 ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
       
       let colorDesc = "";
-      if (tier === 'PLATINUM') colorDesc = "shimmering holographic rainbow colors, iridescent metallic finish";
-      else if (tier === 'GOLD') colorDesc = "polished reflective luxury gold metallic finish";
-      else if (tier === 'SILVER') colorDesc = "sleek high-gloss metallic silver and chrome finish";
-      else if (tier === 'BRONZE') colorDesc = "vibrant neon purple and deep bronze metallic fusion";
+      if (tier === 'PLATINUM') colorDesc = "holographic rainbow crystal, iridescent silver chrome";
+      else if (tier === 'GOLD') colorDesc = "shiny 24k gold, polished yellow metallic";
+      else if (tier === 'SILVER') colorDesc = "brushed silver, metallic chrome, sleek grey";
+      else if (tier === 'BRONZE') colorDesc = "glowing neon purple, dark bronze metal";
 
-      // Re-engineered prompt: Optimized for text legibility and safety compliance.
-      const prompt = `A premium 3D digital collectible NFT badge for "BASE IMPRESSION". 
-           The central focus is a high-tech, futuristic aerodynamic vehicle silhouette. 
-           The words "BASE IMPRESSION" are rendered in sharp, clear, bold metallic typography. 
-           The entire composition is themed in ${colorDesc}. 
-           The handle "${handle}" is clearly engraved on a metallic plate at the bottom. 
-           Style: Cinematic studio automotive photography, high contrast, clean minimalist dark background, 8k resolution.`;
+      // Simplified prompt to avoid safety filters while maintaining aesthetic
+      const prompt = `A 3D digital medallion icon for a crypto community. 
+           Theme: ${colorDesc}. 
+           Shape: Circular premium badge with a futuristic car symbol in the center.
+           The text "BASE" is visible. 
+           Lighting: Studio neon blue rim light, dark background, cinematic quality, high resolution.`;
 
       const response = await ai.models.generateContent({
         model: modelName,
@@ -37,71 +37,44 @@ export class GeminiService {
       });
 
       if (!response.candidates || response.candidates.length === 0) {
-        throw new Error("Model returned no candidates.");
+        throw new Error("No candidates");
       }
 
       const candidate = response.candidates[0];
       
-      if (candidate.finishReason === 'SAFETY') {
-        console.error("Gemini Image Generation blocked by safety filters.");
+      // Handle safety or empty content by retrying with simpler model
+      if (candidate.finishReason === 'SAFETY' || !candidate.content?.parts) {
         if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
         return null;
       }
 
-      if (!candidate.content || !candidate.content.parts) {
-        throw new Error("Candidate content is empty.");
-      }
-
-      // Find the image data within the response parts
       for (const part of candidate.content.parts) {
         if (part.inlineData && part.inlineData.data) {
           return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
       
-      throw new Error("No image data found in model response.");
+      if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
+      return null;
     } catch (error) {
-      console.error(`Gemini Generation Error (Attempt ${retryAttempt}):`, error);
-      
-      if (retryAttempt === 0) {
-        // Fallback to a very simplified prompt to ensure success
-        return this.generateBadgePreview(tier, handle, 1);
-      }
-      
+      console.error(`Gemini Error:`, error);
+      if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
       return null;
     }
   }
 
-  /**
-   * Fetches real-time price data using Gemini Search grounding.
-   */
   async getTokenPrice(tokenName: string, contract: string): Promise<number> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview',
-        contents: `What is the current market price of ${tokenName} on Base network (contract ${contract}) in USD? Return only the number.`,
+        model: 'gemini-3-flash-preview',
+        contents: `Price of ${tokenName} (${contract}) on Base in USD? Number only.`,
         config: { tools: [{ googleSearch: {} }] }
       });
-      
       const priceText = response.text?.replace(/[^0-9.]/g, '') || "0.0001"; 
       return parseFloat(priceText) || 0.0001;
     } catch (error) {
       return 0.0001; 
-    }
-  }
-
-  async getFarcasterRegistrationDate(fid: number, username: string): Promise<string | null> {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Registration date for FID ${fid} (@${username}) on Farcaster? Return YYYY-MM-DD.`,
-        config: { tools: [{ googleSearch: {} }] }
-      });
-      return response.text?.match(/\d{4}-\d{2}-\d{2}/)?.[0] || null;
-    } catch (error) {
-      return null;
     }
   }
 
@@ -110,11 +83,11 @@ export class GeminiService {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Impact Score: ${points}, Tier: ${tier}. Write a short hype message for a Base builder.`
+        contents: `Hype message for a builder with ${points} points (${tier} tier) on Base chain.`
       });
-      return response.text || "Your impact on Base is undeniable.";
+      return response.text || "Keep building!";
     } catch (error) {
-      return "Keep building on Base!";
+      return "Build on Base!";
     }
   }
 }

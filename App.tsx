@@ -27,7 +27,6 @@ import { twitterService } from './services/twitterService';
 const STORAGE_KEY_USER = 'base_impression_v1_user';
 const STORAGE_KEY_SUPPLIES = 'base_impression_v1_supplies';
 
-// ALAMAT KONTRAK BASE IMPRESSION NFT
 const NFT_CONTRACT_ADDRESS = "0x4afc5DF90f6F2541C93f9b29Ec0A95b46ad61a6B"; 
 
 const MINIMAL_NFT_ABI = [
@@ -43,12 +42,15 @@ const MINIMAL_NFT_ABI = [
   }
 ];
 
+// Placeholder image URL if AI fails
+const PLACEHOLDER_BADGE = "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=400";
+
 const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-40 h-40' : 'w-10 h-10';
   const radius = size === 'lg' ? 'rounded-[2.5rem]' : 'rounded-xl';
   return (
     <div className={`${dimensions} ${radius} relative overflow-hidden border border-white/20 blue-glow`}>
-      <img src="https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=400" className="absolute inset-0 w-full h-full object-cover brightness-75" alt="Base" />
+      <img src={PLACEHOLDER_BADGE} className="absolute inset-0 w-full h-full object-cover brightness-75" alt="Base" />
       <div className="absolute inset-0 bg-blue-600/30 mix-blend-overlay" />
       <div className="absolute inset-0 flex items-center justify-center">
         <span className={`${size === 'lg' ? 'text-lg' : 'text-[7px]'} font-black text-white uppercase italic leading-none text-center`}>Base<br/>Impression</span>
@@ -185,29 +187,41 @@ const App: React.FC = () => {
     if (isGenerating || isMinting || isMinted) return;
     
     setIsGenerating(true);
+    let finalImage = PLACEHOLDER_BADGE;
+    
     try {
       const currentTier = getTierFromPoints(user!.points);
-      const img = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
-      if (!img) throw new Error("AI Visual Generation Failed");
+      const generatedImg = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
       
-      setBadgeImage(img);
+      if (generatedImg) {
+        finalImage = generatedImg;
+        setBadgeImage(generatedImg);
+      } else {
+        console.warn("AI Generation failed, using placeholder");
+        setBadgeImage(PLACEHOLDER_BADGE);
+      }
+    } catch (e) {
+      console.error("Visual generation logic failed:", e);
+      setBadgeImage(PLACEHOLDER_BADGE);
+    } finally {
       setIsGenerating(false);
+    }
 
-      setIsMinting(true);
+    // Continue to minting even if AI fails (use placeholder)
+    setIsMinting(true);
+    try {
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet provider not found. Please ensure you are in a supported environment.");
+      if (!provider) throw new Error("Wallet provider not found.");
 
-      // Re-initialize Web3 with the SDK provider
       const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
       
+      const currentTier = getTierFromPoints(user!.points);
       const tierMap: Record<string, number> = { 'PLATINUM': 0, 'GOLD': 1, 'SILVER': 2, 'BRONZE': 3 };
       const tierIndex = tierMap[currentTier] ?? 3;
 
-      // Improved Transaction call for Frame SDK compatibility
-      const mintTx = await contract.methods.mintBadge(img, tierIndex).send({ 
+      const mintTx = await contract.methods.mintBadge(finalImage, tierIndex).send({ 
         from: address,
-        // Remove gas property to let the wallet handle estimation
       });
 
       setTxHash(mintTx.transactionHash);
@@ -217,15 +231,15 @@ const App: React.FC = () => {
 
     } catch (e: any) {
       console.error("Minting Detailed Error:", e);
-      if (e.message?.includes("User denied") || e.message?.includes("rejected")) {
-        alert("Transaction Cancelled by User.");
-      } else if (e.message?.includes("insufficient funds")) {
-        alert("Insufficient Gas. You need more ETH on Base Mainnet.");
+      const errMsg = e.message?.toLowerCase() || "";
+      if (errMsg.includes("user denied") || errMsg.includes("rejected")) {
+        alert("Transaction Cancelled.");
+      } else if (errMsg.includes("insufficient funds")) {
+        alert("Insufficient ETH for gas on Base.");
       } else {
-        alert(`Minting Failed: ${e.message || "Unknown error"}. Ensure you have ETH for gas on Base.`);
+        alert(`Minting Failed: ${e.message || "Unknown error"}. Check your Base ETH balance.`);
       }
     } finally {
-      setIsGenerating(false);
       setIsMinting(false);
     }
   };
