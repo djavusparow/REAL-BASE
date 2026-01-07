@@ -19,7 +19,8 @@ import {
   Cpu,
   Flame,
   Ban,
-  Sparkles
+  Sparkles,
+  Send
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -88,15 +89,12 @@ const App: React.FC = () => {
 
   const getFarcasterAddress = useCallback((ctx: any) => {
     if (!ctx) return null;
-    
-    // Check all possible paths for the address in Frame v2 context
     if (ctx.address) return ctx.address;
     if (ctx.user?.address) return ctx.user.address;
     if (ctx.user?.custodyAddress) return ctx.user.custodyAddress;
     if (ctx.user?.verifiedAddresses && ctx.user.verifiedAddresses.length > 0) {
       return ctx.user.verifiedAddresses[0];
     }
-    
     return null;
   }, []);
 
@@ -160,6 +158,10 @@ const App: React.FC = () => {
         const context = await sdk.context;
         if (context) {
           setFarcasterContext(context);
+          // Auto-prompt to add Frame if not added
+          if (!context.client.added) {
+            sdk.actions.addFrame().catch(e => console.log("Add frame prompt dismissed", e));
+          }
         }
         loadUserDataFromStorage();
       } catch (e) { 
@@ -177,26 +179,21 @@ const App: React.FC = () => {
     
     setIsConnecting(true);
     try {
-      // Refresh context
       const context = await sdk.context;
       let fcAddr = getFarcasterAddress(context);
-      
       const provider = sdk.wallet?.ethProvider;
 
-      // Fallback: If context doesn't have the address, ask the provider directly
       if (!fcAddr && provider) {
         try {
           const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
-          if (accounts && accounts.length > 0) {
-            fcAddr = accounts[0];
-          }
+          if (accounts && accounts.length > 0) fcAddr = accounts[0];
         } catch (err) {
-          console.warn("Failed to fetch address via eth_requestAccounts", err);
+          console.warn("Provider fetch failed", err);
         }
       }
       
       if (!fcAddr) {
-        alert("Farcaster identity not found. Please make sure you have a verified wallet in Warpcast.");
+        alert("Farcaster identity not found. Verify your Warpcast wallet.");
         setIsConnecting(false);
         return;
       }
@@ -208,9 +205,6 @@ const App: React.FC = () => {
           const challengeMessage = `Base Impression Proof\nWallet: ${fcAddr}\nTime: ${Date.now()}\nVerify Farcaster identity for Base Impression.`;
           await web3.eth.personal.sign(challengeMessage, fcAddr, "");
         } catch (signError: any) {
-          console.warn("Signing error (might be user rejection):", signError);
-          // If user didn't explicitly reject, we can sometimes proceed with just the address
-          // but for "Proof", we really want the signature.
           if (signError.code === 4001) throw signError; 
         } finally {
           setIsSigning(false);
@@ -219,12 +213,10 @@ const App: React.FC = () => {
 
       setAddress(fcAddr);
       setIsSignatureVerified(true);
-      
       if (context.user?.username && !handle) {
         setHandle(`@${context.user.username}`);
         setIsTwitterVerified(true);
       }
-      
       setShowWalletSelector(false);
     } catch (e: any) {
       console.error("Login Error:", e);
@@ -232,6 +224,13 @@ const App: React.FC = () => {
       setIsConnecting(false);
       setIsSigning(false);
     }
+  };
+
+  const handleShareOnFarcaster = () => {
+    if (!user) return;
+    const tier = getTierFromPoints(user.points);
+    const text = `Check and Tracking your BASE IMPRESSION @jesse.base.eth @base @baseapp \n\nI just earned the ${tier} Badge with ${user.points.toFixed(0)} points! 🔵⚡️`;
+    sdk.actions.cast({ text }).catch(e => console.error("Cast failed", e));
   };
 
   const handleLogout = () => {
@@ -389,28 +388,18 @@ const App: React.FC = () => {
               <BrandLogo />
               <div className="hidden sm:block">
                 <h1 className="text-lg font-black tracking-tighter uppercase italic">Base Impression</h1>
-                <p className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">Ecosystem Proof</p>
               </div>
             </div>
-            
             <div className="flex items-center gap-4">
                {address ? (
                   <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-xs font-mono text-gray-300">
-                      {address.slice(0, 6)}...{address.slice(-4)}
-                    </span>
-                    <button onClick={handleLogout} className="p-1 hover:text-red-400 transition-colors">
-                      <LogOut size={14} />
-                    </button>
+                    <span className="text-xs font-mono text-gray-300">{address.slice(0, 6)}...</span>
+                    <button onClick={handleLogout} className="p-1 hover:text-red-400"><LogOut size={14} /></button>
                   </div>
                ) : (
-                  <button 
-                    onClick={() => setShowWalletSelector(true)}
-                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase px-6 py-2 rounded-full transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] flex items-center gap-2"
-                  >
-                    <Sparkles size={14} />
-                    Login
+                  <button onClick={() => setShowWalletSelector(true)} className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase px-6 py-2 rounded-full transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20">
+                    <Sparkles size={14} /> Login
                   </button>
                )}
             </div>
@@ -424,66 +413,28 @@ const App: React.FC = () => {
                   <div className="inline-flex p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 mb-4">
                     <ShieldCheck size={40} />
                   </div>
-                  <h2 className="text-5xl font-black tracking-tight leading-tight">
-                    ARE YOU <span className="text-blue-500">BUILDING</span> ON BASE?
-                  </h2>
-                  <p className="text-gray-400 text-lg max-w-lg mx-auto leading-relaxed">
-                    Verify your contributions, track your $LAMBOLESS assets, and earn your onchain reputation badge.
-                  </p>
+                  <h2 className="text-5xl font-black tracking-tight leading-tight">ARE YOU <span className="text-blue-500">BUILDING</span> ON BASE?</h2>
+                  <p className="text-gray-400 text-lg max-w-lg mx-auto leading-relaxed">Verify contributions, track $LAMBOLESS assets, and earn your reputation badge.</p>
                </div>
-
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
-                  <div className={`p-6 rounded-2xl border transition-all ${isSignatureVerified ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10'}`}>
+                  <div className={`p-6 rounded-2xl border ${isSignatureVerified ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10'}`}>
                     <div className="flex items-center gap-3 mb-4">
-                      <div className={`p-2 rounded-lg ${isSignatureVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}>
-                        <Wallet size={20} />
-                      </div>
-                      <span className="font-bold uppercase text-xs tracking-widest">Step 1: Wallet</span>
+                      <div className={`p-2 rounded-lg ${isSignatureVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}><Wallet size={20} /></div>
+                      <span className="font-bold uppercase text-xs">Step 1: Wallet</span>
                     </div>
-                    {isSignatureVerified ? (
-                      <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
-                        <CheckCircle2 size={16} /> Verified
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => setShowWalletSelector(true)}
-                        className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-black uppercase tracking-widest transition-colors"
-                      >
-                        Sign Proof
-                      </button>
-                    )}
+                    {isSignatureVerified ? <div className="text-green-400 text-sm font-bold flex items-center gap-2"><CheckCircle2 size={16} /> Verified</div> : <button onClick={() => setShowWalletSelector(true)} className="w-full py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl text-sm font-black uppercase">Sign Proof</button>}
                   </div>
-
-                  <div className={`p-6 rounded-2xl border transition-all ${isTwitterVerified ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10'}`}>
+                  <div className={`p-6 rounded-2xl border ${isTwitterVerified ? 'bg-green-500/5 border-green-500/30' : 'bg-white/5 border-white/10'}`}>
                     <div className="flex items-center gap-3 mb-4">
-                      <div className={`p-2 rounded-lg ${isTwitterVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}>
-                        <Twitter size={20} />
-                      </div>
-                      <span className="font-bold uppercase text-xs tracking-widest">Step 2: Socials</span>
+                      <div className={`p-2 rounded-lg ${isTwitterVerified ? 'bg-green-500/20 text-green-400' : 'bg-white/10 text-gray-400'}`}><Twitter size={20} /></div>
+                      <span className="font-bold uppercase text-xs">Step 2: Socials</span>
                     </div>
-                    {isTwitterVerified ? (
-                      <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
-                        <CheckCircle2 size={16} /> Linked
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => twitterService.login()}
-                        className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-colors"
-                      >
-                        Link Twitter
-                      </button>
-                    )}
+                    {isTwitterVerified ? <div className="text-green-400 text-sm font-bold flex items-center gap-2"><CheckCircle2 size={16} /> Linked</div> : <button onClick={() => twitterService.login()} className="w-full py-2 bg-white/10 rounded-xl text-sm font-bold">Link Twitter</button>}
                   </div>
                </div>
-
                {isSignatureVerified && isTwitterVerified && (
-                  <button 
-                    onClick={startAudit}
-                    disabled={isScanning}
-                    className="w-full max-sm mx-auto py-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl text-lg font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
-                  >
-                    {isScanning ? <Loader2 className="animate-spin" /> : <Zap />}
-                    Start Audit
+                  <button onClick={startAudit} disabled={isScanning} className="w-full max-sm mx-auto py-4 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl text-lg font-black uppercase flex items-center justify-center gap-3 disabled:opacity-50 transition-all shadow-xl shadow-blue-600/20">
+                    {isScanning ? <Loader2 className="animate-spin" /> : <Zap />} Start Audit
                   </button>
                )}
             </div>
@@ -495,29 +446,36 @@ const App: React.FC = () => {
                {activeTab === 'dashboard' ? (
                  <div className="space-y-8">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="glass-effect p-8 rounded-[3rem] border-blue-500/20 text-center relative overflow-hidden flex flex-col items-center justify-center">
-                        <div className="relative z-10">
+                      <div className="glass-effect p-8 rounded-[3rem] border-blue-500/20 text-center relative flex flex-col items-center justify-center">
                           <span className="text-[10px] font-black uppercase text-yellow-400 tracking-widest">MY BASE IMPRESSION</span>
                           <div className="text-6xl font-black italic mt-2 text-blue-500 drop-shadow-[0_0_15px_rgba(37,99,235,0.4)]">{user.points.toFixed(2)}</div>
                           <div className="mt-6 w-48 mx-auto h-1.5 bg-white/5 rounded-full overflow-hidden">
                             <div className="h-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,1)]" style={{ width: `${Math.min((user.points / 1000) * 100, 100)}%` }} />
                           </div>
-                        </div>
                       </div>
-                      <div className="glass-effect p-8 rounded-[3rem] border-white/10 text-center relative overflow-hidden flex flex-col items-center justify-center gap-4">
-                         <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">IMPRESSION STATUS</span>
-                         <div className="flex flex-col items-center gap-2">
-                           {claimEligibility.status === 'ELIGIBLE' ? (
-                             <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-6 py-2 rounded-full">
-                               <CheckCircle2 className="w-4 h-4 text-green-500" />
-                               <span className="text-sm font-black text-green-400 uppercase italic">ELIGIBLE</span>
-                             </div>
-                           ) : (
-                             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-6 py-2 rounded-full">
-                               <Ban className="w-4 h-4 text-red-500" />
-                               <span className="text-sm font-black text-red-400 uppercase italic">NOT ELIGIBLE</span>
-                             </div>
-                           )}
+                      <div className="glass-effect p-8 rounded-[3rem] border-white/10 text-center flex flex-col items-center justify-center gap-6">
+                         <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">ECOSYSTEM ACTIONS</span>
+                         <div className="flex flex-col w-full gap-3">
+                            <button 
+                               onClick={handleShareOnFarcaster}
+                               className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-2xl flex items-center justify-center gap-3 text-sm font-black uppercase italic transition-all group"
+                            >
+                               <Share2 className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                               Share Your Impact
+                            </button>
+                            <div className="flex flex-col items-center gap-2">
+                              {claimEligibility.status === 'ELIGIBLE' ? (
+                                <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-6 py-2 rounded-full">
+                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                  <span className="text-sm font-black text-green-400 uppercase italic">ELIGIBLE</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-6 py-2 rounded-full">
+                                  <Ban className="w-4 h-4 text-red-500" />
+                                  <span className="text-sm font-black text-red-400 uppercase italic">NOT ELIGIBLE</span>
+                                </div>
+                              )}
+                            </div>
                          </div>
                       </div>
                     </div>
@@ -622,7 +580,6 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 </div>
-
                 <div className="pt-2 text-center">
                   <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
                     Access is limited to verified Farcaster accounts.

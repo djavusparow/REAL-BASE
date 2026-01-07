@@ -61,7 +61,10 @@ export class TokenService {
   }
 
   /**
-   * Multi-source real-time pricing engine with fallbacks and caching.
+   * Multi-source real-time pricing engine with priority: 
+   * 1. DexScreener (DEX standard)
+   * 2. GeckoTerminal (Aggregator fallback)
+   * 3. Gemini AI Grounding (Emergency fallback)
    */
   async getTokenPrice(contractAddress: string): Promise<number> {
     const now = Date.now();
@@ -73,37 +76,59 @@ export class TokenService {
     }
 
     let price = 0;
+    let source = "NONE";
 
-    // Source 1: DexScreener
+    // Source 1: DexScreener (Priority)
     try {
       const response = await fetch(`${DEXSCREENER_API}${normalizedAddress}`, { signal: AbortSignal.timeout(4000) });
       const data = await response.json();
-      if (data.pairs?.[0]?.priceUsd) {
+      if (data.pairs && data.pairs.length > 0 && data.pairs[0].priceUsd) {
         price = parseFloat(data.pairs[0].priceUsd);
+        if (price > 0) {
+          source = "DexScreener";
+          console.log(`[TokenService] Successfully fetched price from ${source}: $${price}`);
+        }
       }
-    } catch (e) { console.warn(`[TokenService] DexScreener failed for ${contractAddress}`); }
+    } catch (e) { 
+      console.warn(`[TokenService] DexScreener request failed for ${contractAddress}`); 
+    }
 
-    // Source 2: GeckoTerminal Fallback
+    // Source 2: GeckoTerminal (Fallback 1)
     if (price === 0) {
       try {
         const response = await fetch(`${GECKOTERMINAL_API}${normalizedAddress}`, { signal: AbortSignal.timeout(4000) });
         const data = await response.json();
         if (data.data?.attributes?.price_usd) {
           price = parseFloat(data.data.attributes.price_usd);
+          if (price > 0) {
+            source = "GeckoTerminal";
+            console.log(`[TokenService] Successfully fetched price from ${source}: $${price}`);
+          }
         }
-      } catch (e) { console.warn(`[TokenService] GeckoTerminal failed for ${contractAddress}`); }
+      } catch (e) { 
+        console.warn(`[TokenService] GeckoTerminal request failed for ${contractAddress}`); 
+      }
     }
 
-    // Source 3: AI Intelligence Fallback (Gemini with Search Grounding)
+    // Source 3: AI Intelligence (Fallback 2 - Gemini with Search Grounding)
     if (price === 0) {
       try {
-        console.log(`[TokenService] Invoking Gemini Search grounding for ${contractAddress}`);
+        console.log(`[TokenService] Triggering AI Fallback: Invoking Gemini Search grounding for ${contractAddress}`);
         price = await geminiService.getTokenPrice("Token", contractAddress);
-      } catch (e) { console.warn(`[TokenService] AI Fallback failed for ${contractAddress}`); }
+        if (price > 0) {
+          source = "Gemini AI";
+          console.log(`[TokenService] Successfully fetched price from ${source}: $${price}`);
+        }
+      } catch (e) { 
+        console.warn(`[TokenService] Gemini AI fallback failed for ${contractAddress}`); 
+      }
     }
 
     // Final sanity check
-    if (price <= 0) price = 0.0001;
+    if (price <= 0) {
+      console.error(`[TokenService] All sources failed for ${contractAddress}. Defaulting to minimal value.`);
+      price = 0.0001;
+    }
 
     // Update Cache
     this.priceCache[normalizedAddress] = { value: price, timestamp: now };
