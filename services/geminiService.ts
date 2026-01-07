@@ -1,45 +1,27 @@
 import { GoogleGenAI } from "@google/genai";
+import { TIERS } from "../constants.ts";
+import { RankTier } from "../types.ts";
 
 export class GeminiService {
   /**
-   * Generates a high-fidelity NFT badge based on the specific shield design provided.
+   * Refines the specific tier badge image to high-fidelity NFT quality.
+   * Strictly maintains the source image structure while enhancing clarity.
    */
   async generateBadgePreview(tier: string, handle: string, retryAttempt: number = 0): Promise<string | null> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Use Gemini 3 Pro for maximum aesthetic alignment
       const modelName = retryAttempt === 0 ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
       
-      let metalType = "";
-      let carColor = "";
-      let glowColor = "";
+      const config = TIERS[tier as RankTier];
+      if (!config || !config.referenceImageUrl) return null;
 
-      if (tier === 'PLATINUM') {
-        metalType = "pure polished Platinum and iridescent glass";
-        carColor = "white iridescent supercar";
-        glowColor = "bright rainbow holographic shimmer";
-      } else if (tier === 'GOLD') {
-        metalType = "24k polished gold with a sun-brushed texture";
-        carColor = "vibrant gold supercar";
-        glowColor = "warm golden aura and lens flare";
-      } else if (tier === 'SILVER') {
-        metalType = "brushed metallic silver and chrome";
-        carColor = "sleek silver supercar";
-        glowColor = "cool blue and white metallic reflections";
-      } else if (tier === 'BRONZE') {
-        metalType = "deep bronze and polished copper";
-        carColor = "metallic bronze supercar";
-        glowColor = "warm amber and purple neon undertones";
-      }
-
-      const prompt = `A ultra-high-quality professional NFT badge design. 
-           The badge is a vertical hexagonal SHIELD shape made of ${metalType}.
-           TOP SECTION: Bold text that says "NFT BADGE".
-           CENTER SECTION: A highly detailed ${carColor} (Lamborghini style) parked in front of a circular metallic ring.
-           BOTTOM SECTION: Large bold text that says "BASE" and "IMPRESSION" below it.
-           FOOTER: A separate text label at the very bottom says "${tier}".
-           AESTHETIC: High-end luxury photography style, soft bokeh background, studio lighting, ray-tracing, 8k resolution, crisp edges, cinematic atmosphere. 
-           The final result must look exactly like a physical luxury badge. ${glowColor}.`;
+      const prompt = `Perform a high-fidelity 8k reconstruction of this specific NFT badge: ${config.referenceImageUrl}. 
+           STRICT RULES:
+           1. Maintain the vertical hexagonal SHIELD shape.
+           2. Ensure the text "NFT BADGE" is at the top, "BASE IMPRESSION" in the middle, and "${tier}" at the bottom.
+           3. Keep the supercar (Lamborghini style) centered in the circular frame.
+           4. Enhance the ${tier} metallic material (Platinum/Gold/Silver/Bronze) with realistic ray-traced reflections and studio lighting.
+           5. Do NOT add any new elements or change the layout. The goal is upscaling and sharpening the existing design to look premium.`;
 
       const response = await ai.models.generateContent({
         model: modelName,
@@ -60,8 +42,9 @@ export class GeminiService {
 
       const candidate = response.candidates[0];
       if (candidate.finishReason === 'SAFETY' || !candidate.content?.parts) {
-        if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
-        return null;
+        // Fallback to direct reference image if AI safety triggers or fails, 
+        // ensuring user still gets their correct tier badge.
+        return config.referenceImageUrl;
       }
 
       for (const part of candidate.content.parts) {
@@ -70,12 +53,11 @@ export class GeminiService {
         }
       }
       
-      if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
-      return null;
+      return config.referenceImageUrl;
     } catch (error) {
-      console.error(`Gemini Generation Error:`, error);
-      if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
-      return null;
+      console.error(`Gemini Enhancement Error:`, error);
+      const config = TIERS[tier as RankTier];
+      return config?.referenceImageUrl || null;
     }
   }
 

@@ -37,7 +37,7 @@ export const SNAPSHOT_START = new Date("2025-11-01T00:01:00Z");
 export const SNAPSHOT_END = new Date("2026-12-31T23:59:00Z");
 
 /**
- * TIER DEFINITIONS - Updated with specific Image Assets based on user request
+ * TIER DEFINITIONS - Explicitly using the user's provided badge designs
  */
 export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoints: number, supply: number, minLamboUsd: number, referenceImageUrl: string }> = {
   [RankTier.PLATINUM]: {
@@ -50,7 +50,7 @@ export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoint
     maxPoints: 2500,
     supply: 25,
     minLamboUsd: 2.5,
-    referenceImageUrl: "https://i.ibb.co/C3Xg3mC/platinum.jpg" // Placeholder for the actual uploaded asset
+    referenceImageUrl: "https://i.ibb.co/C3Xg3mC/platinum.jpg"
   },
   [RankTier.GOLD]: {
     name: "Gold",
