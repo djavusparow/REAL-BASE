@@ -3,30 +3,38 @@ import { GoogleGenAI } from "@google/genai";
 export class GeminiService {
   /**
    * Generates a ultra-high-quality premium badge visual using Gemini.
+   * Optimized for Gemini 3 Pro / 2.5 Flash Image models.
    */
   async generateBadgePreview(tier: string, handle: string, retryAttempt: number = 0): Promise<string | null> {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Priority: gemini-3-pro-image-preview for artistic quality
+      // Priority: gemini-3-pro-image-preview for high resolution and artistic complexity
       const modelName = retryAttempt === 0 ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
       
       let aestheticDesc = "";
+      let coreColor = "";
+      
       if (tier === 'PLATINUM') {
-        aestheticDesc = "made of pure iridescent diamond and transparent obsidian glass. Rainbow refraction, glowing white core, holographic fragments floating inside.";
+        aestheticDesc = "an ethereal floating diamond artifact with infinite internal reflections and iridescent holographic liquid. Translucent obsidian glass frame.";
+        coreColor = "shimmering diamond, rainbow prism, white laser glow";
       } else if (tier === 'GOLD') {
-        aestheticDesc = "made of molten liquid gold encased in a polished crystal sphere. Warm amber glow, premium gold metallic textures, rays of light.";
+        aestheticDesc = "a levitating core of molten sun-gold encased in a thick, perfectly polished crystal geometric sphere. Micro-circuits etched in gold.";
+        coreColor = "warm amber radiance, 24k gold metallic, solar flare glow";
       } else if (tier === 'SILVER') {
-        aestheticDesc = "made of brushed titanium and frosted glass. Cold blue neon rim lighting, sleek futuristic metallic finish, elegant chrome reflections.";
+        aestheticDesc = "a futuristic orb of liquid mercury and frosted sapphire glass. Sharp metallic edges with soft blue neon inner lighting.";
+        coreColor = "cool azure, brushed chrome, arctic silver reflections";
       } else if (tier === 'BRONZE') {
-        aestheticDesc = "made of deep purple translucent resin and copper circuits. Cyberpunk aesthetic, neon violet glow, industrial futuristic textures.";
+        aestheticDesc = "a cybernetic relic made of deep amethyst resin and aged copper. Pulsing purple energy veins visible through semi-transparent layers.";
+        coreColor = "neon violet, copper antique, dark purple obsidian";
       }
 
-      // High-end artistic prompt
-      const prompt = `A premium 3D digital crypto trophy badge, floating in mid-air. 
-           The badge is a masterpiece of digital art: ${aestheticDesc}. 
-           In the center, a minimalist and elegant futuristic "B" logo for BASE is etched inside the glass with glowing light. 
-           The handle "${handle}" is not visible but the design represents elite status.
-           Lighting: Cinematic ray-tracing, soft bokeh background, dark atmospheric studio lighting, 8k resolution, Unreal Engine 5 render style, masterpiece.`;
+      // Mastery Level Prompt for Crypto-Aesthetic
+      const prompt = `A ultra-premium 3D digital medallion NFT badge for elite crypto builders. 
+           Design: ${aestheticDesc}. 
+           Centerpiece: A glowing, minimalist "B" logo (representing Base) floating inside the core. 
+           Materials: ${coreColor}, high-refractive index glass, liquid metal, and holographic energy.
+           Visual Style: Octane Render, 8k, highly detailed textures, depth of field, studio lighting on black background, futuristic, luxury, masterpiece. 
+           The design should look like a rare high-value digital asset.`;
 
       const response = await ai.models.generateContent({
         model: modelName,
@@ -36,19 +44,20 @@ export class GeminiService {
         config: {
           imageConfig: {
             aspectRatio: "1:1",
-            imageSize: "1K"
+            imageSize: "1K" // High quality for Pro model
           }
         }
       });
 
       if (!response.candidates || response.candidates.length === 0) {
-        throw new Error("No candidates");
+        throw new Error("No candidates returned from Gemini");
       }
 
       const candidate = response.candidates[0];
       
       // Handle safety or empty content
       if (candidate.finishReason === 'SAFETY' || !candidate.content?.parts) {
+        console.warn("Safety filter triggered or no parts, retrying with fallback model...");
         if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
         return null;
       }
@@ -62,7 +71,7 @@ export class GeminiService {
       if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
       return null;
     } catch (error) {
-      console.error(`Gemini High-Quality Visual Error:`, error);
+      console.error(`Gemini Image Generation Error:`, error);
       if (retryAttempt === 0) return this.generateBadgePreview(tier, handle, 1);
       return null;
     }
