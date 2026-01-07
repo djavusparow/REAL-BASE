@@ -576,7 +576,6 @@ const App: React.FC = () => {
                                </div>
                             </div>
                             
-                            {/* BASEPOSTING SECTION */}
                             <div className="bg-blue-600/5 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between group hover:bg-blue-600/10 transition-all">
                                <div className="flex items-center gap-3">
                                   <Hash className="text-blue-500" size={18} />
@@ -588,7 +587,7 @@ const App: React.FC = () => {
                                <div className="text-right">
                                   <div className="flex items-center gap-1 justify-end">
                                      <p className="text-[10px] font-black text-blue-500">+{user.basepostingPoints} PTS</p>
-                                     <Info size={10} className="text-blue-500/50 cursor-help" title="1 pt per original post mentioning @base, @baseapp, @baseposting, @jessepollak or @brian_armstrong. Capped at 5 pts/day." />
+                                     <Info size={10} className="text-blue-500/50 cursor-help" />
                                   </div>
                                   <p className="text-[8px] font-bold text-gray-600 uppercase">Capped at 5/Day</p>
                                </div>
@@ -772,20 +771,27 @@ const App: React.FC = () => {
                                <RefreshCw className={`w-4 h-4 ${isRefreshingAssets ? 'animate-spin' : ''}`} />
                              </button>
                           </div>
-                          <div className="space-y-5">
+                          <div className="space-y-6">
                              {[
-                               { label: 'Social Impact', pts: user.pointsBreakdown?.social_twitter || 0, color: 'bg-blue-500' },
-                               { label: 'Farcaster Synergy', pts: user.pointsBreakdown?.social_fc || 0, color: 'bg-purple-500' },
-                               { label: '$LAMBOLESS Yield', pts: user.pointsBreakdown?.lambo || 0, color: 'bg-yellow-500' },
-                               { label: 'Onchain Seniority', pts: user.pointsBreakdown?.seniority || 0, color: 'bg-indigo-500' }
+                               { label: 'BASEPOSTING', pts: user.basepostingPoints || 0, color: 'bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)]', fullLabel: 'Capped 5/Day' },
+                               { label: 'SOCIAL IMPACT', pts: user.pointsBreakdown?.social_twitter || 0, color: 'bg-blue-400' },
+                               { label: 'FARCASTER SYNERGY', pts: user.pointsBreakdown?.social_fc || 0, color: 'bg-purple-500' },
+                               { label: '$LAMBOLESS YIELD', pts: user.pointsBreakdown?.lambo || 0, color: 'bg-yellow-500' },
+                               { label: 'ONCHAIN SENIORITY', pts: user.pointsBreakdown?.seniority || 0, color: 'bg-indigo-500' }
                              ].map((item, i) => (
-                               <div key={i} className="space-y-2">
-                                 <div className="flex justify-between text-[10px] font-black uppercase italic tracking-widest">
-                                   <span className="text-gray-500">{item.label}</span>
+                               <div key={i} className="space-y-3">
+                                 <div className="flex justify-between items-center text-[11px] font-black uppercase italic tracking-widest">
+                                   <div className="flex items-center gap-2">
+                                      <span className="text-gray-400">{item.label}</span>
+                                      {item.fullLabel && <span className="text-[8px] text-gray-600 not-italic font-bold">{item.fullLabel}</span>}
+                                   </div>
                                    <span className="text-blue-400">+{item.pts.toFixed(2)} PTS</span>
                                  </div>
-                                 <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
-                                   <div className={`h-full ${item.color} rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(255,255,255,0.2)]`} style={{ width: `${Math.min((item.pts / Math.max(user.points, 1)) * 100, 100)}%` }} />
+                                 <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                   <div 
+                                      className={`h-full ${item.color} rounded-full transition-all duration-1000`} 
+                                      style={{ width: `${Math.min((item.pts / Math.max(user.points, 1)) * 100, 100)}%` }} 
+                                   />
                                  </div>
                                </div>
                              ))}
