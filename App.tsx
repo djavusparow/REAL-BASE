@@ -1,24 +1,30 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
+  Twitter, 
   CheckCircle2, 
   Zap, 
   ShieldCheck, 
+  Info, 
   Loader2, 
+  X,
   LogOut,
   Trophy,
+  Coins,
+  ExternalLink,
+  Sparkles,
+  User
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
 import { UserStats, RankTier } from './types';
-import { 
-  TIERS, 
-} from './constants';
+import { TIERS } from './constants';
 import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations';
 import BadgeDisplay from './components/BadgeDisplay';
 import { geminiService } from './services/geminiService';
 import { twitterService } from './services/twitterService';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
+
 const NFT_CONTRACT_ADDRESS = "0x4afc5DF90f6F2541C93f9b29Ec0A95b46ad61a6B"; 
 
 const MINIMAL_NFT_ABI = [
@@ -34,94 +40,117 @@ const MINIMAL_NFT_ABI = [
   }
 ];
 
-const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
-  const dimensions = size === 'lg' ? 'w-40 h-40' : 'w-10 h-10';
-  const radius = size === 'lg' ? 'rounded-[2.5rem]' : 'rounded-xl';
-  return (
-    <div className={`${dimensions} ${radius} relative overflow-hidden border border-white/20 blue-glow bg-blue-600 flex items-center justify-center`}>
-      <span className={`${size === 'lg' ? 'text-lg' : 'text-[7px]'} font-black text-white uppercase italic leading-none text-center px-1`}>Base<br/>Impression</span>
-    </div>
-  );
-};
-
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [user, setUser] = useState<UserStats | null>(null);
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
   const [showWalletSelector, setShowWalletSelector] = useState(false);
+  const [showCastPrompt, setShowCastPrompt] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
   const [isSignatureVerified, setIsSignatureVerified] = useState(false);
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'claim'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const [badgeImage, setBadgeImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
-  const tierSupplies = useMemo(() => ({
-    [RankTier.PLATINUM]: TIERS[RankTier.PLATINUM].supply,
-    [RankTier.GOLD]: TIERS[RankTier.GOLD].supply,
-    [RankTier.SILVER]: TIERS[RankTier.SILVER].supply,
-    [RankTier.BRONZE]: TIERS[RankTier.BRONZE].supply,
-    [RankTier.NONE]: 0
-  }), []);
-
+  // Auto-detect Farcaster Context
   useEffect(() => {
     const init = async () => {
-      // Safety timeout to prevent infinite loading
-      const timeoutId = setTimeout(() => setIsReady(true), 3000);
-
       try {
-        // 1. Initialize SDK
+        await sdk.actions.ready();
         const context = await sdk.context;
-        if (typeof sdk !== 'undefined' && sdk.actions) {
-          await sdk.actions.ready();
-        }
-
-        // 2. Auto-detect Farcaster User
-        if (context?.user) {
-          // Priority: Verified Addresses -> Custody Address
-          const fcAddress = context.user.verifiedAddresses?.[0] || context.user.custodyAddress;
-          if (fcAddress) {
-            setAddress(fcAddress);
-            setIsSignatureVerified(true);
-            console.log("Farcaster user detected:", context.user.username, fcAddress);
-          }
-        }
         
-        // 3. Load stored data if exists
+        // 1. Try to restore from local storage
         const stored = localStorage.getItem(STORAGE_KEY_USER);
         if (stored) {
           const data = JSON.parse(stored);
           setUser(data);
-          // If we didn't get an address from context, use the stored one
-          if (!address && data.address) {
-            setAddress(data.address);
-            setIsSignatureVerified(true);
-          }
-          if (data.twitterHandle) {
-            setHandle(data.twitterHandle);
-            setIsTwitterVerified(true);
+          setAddress(data.address);
+          setHandle(data.twitterHandle);
+          setIsSignatureVerified(true);
+          setIsTwitterVerified(true);
+        } else if (context?.user) {
+          // 2. Auto-fill from Farcaster Context if available
+          const fcAddr = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
+          if (fcAddr) setAddress(fcAddr);
+          if (context.user.username) {
+             setHandle(`@${context.user.username}`);
+             // If we have an address and a username, we consider the first layer verified
+             setIsSignatureVerified(!!fcAddr);
           }
         }
       } catch (e) { 
-        console.error("Initialization error:", e); 
+        console.error("Init error:", e); 
       } finally {
-        clearTimeout(timeoutId);
         setIsReady(true);
       }
     };
     init();
-  }, [address]);
+  }, []);
+
+  const handleManualVerification = () => {
+    if (!address) {
+      handleFarcasterAutoLogin();
+      return;
+    }
+    setIsSignatureVerified(true);
+  };
+
+  const handleTwitterFallback = () => {
+    if (handle.length < 3) {
+      const val = prompt("Enter your X (Twitter) handle:");
+      if (val) setHandle(val.startsWith('@') ? val : `@${val}`);
+    }
+    setIsTwitterVerified(true);
+  };
+
+  const handleFarcasterAutoLogin = async () => {
+    setIsConnecting(true);
+    try {
+      const provider = sdk.wallet?.ethProvider;
+      if (provider) {
+        const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
+        const fcAddr = accounts[0];
+        setIsSigning(true);
+        const web3 = new Web3(provider);
+        const msg = `Base Impression: Verify Wallet\nAddress: ${fcAddr}\nTime: ${Date.now()}`;
+        await web3.eth.personal.sign(msg, fcAddr, "");
+        setAddress(fcAddr);
+        setIsSignatureVerified(true);
+        setShowWalletSelector(false);
+      } else {
+        // Fallback for non-injected environments
+        const addr = prompt("Please enter your Base Wallet Address:");
+        if (addr && addr.startsWith('0x')) {
+          setAddress(addr);
+          setIsSignatureVerified(true);
+          setShowWalletSelector(false);
+        }
+      }
+    } catch (e) { 
+      console.error(e);
+    } finally { 
+      setIsConnecting(false); 
+      setIsSigning(false); 
+    }
+  };
 
   const startAudit = async () => {
     if (!handle) return;
     setIsScanning(true);
+    setScanProgress(10);
     try {
+      setScanProgress(30);
       const results = await twitterService.scanPosts(handle);
+      setScanProgress(70);
       const { total, breakdown } = calculateDetailedPoints(1, results.accountAgeDays, results.totalValidPosts, 0, { lambo: 0, jesse: 0, nick: 0 }, results.basepostingPoints);
-      
       const stats: UserStats = {
         address,
         twitterHandle: handle,
@@ -134,179 +163,163 @@ const App: React.FC = () => {
         rank: 0,
         trustScore: results.trustScore,
         recentContributions: results.foundTweets,
-        twitterDailyBreakdown: results.dailyBreakdown,
         pointsBreakdown: breakdown
       } as any;
-
+      setScanProgress(100);
       setUser(stats);
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(stats));
     } catch (e) { 
-      console.error(e); 
+        console.error(e); 
+        alert("Audit failed. Please check your handle and try again.");
     } finally { 
-      setIsScanning(false); 
+        setIsScanning(false); 
     }
   };
 
   const handleFullClaimProcess = async () => {
     if (isGenerating || isMinting || isMinted) return;
-    
     setIsGenerating(true);
-    const currentTier = getTierFromPoints(user!.points);
-    let finalImage = TIERS[currentTier].referenceImageUrl;
-    
     try {
-      const aiImage = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
-      if (aiImage) finalImage = aiImage;
+      const currentTier = getTierFromPoints(user!.points);
+      const finalImage = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
+      if (!finalImage) throw new Error("AI Visual Generation failed.");
       setBadgeImage(finalImage);
-    } catch (e) {
-      setBadgeImage(finalImage);
-    } finally {
       setIsGenerating(false);
-    }
-
-    setIsMinting(true);
-    try {
+      setIsMinting(true);
+      
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Please use a Farcaster-enabled wallet to mint.");
-
+      if (!provider) throw new Error("Wallet not connected.");
       const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
       const tierMap: Record<string, number> = { 'PLATINUM': 0, 'GOLD': 1, 'SILVER': 2, 'BRONZE': 3 };
       const tierIndex = tierMap[currentTier] ?? 3;
 
-      await contract.methods.mintBadge(finalImage, tierIndex).send({ from: address });
+      const mintTx = await contract.methods.mintBadge(finalImage, tierIndex).send({ from: address });
+      setTxHash(mintTx.transactionHash);
       setIsMinted(true);
+      setShowCastPrompt(true);
     } catch (e: any) {
-      alert(`Minting Failed: ${e.message || "Unknown error"}`);
+      console.error(e);
+      alert(e.message || "Action failed. Check your Base ETH balance.");
     } finally {
+      setIsGenerating(false);
       setIsMinting(false);
     }
   };
 
-  const claimEligibility = useMemo(() => {
-    if (!user) return { eligible: false, buttonText: 'Login Required' };
-    const tier = getTierFromPoints(user.points);
-    const hasSupply = tierSupplies[tier] > 0;
-    const eligible = tier !== RankTier.NONE && hasSupply;
-    return { eligible, tierName: TIERS[tier].name, buttonText: eligible ? `MINT ${TIERS[tier].name} BADGE` : 'Locked' };
-  }, [user, tierSupplies]);
-
-  if (!isReady) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
-        <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
-        <p className="text-gray-500 font-black uppercase text-[10px] tracking-widest animate-pulse">Detecting Farcaster Session...</p>
-      </div>
-    );
-  }
+  if (!isReady) return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
+      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      <p className="text-blue-500 font-black uppercase italic tracking-widest text-[10px]">SYNCING IDENTITY...</p>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-blue-500/30">
-        <nav className="border-b border-white/5 bg-black/50 backdrop-blur-xl sticky top-0 z-50 px-4 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3"><BrandLogo /><h1 className="text-lg font-black uppercase italic tracking-tighter">Base Impression</h1></div>
-            {address ? (
-               <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
-                 <span className="text-[10px] font-mono text-gray-400">{address.slice(0, 6)}...</span>
-                 <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-1 text-red-500 hover:bg-red-500/10 rounded-full transition-colors"><LogOut size={14} /></button>
+    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-blue-600/30 pb-20">
+        <nav className="border-b border-white/5 bg-black/80 backdrop-blur-xl sticky top-0 z-50 px-6 h-20 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/20">
+                <Zap size={20} fill="white" />
+              </div>
+              <h1 className="text-xl font-black uppercase italic tracking-tighter">BASE IMPRESSION</h1>
+            </div>
+            {address && (
+               <div className="flex items-center gap-3 bg-white/5 pl-4 pr-2 py-1.5 rounded-full border border-white/10">
+                 <span className="text-[10px] font-mono text-blue-400">{address.slice(0, 6)}...{address.slice(-4)}</span>
+                 <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition-colors"><LogOut size={16} /></button>
                </div>
-            ) : (
-               <button onClick={() => setShowWalletSelector(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-full font-black uppercase text-xs transition-all active:scale-95 shadow-lg shadow-blue-600/20">Login</button>
             )}
         </nav>
 
-        <main className="max-w-4xl mx-auto px-4 py-8 pb-20">
+        <main className="max-w-xl mx-auto px-6 py-10">
           {!user ? (
-            <div className="py-20 text-center space-y-12">
-               <div className="space-y-4">
-                 <h2 className="text-5xl md:text-7xl font-black italic uppercase tracking-tighter leading-none animate-in fade-in slide-in-from-top-4 duration-1000">YOUR BASE <br/><span className="text-blue-500">IMPACT</span></h2>
-                 <p className="text-gray-500 font-bold uppercase text-[10px] tracking-[0.4em]">Audit your contributions on the Base network</p>
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
+               <div className="text-center space-y-4">
+                 <h2 className="text-5xl font-black italic uppercase tracking-tighter leading-[0.9] text-white">YOUR IMPACT <br/><span className="text-blue-600">ONCHAIN.</span></h2>
+                 <p className="text-gray-500 font-bold uppercase text-[10px] tracking-[0.4em]">Audit. Verify. Mint.</p>
                </div>
                
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto">
-                  <div className={`p-8 rounded-[2rem] border transition-all duration-500 ${isSignatureVerified ? 'bg-blue-500/5 border-blue-500/30 text-blue-500' : 'bg-white/5 border-white/10'}`}>
-                    <p className="text-[10px] font-black uppercase mb-4 tracking-widest text-gray-500">Identity</p>
-                    {isSignatureVerified ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <CheckCircle2 size={32} className="text-blue-500 animate-in zoom-in" />
-                        <span className="text-[10px] font-mono opacity-50">{address.slice(0, 8)}...</span>
-                      </div>
-                    ) : (
-                      <button onClick={() => setShowWalletSelector(true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-500 transition-colors">Connect Wallet</button>
-                    )}
+               <div className="grid gap-4">
+                  <div className={`p-8 rounded-[2.5rem] border flex items-center justify-between transition-all ${isSignatureVerified ? 'bg-blue-600/10 border-blue-600/40' : 'bg-white/5 border-white/10'}`}>
+                    <div>
+                      <p className="text-[10px] font-black uppercase mb-1 tracking-widest text-gray-400">01. Identity</p>
+                      <h4 className="font-bold text-sm">{address ? `${address.slice(0,12)}...` : 'Not Connected'}</h4>
+                    </div>
+                    {isSignatureVerified ? <CheckCircle2 className="text-blue-500" /> : <button onClick={handleManualVerification} className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase">Verify</button>}
                   </div>
-                  <div className={`p-8 rounded-[2rem] border transition-all duration-500 ${isTwitterVerified ? 'bg-blue-500/5 border-blue-500/30 text-blue-500' : 'bg-white/5 border-white/10'}`}>
-                    <p className="text-[10px] font-black uppercase mb-4 tracking-widest text-gray-500">Social Presence</p>
-                    {isTwitterVerified ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <CheckCircle2 size={32} className="text-blue-500 animate-in zoom-in" />
-                        <span className="text-[10px] font-mono opacity-50">{handle}</span>
-                      </div>
-                    ) : (
-                      <button onClick={() => twitterService.login()} className="w-full py-3 bg-white/10 text-white border border-white/10 rounded-xl text-xs font-black uppercase hover:bg-white/20 transition-colors">Link X Profile</button>
-                    )}
+
+                  <div className={`p-8 rounded-[2.5rem] border flex items-center justify-between transition-all ${isTwitterVerified ? 'bg-blue-600/10 border-blue-600/40' : 'bg-white/5 border-white/10'}`}>
+                    <div>
+                      <p className="text-[10px] font-black uppercase mb-1 tracking-widest text-gray-400">02. Social Graph</p>
+                      <h4 className="font-bold text-sm">{handle || 'Enter Handle'}</h4>
+                    </div>
+                    {isTwitterVerified ? <CheckCircle2 className="text-blue-500" /> : <button onClick={handleTwitterFallback} className="px-6 py-2 bg-white/10 text-white border border-white/10 rounded-xl text-xs font-black uppercase">Link X</button>}
                   </div>
                </div>
 
-               {isSignatureVerified && isTwitterVerified && (
-                  <button 
-                    onClick={startAudit} 
-                    disabled={isScanning} 
-                    className="w-full max-w-sm mx-auto py-6 bg-blue-600 hover:bg-blue-500 rounded-[2rem] font-black uppercase italic text-lg flex items-center justify-center gap-4 transition-all active:scale-95 shadow-2xl shadow-blue-600/40"
-                  >
-                    {isScanning ? <Loader2 className="animate-spin" /> : <Zap fill="currentColor" />} 
-                    {isScanning ? 'Auditing Impact...' : 'Start Scan'}
+               {isSignatureVerified && isTwitterVerified ? (
+                  <button onClick={startAudit} disabled={isScanning} className="w-full py-7 bg-blue-600 rounded-[2.5rem] font-black uppercase italic text-xl flex items-center justify-center gap-4 transition-all hover:scale-[1.02] active:scale-95 shadow-2xl shadow-blue-600/30">
+                    {isScanning ? <Loader2 className="animate-spin" /> : <Zap fill="white" />} 
+                    START AUDIT
                   </button>
+               ) : (
+                  <p className="text-center text-[9px] text-gray-600 font-bold uppercase tracking-widest">Connect Identity & Social to Unlock Audit</p>
                )}
             </div>
           ) : (
-            <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-               <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5 max-w-xs mx-auto">
+            <div className="space-y-8 animate-in zoom-in-95 duration-500">
+               <div className="flex bg-white/5 p-1.5 rounded-2xl border border-white/5 backdrop-blur-xl shadow-inner">
                   {(['dashboard', 'claim'] as const).map(t => (
-                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}>{t}</button>
+                    <button key={t} onClick={() => setActiveTab(t)} className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === t ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500 hover:text-gray-300'}`}>{t}</button>
                   ))}
                </div>
 
                {activeTab === 'dashboard' ? (
                  <div className="grid gap-6">
-                    <div className="glass-effect p-12 rounded-[3.5rem] text-center border-white/5 relative overflow-hidden">
-                       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/10 blur-[100px] pointer-events-none" />
-                       <p className="text-[10px] font-black uppercase text-blue-400 tracking-[0.3em] mb-4">Total Impact Multiplier</p>
-                       <h3 className="text-8xl font-black italic tracking-tighter">{user.points.toFixed(0)}</h3>
-                       <div className="mt-8 pt-8 border-t border-white/5 grid grid-cols-2 gap-4">
-                          <div className="text-left">
-                            <p className="text-[8px] text-gray-500 uppercase font-black tracking-widest">Baseposting</p>
-                            <p className="text-xl font-bold">{user.basepostingPoints} Pts</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[8px] text-gray-500 uppercase font-black tracking-widest">Trust Score</p>
-                            <p className="text-xl font-bold text-blue-500">{user.trustScore}%</p>
-                          </div>
+                    <div className="bg-gradient-to-br from-blue-600/20 to-transparent p-12 rounded-[3.5rem] text-center border border-blue-500/20 relative overflow-hidden">
+                       <p className="text-[10px] font-black uppercase text-blue-400 tracking-[0.3em]">Audited Impact Score</p>
+                       <h3 className="text-9xl font-black italic mt-4 tracking-tighter">{user.points.toFixed(0)}</h3>
+                       <div className="flex items-center justify-center gap-2 mt-8 py-2 px-4 bg-blue-600/10 rounded-full w-fit mx-auto text-blue-400 text-[10px] font-bold uppercase tracking-widest border border-blue-500/20">
+                          <ShieldCheck size={14} /> Verified Rank: {getTierFromPoints(user.points)}
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="bg-white/5 p-8 rounded-[2rem] border border-white/10">
+                          <Twitter size={14} className="text-blue-400 mb-3" />
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">X Impact</p>
+                          <p className="text-3xl font-black italic">+{user.pointsBreakdown?.social_twitter.toFixed(0)}</p>
+                       </div>
+                       <div className="bg-white/5 p-8 rounded-[2rem] border border-white/10">
+                          <Coins size={14} className="text-yellow-500 mb-3" />
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Asset Score</p>
+                          <p className="text-3xl font-black italic">+{user.pointsBreakdown?.lambo.toFixed(0)}</p>
                        </div>
                     </div>
                  </div>
                ) : (
-                 <div className="space-y-10 text-center animate-in fade-in duration-500">
-                    <BadgeDisplay 
-                      tier={getTierFromPoints(user.points)} 
-                      imageUrl={badgeImage || TIERS[getTierFromPoints(user.points)].referenceImageUrl} 
-                      loading={isGenerating} 
-                    />
+                 <div className="space-y-12 text-center">
+                    <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
                     
-                    <div className="max-w-md mx-auto space-y-6">
+                    <div className="max-w-sm mx-auto space-y-6">
                        {isMinted ? (
-                         <div className="bg-green-500/10 text-green-400 p-6 rounded-[2rem] border border-green-500/20 font-black uppercase italic text-xs flex items-center justify-center gap-2">
-                           <Trophy size={20} /> Achievement Unlocked
+                         <div className="bg-green-500/10 text-green-400 p-8 rounded-[2.5rem] border border-green-500/20 flex flex-col items-center gap-3">
+                           <Trophy size={32} />
+                           <span className="font-black uppercase italic text-sm tracking-widest">Impact Secured</span>
+                           {txHash && <a href={`https://basescan.org/tx/${txHash}`} target="_blank" className="text-blue-400 underline text-[10px] font-mono">View on BaseScan</a>}
                          </div>
                        ) : (
                          <button 
                            onClick={handleFullClaimProcess}
-                           disabled={!claimEligibility.eligible || isGenerating || isMinting}
-                           className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all ${claimEligibility.eligible && !isGenerating && !isMinting ? 'bg-blue-600 hover:bg-blue-500 shadow-2xl active:scale-95' : 'bg-white/5 text-gray-600 cursor-not-allowed'}`}
+                           disabled={isGenerating || isMinting || getTierFromPoints(user.points) === RankTier.NONE}
+                           className={`w-full py-7 rounded-[2.5rem] font-black uppercase italic text-lg flex items-center justify-center gap-3 transition-all ${!isGenerating && !isMinting ? 'bg-blue-600 hover:bg-blue-500 shadow-xl' : 'bg-white/5 text-gray-600 cursor-not-allowed'}`}
                          >
-                           {isGenerating || isMinting ? <Loader2 className="animate-spin w-5 h-5" /> : <Zap className="w-5 h-5" />}
-                           {isGenerating ? 'Rendering Badge...' : isMinting ? 'Minting NFT...' : claimEligibility.buttonText}
+                           {isGenerating || isMinting ? <Loader2 className="animate-spin" /> : <Zap fill="white" />}
+                           {isGenerating ? 'FORGING...' : isMinting ? 'MINTING...' : `MINT ${getTierFromPoints(user.points)} BADGE`}
                          </button>
                        )}
+                       <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest italic flex items-center justify-center gap-2">
+                          <Info size={12} /> Network gas fees apply on Base
+                       </p>
                     </div>
                  </div>
                )}
@@ -314,16 +327,32 @@ const App: React.FC = () => {
           )}
         </main>
 
-        {showWalletSelector && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
-             <div className="w-full max-w-xs bg-[#0a0a0a] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 shadow-2xl">
-                <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-xl shadow-blue-600/20">
-                  <ShieldCheck size={32} />
+        {showCastPrompt && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl animate-in zoom-in duration-300">
+             <div className="w-full max-w-md bg-[#0a0a0a] border border-blue-500/30 rounded-[3.5rem] p-12 text-center space-y-8">
+                <Sparkles className="text-blue-500 w-16 h-16 mx-auto" />
+                <div className="space-y-2">
+                  <h3 className="text-4xl font-black uppercase italic tracking-tighter">SUCCESS</h3>
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Badge Secured on Base Mainnet.</p>
                 </div>
-                <h3 className="text-2xl font-black italic uppercase">Connect</h3>
-                <div className="space-y-3">
-                  <button onClick={() => { setAddress('0x' + Math.random().toString(16).slice(2, 42)); setIsSignatureVerified(true); setShowWalletSelector(false); }} className="w-full py-4 bg-blue-600 rounded-2xl font-black uppercase italic text-xs hover:bg-blue-500 transition-all">Manual Verification</button>
-                  <button onClick={() => setShowWalletSelector(false)} className="w-full py-4 bg-white/5 rounded-2xl font-black uppercase italic text-xs text-gray-400 hover:bg-white/10">Close</button>
+                <button onClick={() => sdk.actions.cast({ text: `Just minted my Base Impression Badge with ${user?.points.toFixed(0)} points! 🏎️💨 Audit your impact at real-base-2026.vercel.app` })} className="w-full py-6 bg-white text-black rounded-[2rem] font-black uppercase italic text-xs shadow-xl active:scale-95 transition-transform">Share Achievement</button>
+                <button onClick={() => setShowCastPrompt(false)} className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.4em]">Dismiss</button>
+             </div>
+          </div>
+        )}
+        
+        {isScanning && (
+          <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center p-6 bg-black backdrop-blur-2xl">
+             <div className="w-64 h-64 relative flex items-center justify-center">
+                <div className="absolute inset-0 border-8 border-blue-600/10 rounded-full" />
+                <div className="absolute inset-0 border-8 border-blue-600 rounded-full border-t-transparent animate-spin" />
+                <p className="text-5xl font-black italic tracking-tighter">{scanProgress}%</p>
+             </div>
+             <div className="mt-16 text-center space-y-6">
+                <h3 className="text-4xl font-black uppercase italic tracking-tighter">AUDITING IMPACT</h3>
+                <div className="flex items-center gap-3 text-blue-500 animate-pulse">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                  <p className="text-xs font-bold uppercase tracking-[0.3em]">Analyzing Social & On-Chain Graphs</p>
                 </div>
              </div>
           </div>
