@@ -34,7 +34,8 @@ import {
   History,
   Calendar,
   UserPlus,
-  Hash
+  Hash,
+  Image as ImageIcon
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -323,6 +324,20 @@ const App: React.FC = () => {
     return { eligible, tierName: TIERS[tier].name };
   }, [user]);
 
+  const handleGenerateBadge = async () => {
+    if (!user) return;
+    setIsGenerating(true);
+    try {
+      const currentTier = getTierFromPoints(user.points);
+      const img = await geminiService.generateBadgePreview(currentTier, user.twitterHandle);
+      if (img) setBadgeImage(img);
+    } catch (e) {
+      console.error("Badge Generation Failed", e);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   if (!isReady) return (
     <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center gap-6">
       <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -473,10 +488,25 @@ const App: React.FC = () => {
                                 <div className="flex justify-between items-end"><span className="text-xs font-black uppercase tracking-widest">$LAMBOLESS Value</span><span className="text-[10px] font-mono text-gray-400">${(user.lambolessBalance || 0).toFixed(2)} / $2.50</span></div>
                                 <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden"><div className={`h-full ${(user.lambolessBalance || 0) >= 2.5 ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${Math.min(((user.lambolessBalance || 0) / 2.5) * 100, 100)}%` }} /></div>
                              </div>
-                             <button onClick={() => { if (!badgeImage) geminiService.generateBadgePreview(getTierFromPoints(user.points), user.twitterHandle).then(setBadgeImage); }} disabled={!claimEligibility.eligible} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all ${claimEligibility.eligible ? 'bg-blue-600 text-white shadow-blue-500/30' : 'bg-white/5 text-gray-600 opacity-50'}`}>
-                               {claimEligibility.eligible ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                               {claimEligibility.eligible ? `Mint ${claimEligibility.tierName} Badge` : 'Claim Locked'}
-                             </button>
+
+                             <div className="pt-4 space-y-3">
+                               <button 
+                                 onClick={handleGenerateBadge} 
+                                 disabled={isGenerating} 
+                                 className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] flex items-center justify-center gap-3 transition-all border ${isGenerating ? 'bg-white/5 border-white/5 text-gray-500' : 'bg-white/10 border-white/20 text-white hover:bg-white/20 shadow-lg shadow-white/5'}`}
+                               >
+                                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+                                 {isGenerating ? 'Generating NFT Visual...' : 'Generate NFT Badge Preview'}
+                               </button>
+
+                               <button 
+                                 disabled={!claimEligibility.eligible || !badgeImage} 
+                                 className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border shadow-2xl ${claimEligibility.eligible && badgeImage ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'bg-white/5 text-gray-600 opacity-50'}`}
+                               >
+                                 {claimEligibility.eligible && badgeImage ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                                 {!badgeImage && claimEligibility.eligible ? 'Generate Visual to Mint' : claimEligibility.eligible ? `Mint ${claimEligibility.tierName} Badge` : 'Claim Locked'}
+                               </button>
+                             </div>
                           </div>
                        </div>
                     </div>
