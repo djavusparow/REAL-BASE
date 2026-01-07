@@ -27,7 +27,7 @@ import { twitterService } from './services/twitterService';
 const STORAGE_KEY_USER = 'base_impression_v1_user';
 const STORAGE_KEY_SUPPLIES = 'base_impression_v1_supplies';
 
-// ALAMAT KONTRAK BASE IMPRESSION NFT YANG BARU SAJA DI-DEPLOY
+// ALAMAT KONTRAK BASE IMPRESSION NFT
 const NFT_CONTRACT_ADDRESS = "0x4afc5DF90f6F2541C93f9b29Ec0A95b46ad61a6B"; 
 
 const MINIMAL_NFT_ABI = [
@@ -195,16 +195,19 @@ const App: React.FC = () => {
 
       setIsMinting(true);
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet provider not found.");
+      if (!provider) throw new Error("Wallet provider not found. Please ensure you are in a supported environment.");
 
+      // Re-initialize Web3 with the SDK provider
       const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
       
       const tierMap: Record<string, number> = { 'PLATINUM': 0, 'GOLD': 1, 'SILVER': 2, 'BRONZE': 3 };
       const tierIndex = tierMap[currentTier] ?? 3;
 
+      // Improved Transaction call for Frame SDK compatibility
       const mintTx = await contract.methods.mintBadge(img, tierIndex).send({ 
         from: address,
+        // Remove gas property to let the wallet handle estimation
       });
 
       setTxHash(mintTx.transactionHash);
@@ -213,11 +216,13 @@ const App: React.FC = () => {
       setShowCastPrompt(true);
 
     } catch (e: any) {
-      console.error("Transaction Error:", e);
-      if (e.message.includes("User denied") || e.message.includes("rejected")) {
-        alert("Transaction Cancelled.");
+      console.error("Minting Detailed Error:", e);
+      if (e.message?.includes("User denied") || e.message?.includes("rejected")) {
+        alert("Transaction Cancelled by User.");
+      } else if (e.message?.includes("insufficient funds")) {
+        alert("Insufficient Gas. You need more ETH on Base Mainnet.");
       } else {
-        alert("Minting Failed. Ensure the contract is deployed and you have gas.");
+        alert(`Minting Failed: ${e.message || "Unknown error"}. Ensure you have ETH for gas on Base.`);
       }
     } finally {
       setIsGenerating(false);
