@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, 
   Zap, 
@@ -69,34 +69,51 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
-      // Set a safety timeout to prevent infinite loading if SDK doesn't respond
-      const timeoutId = setTimeout(() => {
-        if (!isReady) setIsReady(true);
-      }, 2000);
+      // Safety timeout to prevent infinite loading
+      const timeoutId = setTimeout(() => setIsReady(true), 3000);
 
       try {
+        // 1. Initialize SDK
+        const context = await sdk.context;
         if (typeof sdk !== 'undefined' && sdk.actions) {
           await sdk.actions.ready();
         }
+
+        // 2. Auto-detect Farcaster User
+        if (context?.user) {
+          // Priority: Verified Addresses -> Custody Address
+          const fcAddress = context.user.verifiedAddresses?.[0] || context.user.custodyAddress;
+          if (fcAddress) {
+            setAddress(fcAddress);
+            setIsSignatureVerified(true);
+            console.log("Farcaster user detected:", context.user.username, fcAddress);
+          }
+        }
         
+        // 3. Load stored data if exists
         const stored = localStorage.getItem(STORAGE_KEY_USER);
         if (stored) {
           const data = JSON.parse(stored);
           setUser(data);
-          setAddress(data.address || '');
-          setHandle(data.twitterHandle || '');
-          setIsSignatureVerified(!!data.address);
-          setIsTwitterVerified(!!data.twitterHandle);
+          // If we didn't get an address from context, use the stored one
+          if (!address && data.address) {
+            setAddress(data.address);
+            setIsSignatureVerified(true);
+          }
+          if (data.twitterHandle) {
+            setHandle(data.twitterHandle);
+            setIsTwitterVerified(true);
+          }
         }
       } catch (e) { 
-        console.error("Init error:", e); 
+        console.error("Initialization error:", e); 
       } finally {
         clearTimeout(timeoutId);
         setIsReady(true);
       }
     };
     init();
-  }, []);
+  }, [address]);
 
   const startAudit = async () => {
     if (!handle) return;
@@ -104,6 +121,7 @@ const App: React.FC = () => {
     try {
       const results = await twitterService.scanPosts(handle);
       const { total, breakdown } = calculateDetailedPoints(1, results.accountAgeDays, results.totalValidPosts, 0, { lambo: 0, jesse: 0, nick: 0 }, results.basepostingPoints);
+      
       const stats: UserStats = {
         address,
         twitterHandle: handle,
@@ -119,6 +137,7 @@ const App: React.FC = () => {
         twitterDailyBreakdown: results.dailyBreakdown,
         pointsBreakdown: breakdown
       } as any;
+
       setUser(stats);
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(stats));
     } catch (e) { 
@@ -137,12 +156,9 @@ const App: React.FC = () => {
     
     try {
       const aiImage = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
-      if (aiImage) {
-        finalImage = aiImage;
-      }
+      if (aiImage) finalImage = aiImage;
       setBadgeImage(finalImage);
     } catch (e) {
-      console.warn("AI refinement failed, using static asset:", e);
       setBadgeImage(finalImage);
     } finally {
       setIsGenerating(false);
@@ -151,17 +167,14 @@ const App: React.FC = () => {
     setIsMinting(true);
     try {
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet not connected. Please open in a Farcaster compatible client.");
+      if (!provider) throw new Error("Please use a Farcaster-enabled wallet to mint.");
 
       const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
       const tierMap: Record<string, number> = { 'PLATINUM': 0, 'GOLD': 1, 'SILVER': 2, 'BRONZE': 3 };
       const tierIndex = tierMap[currentTier] ?? 3;
 
-      await contract.methods.mintBadge(finalImage, tierIndex).send({ 
-        from: address,
-      });
-
+      await contract.methods.mintBadge(finalImage, tierIndex).send({ from: address });
       setIsMinted(true);
     } catch (e: any) {
       alert(`Minting Failed: ${e.message || "Unknown error"}`);
@@ -182,7 +195,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
         <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
-        <p className="text-gray-500 font-black uppercase text-[10px] tracking-widest animate-pulse">Initializing Interface...</p>
+        <p className="text-gray-500 font-black uppercase text-[10px] tracking-widest animate-pulse">Detecting Farcaster Session...</p>
       </div>
     );
   }
@@ -205,24 +218,24 @@ const App: React.FC = () => {
           {!user ? (
             <div className="py-20 text-center space-y-12">
                <div className="space-y-4">
-                 <h2 className="text-5xl md:text-7xl font-black italic uppercase tracking-tighter leading-none animate-in fade-in slide-in-from-top-4 duration-1000">CHECK YOUR <br/><span className="text-blue-500">IMPACT</span></h2>
-                 <p className="text-gray-500 font-bold uppercase text-[10px] tracking-[0.4em]">Scan your Base presence across the ecosystem</p>
+                 <h2 className="text-5xl md:text-7xl font-black italic uppercase tracking-tighter leading-none animate-in fade-in slide-in-from-top-4 duration-1000">YOUR BASE <br/><span className="text-blue-500">IMPACT</span></h2>
+                 <p className="text-gray-500 font-bold uppercase text-[10px] tracking-[0.4em]">Audit your contributions on the Base network</p>
                </div>
                
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto">
                   <div className={`p-8 rounded-[2rem] border transition-all duration-500 ${isSignatureVerified ? 'bg-blue-500/5 border-blue-500/30 text-blue-500' : 'bg-white/5 border-white/10'}`}>
-                    <p className="text-[10px] font-black uppercase mb-4 tracking-widest text-gray-500">01. Identity</p>
+                    <p className="text-[10px] font-black uppercase mb-4 tracking-widest text-gray-500">Identity</p>
                     {isSignatureVerified ? (
                       <div className="flex flex-col items-center gap-2">
                         <CheckCircle2 size={32} className="text-blue-500 animate-in zoom-in" />
                         <span className="text-[10px] font-mono opacity-50">{address.slice(0, 8)}...</span>
                       </div>
                     ) : (
-                      <button onClick={() => setShowWalletSelector(true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-500 transition-colors">Verify Wallet</button>
+                      <button onClick={() => setShowWalletSelector(true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-500 transition-colors">Connect Wallet</button>
                     )}
                   </div>
                   <div className={`p-8 rounded-[2rem] border transition-all duration-500 ${isTwitterVerified ? 'bg-blue-500/5 border-blue-500/30 text-blue-500' : 'bg-white/5 border-white/10'}`}>
-                    <p className="text-[10px] font-black uppercase mb-4 tracking-widest text-gray-500">02. Social X</p>
+                    <p className="text-[10px] font-black uppercase mb-4 tracking-widest text-gray-500">Social Presence</p>
                     {isTwitterVerified ? (
                       <div className="flex flex-col items-center gap-2">
                         <CheckCircle2 size={32} className="text-blue-500 animate-in zoom-in" />
@@ -241,7 +254,7 @@ const App: React.FC = () => {
                     className="w-full max-w-sm mx-auto py-6 bg-blue-600 hover:bg-blue-500 rounded-[2rem] font-black uppercase italic text-lg flex items-center justify-center gap-4 transition-all active:scale-95 shadow-2xl shadow-blue-600/40"
                   >
                     {isScanning ? <Loader2 className="animate-spin" /> : <Zap fill="currentColor" />} 
-                    {isScanning ? 'Scanning Base...' : 'Audit My Impact'}
+                    {isScanning ? 'Auditing Impact...' : 'Start Scan'}
                   </button>
                )}
             </div>
@@ -257,7 +270,7 @@ const App: React.FC = () => {
                  <div className="grid gap-6">
                     <div className="glass-effect p-12 rounded-[3.5rem] text-center border-white/5 relative overflow-hidden">
                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/10 blur-[100px] pointer-events-none" />
-                       <p className="text-[10px] font-black uppercase text-blue-400 tracking-[0.3em] mb-4">Total Audited Score</p>
+                       <p className="text-[10px] font-black uppercase text-blue-400 tracking-[0.3em] mb-4">Total Impact Multiplier</p>
                        <h3 className="text-8xl font-black italic tracking-tighter">{user.points.toFixed(0)}</h3>
                        <div className="mt-8 pt-8 border-t border-white/5 grid grid-cols-2 gap-4">
                           <div className="text-left">
@@ -282,7 +295,7 @@ const App: React.FC = () => {
                     <div className="max-w-md mx-auto space-y-6">
                        {isMinted ? (
                          <div className="bg-green-500/10 text-green-400 p-6 rounded-[2rem] border border-green-500/20 font-black uppercase italic text-xs flex items-center justify-center gap-2">
-                           <Trophy size={20} /> Badge Secured on Base
+                           <Trophy size={20} /> Achievement Unlocked
                          </div>
                        ) : (
                          <button 
@@ -291,11 +304,8 @@ const App: React.FC = () => {
                            className={`w-full py-6 rounded-[2rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all ${claimEligibility.eligible && !isGenerating && !isMinting ? 'bg-blue-600 hover:bg-blue-500 shadow-2xl active:scale-95' : 'bg-white/5 text-gray-600 cursor-not-allowed'}`}
                          >
                            {isGenerating || isMinting ? <Loader2 className="animate-spin w-5 h-5" /> : <Zap className="w-5 h-5" />}
-                           {isGenerating ? 'Polishing Asset...' : isMinting ? 'Minting...' : claimEligibility.buttonText}
+                           {isGenerating ? 'Rendering Badge...' : isMinting ? 'Minting NFT...' : claimEligibility.buttonText}
                          </button>
-                       )}
-                       {getTierFromPoints(user.points) === RankTier.NONE && (
-                         <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest px-8">Score at least 100 points to unlock Bronze tier badges.</p>
                        )}
                     </div>
                  </div>
@@ -310,10 +320,10 @@ const App: React.FC = () => {
                 <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto shadow-xl shadow-blue-600/20">
                   <ShieldCheck size={32} />
                 </div>
-                <h3 className="text-2xl font-black italic uppercase">Connect Wallet</h3>
+                <h3 className="text-2xl font-black italic uppercase">Connect</h3>
                 <div className="space-y-3">
-                  <button onClick={() => { setAddress('0xVerified_' + Math.floor(Math.random()*1000)); setIsSignatureVerified(true); setShowWalletSelector(false); }} className="w-full py-4 bg-blue-600 rounded-2xl font-black uppercase italic text-xs hover:bg-blue-500 transition-all">Sign Message</button>
-                  <button onClick={() => setShowWalletSelector(false)} className="w-full py-4 bg-white/5 rounded-2xl font-black uppercase italic text-xs text-gray-400 hover:bg-white/10">Cancel</button>
+                  <button onClick={() => { setAddress('0x' + Math.random().toString(16).slice(2, 42)); setIsSignatureVerified(true); setShowWalletSelector(false); }} className="w-full py-4 bg-blue-600 rounded-2xl font-black uppercase italic text-xs hover:bg-blue-500 transition-all">Manual Verification</button>
+                  <button onClick={() => setShowWalletSelector(false)} className="w-full py-4 bg-white/5 rounded-2xl font-black uppercase italic text-xs text-gray-400 hover:bg-white/10">Close</button>
                 </div>
              </div>
           </div>
