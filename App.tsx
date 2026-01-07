@@ -20,7 +20,9 @@ import {
   Flame,
   Ban,
   Sparkles,
-  Send
+  Send,
+  UserCheck,
+  Search
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -76,6 +78,7 @@ const App: React.FC = () => {
   const [isSigning, setIsSigning] = useState(false);
   const [isSignatureVerified, setIsSignatureVerified] = useState(false);
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
+  const [isSyncingFID, setIsSyncingFID] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'claim'>('dashboard');
   const [isScanning, setIsScanning] = useState(false);
@@ -158,7 +161,6 @@ const App: React.FC = () => {
         const context = await sdk.context;
         if (context) {
           setFarcasterContext(context);
-          // Auto-prompt to add Frame if not added
           if (!context.client.added) {
             sdk.actions.addFrame().catch(e => console.log("Add frame prompt dismissed", e));
           }
@@ -223,6 +225,44 @@ const App: React.FC = () => {
     } finally {
       setIsConnecting(false);
       setIsSigning(false);
+    }
+  };
+
+  const scanFarcasterId = async () => {
+    if (!user) return;
+    setIsSyncingFID(true);
+    try {
+      const context = await sdk.context;
+      if (context?.user?.fid) {
+        const fid = context.user.fid;
+        const username = context.user.username || '';
+        
+        // Recalculate points with new FID
+        const { total, breakdown } = calculateDetailedPoints(
+          user.baseAppAgeDays,
+          user.twitterAgeDays,
+          user.validTweetsCount,
+          fid,
+          { lambo: user.lambolessBalance || 0, jesse: user.jesseBalance || 0, nick: user.nickBalance || 0 },
+          user.basepostingPoints
+        );
+
+        setUser({
+          ...user,
+          farcasterId: fid,
+          farcasterUsername: username,
+          points: total,
+          pointsBreakdown: breakdown
+        });
+        
+        console.log(`[App] FID Synced: ${fid}`);
+      } else {
+        alert("Could not detect Farcaster ID. Please ensure you're in Warpcast.");
+      }
+    } catch (e) {
+      console.error("Failed to scan FID", e);
+    } finally {
+      setIsSyncingFID(false);
     }
   };
 
@@ -457,25 +497,20 @@ const App: React.FC = () => {
                          <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">ECOSYSTEM ACTIONS</span>
                          <div className="flex flex-col w-full gap-3">
                             <button 
+                               onClick={scanFarcasterId}
+                               disabled={isSyncingFID}
+                               className="w-full py-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-2xl flex items-center justify-center gap-3 text-sm font-black uppercase italic transition-all group"
+                            >
+                               {isSyncingFID ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />}
+                               {user.farcasterId ? `FID Synced: ${user.farcasterId}` : 'Sync Farcaster ID'}
+                            </button>
+                            <button 
                                onClick={handleShareOnFarcaster}
                                className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-2xl flex items-center justify-center gap-3 text-sm font-black uppercase italic transition-all group"
                             >
                                <Share2 className="w-4 h-4 group-hover:rotate-12 transition-transform" />
                                Share Your Impact
                             </button>
-                            <div className="flex flex-col items-center gap-2">
-                              {claimEligibility.status === 'ELIGIBLE' ? (
-                                <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-6 py-2 rounded-full">
-                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                  <span className="text-sm font-black text-green-400 uppercase italic">ELIGIBLE</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 px-6 py-2 rounded-full">
-                                  <Ban className="w-4 h-4 text-red-500" />
-                                  <span className="text-sm font-black text-red-400 uppercase italic">NOT ELIGIBLE</span>
-                                </div>
-                              )}
-                            </div>
                          </div>
                       </div>
                     </div>
