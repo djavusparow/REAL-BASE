@@ -378,7 +378,7 @@ const App: React.FC = () => {
     
     let buttonText = 'Claim Locked';
     if (eligible) {
-      buttonText = `Mint ${TIERS[tier].name} Badge`;
+      buttonText = `GENERATE & CLAIM ${TIERS[tier].name} BADGE`;
     } else if (reasons.length > 0) {
       buttonText = reasons[0]; 
     }
@@ -394,33 +394,28 @@ const App: React.FC = () => {
     };
   }, [user, tierSupplies]);
 
-  const handleGenerateBadge = async () => {
-    if (!user) return;
+  const handleFullClaimProcess = async () => {
+    if (!claimEligibility.eligible || isGenerating || isMinting || isMinted) return;
+    
+    // Step 1: Generate Visual
     setIsGenerating(true);
     try {
-      const currentTier = getTierFromPoints(user.points);
-      const img = await geminiService.generateBadgePreview(currentTier, user.twitterHandle);
-      if (img) {
-        setBadgeImage(img);
-      } else {
+      const currentTier = getTierFromPoints(user!.points);
+      const img = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
+      if (!img) {
         alert("Failed to generate visual. Please try again.");
+        setIsGenerating(false);
+        return;
       }
-    } catch (e) {
-      console.error("Badge Generation Failed", e);
-    } finally {
+      setBadgeImage(img);
       setIsGenerating(false);
-    }
-  };
 
-  const handleMintBadge = async () => {
-    if (!claimEligibility.eligible || !badgeImage || isMinting || isMinted) return;
-    
-    setIsMinting(true);
-    try {
-      // Step 1: Simulated Gas Approval
+      // Step 2: Immediate Minting Logic
+      setIsMinting(true);
+      // Simulated Gas Approval
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Step 2: Simulated On-chain Minting
+      // Simulated On-chain Minting
       await new Promise(resolve => setTimeout(resolve, 3000)); 
       
       // Update Supply Count Real-time
@@ -437,9 +432,10 @@ const App: React.FC = () => {
       }, 1000);
 
     } catch (e) {
-      console.error("Minting error", e);
+      console.error("Full claim process error", e);
       alert("Transaction failed. Please ensure you have enough gas.");
     } finally {
+      setIsGenerating(false);
       setIsMinting(false);
     }
   };
@@ -451,7 +447,6 @@ const App: React.FC = () => {
       setShowCastPrompt(false);
     } catch (e) {
       console.error("Cast action failed", e);
-      // Fallback for non-sdk environments or failures
       setShowCastPrompt(false);
     }
   };
@@ -658,15 +653,6 @@ const App: React.FC = () => {
                              </div>
 
                              <div className="pt-4 space-y-4 text-center">
-                               <button 
-                                 onClick={handleGenerateBadge} 
-                                 disabled={isGenerating || isMinted} 
-                                 className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] flex items-center justify-center gap-3 transition-all border ${isGenerating || isMinted ? 'bg-white/5 border-white/5 text-gray-500' : 'bg-white/10 border-white/20 text-white hover:bg-white/20 shadow-lg shadow-white/5'}`}
-                               >
-                                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-                                 {isGenerating ? 'Generating NFT...' : isMinted ? 'Visual Secured' : 'GENERATE NFT BADGE PREVIEW'}
-                               </button>
-
                                <div className="space-y-2">
                                   {isMinted ? (
                                     <div className="w-full py-6 rounded-[2.5rem] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-black uppercase italic text-sm flex items-center justify-center gap-3">
@@ -674,16 +660,22 @@ const App: React.FC = () => {
                                     </div>
                                   ) : (
                                     <button 
-                                      onClick={handleMintBadge}
-                                      disabled={!claimEligibility.eligible || !badgeImage || isMinting} 
-                                      className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex flex-col items-center justify-center transition-all border shadow-2xl ${claimEligibility.eligible && badgeImage ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'bg-white/5 text-gray-600 opacity-50'}`}
+                                      onClick={handleFullClaimProcess}
+                                      disabled={!claimEligibility.eligible || isGenerating || isMinting} 
+                                      className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex flex-col items-center justify-center transition-all border shadow-2xl ${claimEligibility.eligible && !isGenerating && !isMinting ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30 active:scale-95' : 'bg-white/5 text-gray-600 opacity-50'}`}
                                     >
                                       <div className="flex items-center gap-3">
-                                         {isMinting ? <Loader2 className="w-4 h-4 animate-spin" /> : claimEligibility.eligible && badgeImage ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                                         {isMinting ? 'Minting in Progress...' : !badgeImage && claimEligibility.eligible ? 'GENERATE VISUAL TO CLAIM' : claimEligibility.buttonText}
+                                         {isGenerating || isMinting ? (
+                                           <Loader2 className="w-4 h-4 animate-spin" />
+                                         ) : claimEligibility.eligible ? (
+                                           <Zap className="w-4 h-4" />
+                                         ) : (
+                                           <Lock className="w-4 h-4" />
+                                         )}
+                                         {isGenerating ? 'GENERATING VISUAL...' : isMinting ? 'MINTING NFT...' : claimEligibility.buttonText}
                                       </div>
-                                      {claimEligibility.eligible && badgeImage && !isMinting && (
-                                         <span className="text-[8px] opacity-80 mt-1">FREE CLAIM + GAS FEE</span>
+                                      {claimEligibility.eligible && !isGenerating && !isMinting && (
+                                         <span className="text-[8px] opacity-80 mt-1 tracking-widest">ONE-CLICK CLAIM</span>
                                       )}
                                     </button>
                                   )}
