@@ -45,7 +45,6 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserStats | null>(null);
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
-  const [showWalletSelector, setShowWalletSelector] = useState(false);
   const [showCastPrompt, setShowCastPrompt] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
@@ -60,14 +59,12 @@ const App: React.FC = () => {
   const [isMinted, setIsMinted] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Auto-detect Farcaster Context
   useEffect(() => {
     const init = async () => {
       try {
         await sdk.actions.ready();
         const context = await sdk.context;
         
-        // 1. Try to restore from local storage
         const stored = localStorage.getItem(STORAGE_KEY_USER);
         if (stored) {
           const data = JSON.parse(stored);
@@ -77,12 +74,10 @@ const App: React.FC = () => {
           setIsSignatureVerified(true);
           setIsTwitterVerified(true);
         } else if (context?.user) {
-          // 2. Auto-fill from Farcaster Context if available
           const fcAddr = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
           if (fcAddr) setAddress(fcAddr);
           if (context.user.username) {
              setHandle(`@${context.user.username}`);
-             // If we have an address and a username, we consider the first layer verified
              setIsSignatureVerified(!!fcAddr);
           }
         }
@@ -103,12 +98,14 @@ const App: React.FC = () => {
     setIsSignatureVerified(true);
   };
 
+  // FIX: Mengganti redirect Twitter yang error dengan Input Manual
   const handleTwitterFallback = () => {
-    if (handle.length < 3) {
-      const val = prompt("Enter your X (Twitter) handle:");
-      if (val) setHandle(val.startsWith('@') ? val : `@${val}`);
+    const val = prompt("Enter your X (Twitter) Handle (e.g. @yourname):", handle);
+    if (val) {
+      const sanitized = val.startsWith('@') ? val : `@${val}`;
+      setHandle(sanitized);
+      setIsTwitterVerified(true);
     }
-    setIsTwitterVerified(true);
   };
 
   const handleFarcasterAutoLogin = async () => {
@@ -124,14 +121,11 @@ const App: React.FC = () => {
         await web3.eth.personal.sign(msg, fcAddr, "");
         setAddress(fcAddr);
         setIsSignatureVerified(true);
-        setShowWalletSelector(false);
       } else {
-        // Fallback for non-injected environments
         const addr = prompt("Please enter your Base Wallet Address:");
         if (addr && addr.startsWith('0x')) {
           setAddress(addr);
           setIsSignatureVerified(true);
-          setShowWalletSelector(false);
         }
       }
     } catch (e) { 
@@ -253,7 +247,14 @@ const App: React.FC = () => {
                       <p className="text-[10px] font-black uppercase mb-1 tracking-widest text-gray-400">02. Social Graph</p>
                       <h4 className="font-bold text-sm">{handle || 'Enter Handle'}</h4>
                     </div>
-                    {isTwitterVerified ? <CheckCircle2 className="text-blue-500" /> : <button onClick={handleTwitterFallback} className="px-6 py-2 bg-white/10 text-white border border-white/10 rounded-xl text-xs font-black uppercase">Link X</button>}
+                    {isTwitterVerified ? (
+                      <div className="flex items-center gap-2">
+                         <button onClick={handleTwitterFallback} className="p-2 text-gray-400 hover:text-white transition-colors"><X size={16} /></button>
+                         <CheckCircle2 className="text-blue-500" />
+                      </div>
+                    ) : (
+                      <button onClick={handleTwitterFallback} className="px-6 py-2 bg-white/10 text-white border border-white/10 rounded-xl text-xs font-black uppercase">Link X</button>
+                    )}
                   </div>
                </div>
 
