@@ -22,7 +22,13 @@ import {
   Sparkles,
   Send,
   UserCheck,
-  Search
+  Search,
+  AlertCircle,
+  TrendingUp,
+  Coins,
+  ExternalLink,
+  Copy,
+  Layers
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -405,13 +411,49 @@ const App: React.FC = () => {
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert("Contract Address copied!");
+  };
+
   const claimEligibility = useMemo(() => {
-    if (!user) return { eligible: false, message: "Run Audit First", status: 'NONE' };
+    if (!user) return { eligible: false, message: "Run Audit First", status: 'NONE', pointsNeeded: 0, lamboUsdNeeded: 0 };
+    
     const currentTier = getTierFromPoints(user.points);
-    if (currentTier === RankTier.NONE) return { eligible: false, message: "Rank Too Low", status: 'INELIGIBLE' };
-    const requirement = TIERS[currentTier];
-    if ((user.lambolessBalance || 0) < requirement.minLamboUsd) return { eligible: false, message: "No $LAMBOLESS", status: 'INELIGIBLE' };
-    return { eligible: true, message: "Eligible", status: 'ELIGIBLE', tierName: requirement.name };
+    const bronzeMinPoints = TIERS[RankTier.BRONZE].minPoints;
+    const pointsNeeded = Math.max(0, bronzeMinPoints - user.points);
+    
+    const minLamboUsd = 2.5;
+    const lamboUsdNeeded = Math.max(0, minLamboUsd - (user.lambolessBalance || 0));
+
+    if (currentTier === RankTier.NONE) {
+      return { 
+        eligible: false, 
+        message: `Rank Too Low. Need ${pointsNeeded.toFixed(0)} more points for Bronze.`, 
+        status: 'INELIGIBLE',
+        pointsNeeded,
+        lamboUsdNeeded
+      };
+    }
+
+    if (lamboUsdNeeded > 0) {
+      return { 
+        eligible: false, 
+        message: `Need $${lamboUsdNeeded.toFixed(2)} more in $LAMBOLESS assets.`, 
+        status: 'INELIGIBLE',
+        pointsNeeded,
+        lamboUsdNeeded
+      };
+    }
+
+    return { 
+      eligible: true, 
+      message: "Eligible for Badge Mint!", 
+      status: 'ELIGIBLE', 
+      tierName: TIERS[currentTier].name,
+      pointsNeeded: 0,
+      lamboUsdNeeded: 0
+    };
   }, [user]);
 
   if (!isReady) return (
@@ -515,7 +557,87 @@ const App: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* NEW: Holding Rewards Section */}
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-3">
+                            <Layers className="text-blue-500" size={20} />
+                            <h3 className="text-xl font-black uppercase italic tracking-tighter">Holding Rewards</h3>
+                         </div>
+                         <div className="flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/10">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                            <span className="text-[9px] font-black uppercase text-gray-500">Real-time tracking</span>
+                         </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {[
+                          { 
+                            name: '$LAMBOLESS', 
+                            amount: user.lambolessAmount || 0, 
+                            usd: user.lambolessBalance || 0, 
+                            pts: user.pointsBreakdown?.lambo || 0, 
+                            contract: LAMBOLESS_CONTRACT,
+                            accent: 'text-yellow-500',
+                            bg: 'border-yellow-500/20 bg-yellow-500/5'
+                          },
+                          { 
+                            name: '$JESSE', 
+                            amount: user.jesseAmount || 0, 
+                            usd: user.jesseBalance || 0, 
+                            pts: user.pointsBreakdown?.jesse || 0, 
+                            contract: JESSE_CONTRACT,
+                            accent: 'text-blue-500',
+                            bg: 'border-blue-500/20 bg-blue-500/5'
+                          },
+                          { 
+                            name: '$NICK', 
+                            amount: user.nickAmount || 0, 
+                            usd: user.nickBalance || 0, 
+                            pts: user.pointsBreakdown?.nick || 0, 
+                            contract: NICK_CONTRACT,
+                            accent: 'text-gray-400',
+                            bg: 'border-white/10 bg-white/5'
+                          }
+                        ].map((token, idx) => (
+                          <div key={idx} className={`p-6 rounded-[2rem] border ${token.bg} space-y-4 relative overflow-hidden group`}>
+                             <div className="flex justify-between items-start">
+                                <div>
+                                   <p className={`text-sm font-black italic ${token.accent}`}>{token.name}</p>
+                                   <p className="text-2xl font-black tracking-tight">{token.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                                   <p className="text-[10px] text-gray-500 font-bold">≈ ${token.usd.toFixed(2)} USD</p>
+                                </div>
+                                <div className="text-right">
+                                   <p className="text-[9px] font-black uppercase text-gray-600 tracking-widest">Current Yield</p>
+                                   <p className={`text-sm font-black italic ${token.accent}`}>+{token.pts.toFixed(2)} PTS</p>
+                                </div>
+                             </div>
+                             <div className="pt-2 flex items-center justify-between border-t border-white/5">
+                                <button 
+                                   onClick={() => copyToClipboard(token.contract)}
+                                   className="flex items-center gap-2 text-[9px] font-mono text-gray-600 hover:text-gray-400 transition-colors uppercase"
+                                >
+                                   <Copy size={10} /> {token.contract.slice(0, 6)}...{token.contract.slice(-4)}
+                                </button>
+                                <a 
+                                   href={`https://basescan.org/address/${token.contract}`} 
+                                   target="_blank" 
+                                   rel="noreferrer"
+                                   className="p-1.5 bg-white/5 rounded-lg text-gray-500 hover:text-white transition-all"
+                                >
+                                   <ExternalLink size={12} />
+                                </a>
+                             </div>
+                             {/* Floating point indicator decoration */}
+                             <div className="absolute -bottom-2 -right-2 opacity-10 group-hover:opacity-20 transition-opacity">
+                                <Zap size={60} className={token.accent} />
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pt-8">
                        <div className="lg:col-span-1 space-y-6">
                          <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
                          <button onClick={generateBadge} disabled={isGenerating} className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-2 italic tracking-widest">
@@ -552,21 +674,93 @@ const App: React.FC = () => {
                     </div>
                  </div>
                ) : (
-                 <div className="space-y-10 text-center py-6 pb-12">
-                    <Award className="w-16 h-16 text-blue-500 mx-auto" />
-                    <h2 className="text-3xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
-                    <div className="max-w-md mx-auto space-y-8">
-                       <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
-                       <div className={`p-8 rounded-[3rem] text-center border bg-black/40 border-white/10`}>
-                          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Tier Status</span>
-                          <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${TIERS[getTierFromPoints(user.points)].color}`}>
-                            {TIERS[getTierFromPoints(user.points)].name}
-                          </h3>
+                 <div className="space-y-10 py-6 pb-12 max-w-4xl mx-auto">
+                    <div className="text-center space-y-4">
+                      <Award className="w-16 h-16 text-blue-500 mx-auto" />
+                      <h2 className="text-4xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
+                      <p className="text-gray-500 text-sm max-w-md mx-auto">Eligible builders receive a soulbound NFT badge representing their contribution to the Base ecosystem.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
+                       <div className="space-y-8">
+                         <BadgeDisplay tier={getTierFromPoints(user.points)} imageUrl={badgeImage} loading={isGenerating} />
+                         <div className={`p-8 rounded-[3rem] text-center border bg-black/40 border-white/10`}>
+                            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Current Rank</span>
+                            <h3 className={`text-4xl font-black uppercase italic tracking-tight mt-1 bg-clip-text text-transparent bg-gradient-to-r ${TIERS[getTierFromPoints(user.points)].color}`}>
+                              {TIERS[getTierFromPoints(user.points)].name}
+                            </h3>
+                         </div>
                        </div>
-                       <button disabled={!claimEligibility.eligible} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border shadow-2xl ${claimEligibility.eligible ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'border-white/5 text-gray-600 bg-white/5'}`}>
-                         {claimEligibility.eligible ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                         {claimEligibility.eligible ? 'Claim NFT Badge' : claimEligibility.message}
-                       </button>
+
+                       <div className="space-y-6">
+                          <div className="glass-effect p-8 rounded-[2.5rem] border-white/10 space-y-8">
+                             <div className="flex items-center justify-between">
+                               <h4 className="font-black text-lg uppercase italic">Claim Checklist</h4>
+                               {claimEligibility.eligible ? (
+                                 <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full text-green-400 text-[10px] font-black italic">
+                                   <CheckCircle2 size={12} /> READY
+                                 </div>
+                               ) : (
+                                 <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full text-red-400 text-[10px] font-black italic">
+                                   <AlertCircle size={12} /> INCOMPLETE
+                                 </div>
+                               )}
+                             </div>
+
+                             <div className="space-y-8">
+                                {/* Requirement 1: Points/Rank */}
+                                <div className="space-y-3">
+                                   <div className="flex justify-between items-end">
+                                      <div className="flex items-center gap-2">
+                                         <TrendingUp size={16} className={user.points >= TIERS[RankTier.BRONZE].minPoints ? "text-green-500" : "text-gray-500"} />
+                                         <span className="text-xs font-black uppercase tracking-widest">Base Points</span>
+                                      </div>
+                                      <span className="text-[10px] font-mono text-gray-400">{user.points.toFixed(0)} / {TIERS[RankTier.BRONZE].minPoints}</span>
+                                   </div>
+                                   <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                      <div className={`h-full transition-all duration-700 ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} style={{ width: `${Math.min((user.points / TIERS[RankTier.BRONZE].minPoints) * 100, 100)}%` }} />
+                                   </div>
+                                   {claimEligibility.pointsNeeded > 0 && (
+                                     <p className="text-[10px] font-bold text-red-400 italic">Need {claimEligibility.pointsNeeded.toFixed(0)} more points for Bronze tier.</p>
+                                   )}
+                                </div>
+
+                                {/* Requirement 2: Assets */}
+                                <div className="space-y-3">
+                                   <div className="flex justify-between items-end">
+                                      <div className="flex items-center gap-2">
+                                         <Coins size={16} className={(user.lambolessBalance || 0) >= 2.5 ? "text-green-500" : "text-gray-500"} />
+                                         <span className="text-xs font-black uppercase tracking-widest">$LAMBOLESS Value</span>
+                                      </div>
+                                      <span className="text-[10px] font-mono text-gray-400">${(user.lambolessBalance || 0).toFixed(2)} / $2.50</span>
+                                   </div>
+                                   <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                      <div className={`h-full transition-all duration-700 ${(user.lambolessBalance || 0) >= 2.5 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`} style={{ width: `${Math.min(((user.lambolessBalance || 0) / 2.5) * 100, 100)}%` }} />
+                                   </div>
+                                   {claimEligibility.lamboUsdNeeded > 0 && (
+                                     <p className="text-[10px] font-bold text-red-400 italic">Need ${claimEligibility.lamboUsdNeeded.toFixed(2)} more in $LAMBOLESS assets.</p>
+                                   )}
+                                </div>
+
+                                {/* Requirement 3: Account Verification */}
+                                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                                   <div className="flex items-center gap-3">
+                                      <div className={`p-2 rounded-lg ${isSignatureVerified && isTwitterVerified ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                         <UserCheck size={16} />
+                                      </div>
+                                      <span className="text-xs font-black uppercase tracking-widest">Identity Sync</span>
+                                   </div>
+                                   <CheckCircle2 size={16} className={isSignatureVerified && isTwitterVerified ? "text-green-500" : "text-gray-800"} />
+                                </div>
+                             </div>
+
+                             <button disabled={!claimEligibility.eligible} className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border shadow-2xl ${claimEligibility.eligible ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98]' : 'border-white/5 text-gray-600 bg-white/5 cursor-not-allowed opacity-50'}`}>
+                               {claimEligibility.eligible ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                               {claimEligibility.eligible ? `Mint ${TIERS[getTierFromPoints(user.points)].name} Badge` : 'Claim Locked'}
+                             </button>
+                          </div>
+                          <p className="text-center text-[9px] text-gray-600 font-bold uppercase tracking-[0.2em] px-4 leading-relaxed">NFT Badges are soulbound. Ensure your $LAMBOLESS assets remain in your wallet to maintain eligibility.</p>
+                       </div>
                     </div>
                  </div>
                )}
