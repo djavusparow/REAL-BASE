@@ -1,7 +1,8 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.tsx';
+// Fix: Import App without .tsx extension
+import App from './App';
 
 /**
  * Global Error Handling
