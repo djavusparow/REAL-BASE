@@ -404,7 +404,7 @@ const App: React.FC = () => {
       const img = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
       
       if (!img) {
-        throw new Error("Visual generation service returned empty result. Check API quota or connectivity.");
+        throw new Error("Visual generation service returned empty result. This can happen due to high traffic or prompt safety limits. Please try once more.");
       }
       
       setBadgeImage(img);
@@ -433,8 +433,8 @@ const App: React.FC = () => {
 
     } catch (e: any) {
       console.error("Full claim process error", e);
-      alert(e.message || "Failed to generate visual or mint badge. Please try again.");
-      setBadgeImage(null); // Reset on failure
+      alert(e.message || "Failed to complete process. Check your connectivity and try again.");
+      setBadgeImage(null); // Reset on failure so they can try again
     } finally {
       setIsGenerating(false);
       setIsMinting(false);

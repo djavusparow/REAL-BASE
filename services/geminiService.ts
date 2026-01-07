@@ -2,12 +2,13 @@ import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
   /**
-   * Generates a high-quality badge visual using Gemini 2.5 Flash Image.
+   * Generates a high-quality badge visual using Gemini 3 Pro Image.
+   * Includes a retry mechanism for reliability.
    */
-  async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
+  async generateBadgePreview(tier: string, handle: string, retryAttempt: number = 0): Promise<string | null> {
     try {
-      // Use the verified model name for image generation
-      const modelName = 'gemini-2.5-flash-image';
+      // Use the high-quality Pro model for reliable image generation with text
+      const modelName = 'gemini-3-pro-image-preview';
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let colorDesc = "";
@@ -16,19 +17,24 @@ export class GeminiService {
       else if (tier === 'SILVER') colorDesc = "sleek high-gloss metallic silver and chrome finish";
       else if (tier === 'BRONZE') colorDesc = "vibrant neon purple and deep bronze metallic fusion";
 
+      // If this is a retry, use a slightly simpler prompt to bypass potential safety filters
+      const prompt = retryAttempt === 0 
+        ? `A premium 3D digital collectible NFT badge for "BASE IMPRESSION". 
+           The main visual feature is a detailed, aggressive modern supercar. 
+           The text "BASE IMPRESSION" must be clearly and boldly rendered as part of the badge design. 
+           The entire badge and car are themed in ${colorDesc}. 
+           The username "${handle}" is precisely laser-etched on a metallic plate at the bottom. 
+           Style: Automotive photography aesthetic, cinematic studio lighting, high contrast, 8k resolution, futuristic tech vibe.`
+        : `A futuristic 3D metallic badge in ${colorDesc} for a crypto builder. 
+           Central feature: a sleek supercar. 
+           Text visible: "BASE IMPRESSION". 
+           The text "${handle}" etched at the bottom. 
+           High fidelity, studio lighting, solid black background.`;
+
       const response = await ai.models.generateContent({
         model: modelName,
         contents: {
-          parts: [
-            {
-              text: `A premium 3D digital collectible NFT badge for "BASE IMPRESSION". 
-              The main visual feature is a detailed, aggressive modern supercar. 
-              The text "BASE IMPRESSION" must be clearly and boldly rendered as part of the badge design. 
-              The entire badge and car are themed in ${colorDesc}. 
-              The username "${handle}" is precisely laser-etched on a metallic plate at the bottom. 
-              Style: Automotive photography aesthetic, cinematic studio lighting, high contrast, 8k resolution, futuristic tech vibe.`
-            }
-          ]
+          parts: [{ text: prompt }]
         },
         config: {
           imageConfig: {
@@ -40,8 +46,7 @@ export class GeminiService {
       // Safely navigate candidates and parts
       const candidate = response.candidates?.[0];
       if (!candidate || !candidate.content?.parts) {
-        console.error("No candidates or parts returned from Gemini");
-        return null;
+        throw new Error("Empty candidate response");
       }
 
       for (const part of candidate.content.parts) {
@@ -50,10 +55,15 @@ export class GeminiService {
         }
       }
       
-      console.warn("No inlineData found in response parts");
-      return null;
+      throw new Error("No image data in parts");
     } catch (error) {
-      console.error("Gemini Image Generation Error:", error);
+      console.error(`Gemini Image Generation Error (Attempt ${retryAttempt}):`, error);
+      
+      // Retry once with a simpler prompt
+      if (retryAttempt === 0) {
+        return this.generateBadgePreview(tier, handle, 1);
+      }
+      
       return null;
     }
   }
@@ -65,7 +75,7 @@ export class GeminiService {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-image-preview', // Pro model is better for Search grounding
+        model: 'gemini-3-pro-image-preview',
         contents: `What is the current market price of the ${tokenName} token on Base network (contract ${contract}) in USD? Return ONLY the numerical price value. If unknown, return 0.0001.`,
         config: {
           tools: [{ googleSearch: {} }]
