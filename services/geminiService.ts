@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
@@ -7,6 +6,8 @@ export class GeminiService {
    */
   async generateBadgePreview(tier: string, handle: string): Promise<string | null> {
     try {
+      // Use the verified model name for image generation
+      const modelName = 'gemini-2.5-flash-image';
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let colorDesc = "";
@@ -16,12 +17,12 @@ export class GeminiService {
       else if (tier === 'BRONZE') colorDesc = "vibrant neon purple and deep bronze metallic fusion";
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: modelName,
         contents: {
           parts: [
             {
               text: `A premium 3D digital collectible NFT badge for "BASE IMPRESSION". 
-              The main visual feature is a detailed, aggressive modern Lamborghini supercar. 
+              The main visual feature is a detailed, aggressive modern supercar. 
               The text "BASE IMPRESSION" must be clearly and boldly rendered as part of the badge design. 
               The entire badge and car are themed in ${colorDesc}. 
               The username "${handle}" is precisely laser-etched on a metallic plate at the bottom. 
@@ -36,11 +37,20 @@ export class GeminiService {
         }
       });
 
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
+      // Safely navigate candidates and parts
+      const candidate = response.candidates?.[0];
+      if (!candidate || !candidate.content?.parts) {
+        console.error("No candidates or parts returned from Gemini");
+        return null;
+      }
+
+      for (const part of candidate.content.parts) {
         if (part.inlineData) {
           return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
+      
+      console.warn("No inlineData found in response parts");
       return null;
     } catch (error) {
       console.error("Gemini Image Generation Error:", error);
@@ -55,7 +65,7 @@ export class GeminiService {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3-pro-image-preview', // Pro model is better for Search grounding
         contents: `What is the current market price of the ${tokenName} token on Base network (contract ${contract}) in USD? Return ONLY the numerical price value. If unknown, return 0.0001.`,
         config: {
           tools: [{ googleSearch: {} }]

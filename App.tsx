@@ -402,11 +402,11 @@ const App: React.FC = () => {
     try {
       const currentTier = getTierFromPoints(user!.points);
       const img = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
+      
       if (!img) {
-        alert("Failed to generate visual. Please try again.");
-        setIsGenerating(false);
-        return;
+        throw new Error("Visual generation service returned empty result. Check API quota or connectivity.");
       }
+      
       setBadgeImage(img);
       setIsGenerating(false);
 
@@ -431,9 +431,10 @@ const App: React.FC = () => {
         setShowCastPrompt(true);
       }, 1000);
 
-    } catch (e) {
+    } catch (e: any) {
       console.error("Full claim process error", e);
-      alert("Transaction failed. Please ensure you have enough gas.");
+      alert(e.message || "Failed to generate visual or mint badge. Please try again.");
+      setBadgeImage(null); // Reset on failure
     } finally {
       setIsGenerating(false);
       setIsMinting(false);
@@ -742,7 +743,7 @@ const App: React.FC = () => {
         
         {isScanning && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-lg">
-             <div className="w-full max-w-lg space-y-8 text-center">
+             <div className="w-full max-lg space-y-8 text-center">
                 <div className="relative w-40 h-40 mx-auto border-4 border-blue-500/10 rounded-full flex items-center justify-center">
                   <div className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin" />
                   <span className="text-3xl font-black italic">{scanProgress}%</span>
