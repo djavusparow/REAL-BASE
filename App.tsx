@@ -35,7 +35,10 @@ import {
   Calendar,
   UserPlus,
   Hash,
-  Image as ImageIcon
+  Image as ImageIcon,
+  AlertTriangle,
+  Gift,
+  MessageSquare
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -56,6 +59,7 @@ import { tokenService } from './services/tokenService.ts';
 
 const STORAGE_KEY_USER = 'base_impression_v1_user';
 const STORAGE_KEY_AUDIT_COUNT = 'base_impression_v1_count';
+const STORAGE_KEY_SUPPLIES = 'base_impression_v1_supplies';
 
 const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-40 h-40' : 'w-10 h-10';
@@ -86,6 +90,7 @@ const App: React.FC = () => {
   const [address, setAddress] = useState('');
   const [handle, setHandle] = useState('');
   const [showWalletSelector, setShowWalletSelector] = useState(false);
+  const [showCastPrompt, setShowCastPrompt] = useState(false);
   
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
@@ -100,7 +105,18 @@ const App: React.FC = () => {
   const [scanLogs, setScanLogs] = useState<string[]>([]);
   const [badgeImage, setBadgeImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isMinting, setIsMinting] = useState(false);
+  const [isMinted, setIsMinted] = useState(false);
   const [isRefreshingAssets, setIsRefreshingAssets] = useState(false);
+
+  // Real-time supply state
+  const [tierSupplies, setTierSupplies] = useState<Record<RankTier, number>>({
+    [RankTier.PLATINUM]: TIERS[RankTier.PLATINUM].supply,
+    [RankTier.GOLD]: TIERS[RankTier.GOLD].supply,
+    [RankTier.SILVER]: TIERS[RankTier.SILVER].supply,
+    [RankTier.BRONZE]: TIERS[RankTier.BRONZE].supply,
+    [RankTier.NONE]: 0
+  });
 
   const [communityAuditCount, setCommunityAuditCount] = useState(1);
 
@@ -136,6 +152,22 @@ const App: React.FC = () => {
     }
     return null;
   }, []);
+
+  // Initialize and persist supplies
+  useEffect(() => {
+    const savedSupplies = localStorage.getItem(STORAGE_KEY_SUPPLIES);
+    if (savedSupplies) {
+      try {
+        setTierSupplies(JSON.parse(savedSupplies));
+      } catch (e) {
+        console.error("Failed to load supplies", e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_SUPPLIES, JSON.stringify(tierSupplies));
+  }, [tierSupplies]);
 
   useEffect(() => {
     if (user) {
@@ -314,15 +346,53 @@ const App: React.FC = () => {
     setIsSignatureVerified(false);
     setIsTwitterVerified(false);
     setBadgeImage(null);
+    setIsMinted(false);
     localStorage.removeItem(STORAGE_KEY_USER);
   };
 
   const claimEligibility = useMemo(() => {
-    if (!user) return { eligible: false };
+    if (!user) return { eligible: false, reasons: [], buttonText: 'Login Required' };
+    
     const tier = getTierFromPoints(user.points);
-    const eligible = tier !== RankTier.NONE && (user.lambolessBalance || 0) >= 2.5;
-    return { eligible, tierName: TIERS[tier].name };
-  }, [user]);
+    const reasons: string[] = [];
+    const minPoints = TIERS[RankTier.BRONZE].minPoints;
+    const minLambo = 2.5;
+    
+    const pointsShort = Math.max(0, minPoints - user.points);
+    const lamboShort = Math.max(0, minLambo - (user.lambolessBalance || 0));
+
+    if (tier === RankTier.NONE) {
+      reasons.push(`Need ${pointsShort.toFixed(0)} more Base Points`);
+    }
+    if ((user.lambolessBalance || 0) < minLambo) {
+      reasons.push(`Hold $${lamboShort.toFixed(2)} more in $LAMBOLESS`);
+    }
+
+    const currentSupply = tierSupplies[tier];
+    const hasSupply = currentSupply > 0;
+    if (!hasSupply && tier !== RankTier.NONE) {
+      reasons.push(`${TIERS[tier].name} Supply Exhausted`);
+    }
+
+    const eligible = tier !== RankTier.NONE && (user.lambolessBalance || 0) >= minLambo && hasSupply;
+    
+    let buttonText = 'Claim Locked';
+    if (eligible) {
+      buttonText = `Mint ${TIERS[tier].name} Badge`;
+    } else if (reasons.length > 0) {
+      buttonText = reasons[0]; 
+    }
+
+    return { 
+      eligible, 
+      tierName: TIERS[tier].name, 
+      reasons, 
+      buttonText,
+      pointsShort,
+      lamboShort,
+      currentTier: tier
+    };
+  }, [user, tierSupplies]);
 
   const handleGenerateBadge = async () => {
     if (!user) return;
@@ -330,11 +400,59 @@ const App: React.FC = () => {
     try {
       const currentTier = getTierFromPoints(user.points);
       const img = await geminiService.generateBadgePreview(currentTier, user.twitterHandle);
-      if (img) setBadgeImage(img);
+      if (img) {
+        setBadgeImage(img);
+      } else {
+        alert("Gagal membuat visual. Silakan coba lagi.");
+      }
     } catch (e) {
       console.error("Badge Generation Failed", e);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleMintBadge = async () => {
+    if (!claimEligibility.eligible || !badgeImage || isMinting || isMinted) return;
+    
+    setIsMinting(true);
+    try {
+      // Step 1: Simulated Gas Approval
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Step 2: Simulated On-chain Minting
+      await new Promise(resolve => setTimeout(resolve, 3000)); 
+      
+      // Update Supply Count Real-time
+      setTierSupplies(prev => ({
+        ...prev,
+        [claimEligibility.currentTier]: Math.max(0, prev[claimEligibility.currentTier] - 1)
+      }));
+      
+      setIsMinted(true);
+      
+      // Mandatory Cast Prompt Trigger
+      setTimeout(() => {
+        setShowCastPrompt(true);
+      }, 1000);
+
+    } catch (e) {
+      console.error("Minting error", e);
+      alert("Transaksi gagal. Pastikan saldo gas mencukupi.");
+    } finally {
+      setIsMinting(false);
+    }
+  };
+
+  const handleCastAchievement = async () => {
+    try {
+      const castText = 'Check, Track and CLAIM your BASE IMPRESSION with zero fee';
+      await sdk.actions.cast({ text: castText });
+      setShowCastPrompt(false);
+    } catch (e) {
+      console.error("Cast action failed", e);
+      // Fallback for non-sdk environments or failures
+      setShowCastPrompt(false);
     }
   };
 
@@ -417,7 +535,7 @@ const App: React.FC = () => {
                             <div className="bg-blue-600/5 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between">
                                <div className="flex items-center gap-3">
                                   <Hash className="text-blue-500" size={18} />
-                                  <div><p className="text-[10px] font-black uppercase text-blue-500">#Baseposting</p><p className="text-xs font-bold text-gray-300">Verified Mentions</p></div>
+                                  <div><p className="text-[10px] font-black uppercase text-gray-500">#Baseposting</p><p className="text-xs font-bold text-gray-300">Verified Mentions</p></div>
                                </div>
                                <div className="text-right">
                                   <p className="text-[10px] font-black text-blue-500">+{user.basepostingPoints} PTS</p>
@@ -464,7 +582,12 @@ const App: React.FC = () => {
                ) : (
                  <div className="space-y-10 py-6 pb-12 max-w-4xl mx-auto">
                     <div className="text-center space-y-4">
-                      <Award className="w-16 h-16 text-blue-500 mx-auto" />
+                      <div className="flex items-center justify-center gap-3">
+                         <Award className="w-12 h-12 text-blue-500" />
+                         <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full border border-emerald-500/20 flex items-center gap-2">
+                            <Gift size={12} /> FREE CLAIM
+                         </span>
+                      </div>
                       <h2 className="text-4xl font-black uppercase italic tracking-tighter">Impact Rewards</h2>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
@@ -478,34 +601,102 @@ const App: React.FC = () => {
                          </div>
                        </div>
                        <div className="glass-effect p-8 rounded-[2.5rem] border-white/10 space-y-8">
-                          <h4 className="font-black text-lg uppercase italic">Claim Checklist</h4>
-                          <div className="space-y-8">
+                          <div className="flex items-center justify-between">
+                             <h4 className="font-black text-lg uppercase italic">Claim Checklist</h4>
+                             <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest bg-blue-500/5 px-3 py-1 rounded-full border border-blue-500/10">
+                                Hanya Gas Fee
+                             </span>
+                          </div>
+                          <div className="space-y-10">
+                             {/* Live Supply Tracking */}
+                             {getTierFromPoints(user.points) !== RankTier.NONE && (
+                               <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-[10px] font-black uppercase italic tracking-widest">Live Supply: {TIERS[getTierFromPoints(user.points)].name}</span>
+                                    <span className="text-[10px] font-mono text-blue-400">{tierSupplies[getTierFromPoints(user.points)]} / {TIERS[getTierFromPoints(user.points)].supply}</span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                    <div className={`h-full bg-gradient-to-r ${TIERS[getTierFromPoints(user.points)].color} rounded-full transition-all duration-700`} style={{ width: `${(tierSupplies[getTierFromPoints(user.points)] / TIERS[getTierFromPoints(user.points)].supply) * 100}%` }} />
+                                  </div>
+                               </div>
+                             )}
+
+                             {/* Requirement 1: Points */}
                              <div className="space-y-3">
-                                <div className="flex justify-between items-end"><span className="text-xs font-black uppercase tracking-widest">Base Points</span><span className="text-[10px] font-mono text-gray-400">{user.points.toFixed(0)} / {TIERS[RankTier.BRONZE].minPoints}</span></div>
-                                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden"><div className={`h-full ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${Math.min((user.points / TIERS[RankTier.BRONZE].minPoints) * 100, 100)}%` }} /></div>
-                             </div>
-                             <div className="space-y-3">
-                                <div className="flex justify-between items-end"><span className="text-xs font-black uppercase tracking-widest">$LAMBOLESS Value</span><span className="text-[10px] font-mono text-gray-400">${(user.lambolessBalance || 0).toFixed(2)} / $2.50</span></div>
-                                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden"><div className={`h-full ${(user.lambolessBalance || 0) >= 2.5 ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${Math.min(((user.lambolessBalance || 0) / 2.5) * 100, 100)}%` }} /></div>
+                                <div className="flex justify-between items-end">
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-black uppercase tracking-widest">Base Points</span>
+                                    {claimEligibility.pointsShort > 0 && (
+                                      <span className="text-[9px] font-bold text-red-400 uppercase tracking-tighter flex items-center gap-1">
+                                        <AlertTriangle size={10} /> {claimEligibility.pointsShort.toFixed(0)} more needed
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] font-mono text-gray-400">{user.points.toFixed(0)} / {TIERS[RankTier.BRONZE].minPoints}</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                  <div className={`h-full ${user.points >= TIERS[RankTier.BRONZE].minPoints ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-red-500/50'}`} style={{ width: `${Math.min((user.points / TIERS[RankTier.BRONZE].minPoints) * 100, 100)}%` }} />
+                                </div>
                              </div>
 
-                             <div className="pt-4 space-y-3">
+                             {/* Requirement 2: Lamboless Holdings */}
+                             <div className="space-y-3">
+                                <div className="flex justify-between items-end">
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-black uppercase tracking-widest">$LAMBOLESS Value</span>
+                                    {claimEligibility.lamboShort > 0 && (
+                                      <span className="text-[9px] font-bold text-red-400 uppercase tracking-tighter flex items-center gap-1">
+                                        <AlertTriangle size={10} /> ${claimEligibility.lamboShort.toFixed(2)} more needed
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] font-mono text-gray-400">${(user.lambolessBalance || 0).toFixed(2)} / $2.50</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                  <div className={`h-full ${(user.lambolessBalance || 0) >= 2.5 ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-red-500/50'}`} style={{ width: `${Math.min(((user.lambolessBalance || 0) / 2.5) * 100, 100)}%` }} />
+                                </div>
+                             </div>
+
+                             <div className="pt-4 space-y-4 text-center">
                                <button 
                                  onClick={handleGenerateBadge} 
-                                 disabled={isGenerating} 
-                                 className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] flex items-center justify-center gap-3 transition-all border ${isGenerating ? 'bg-white/5 border-white/5 text-gray-500' : 'bg-white/10 border-white/20 text-white hover:bg-white/20 shadow-lg shadow-white/5'}`}
+                                 disabled={isGenerating || isMinted} 
+                                 className={`w-full py-4 rounded-2xl font-black uppercase italic text-[10px] flex items-center justify-center gap-3 transition-all border ${isGenerating || isMinted ? 'bg-white/5 border-white/5 text-gray-500' : 'bg-white/10 border-white/20 text-white hover:bg-white/20 shadow-lg shadow-white/5'}`}
                                >
                                  {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
-                                 {isGenerating ? 'Generating NFT Visual...' : 'Generate NFT Badge Preview'}
+                                 {isGenerating ? 'Menghasilkan NFT...' : isMinted ? 'Visual Tersimpan' : 'Buat Preview NFT Badge'}
                                </button>
 
-                               <button 
-                                 disabled={!claimEligibility.eligible || !badgeImage} 
-                                 className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 transition-all border shadow-2xl ${claimEligibility.eligible && badgeImage ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'bg-white/5 text-gray-600 opacity-50'}`}
-                               >
-                                 {claimEligibility.eligible && badgeImage ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                                 {!badgeImage && claimEligibility.eligible ? 'Generate Visual to Mint' : claimEligibility.eligible ? `Mint ${claimEligibility.tierName} Badge` : 'Claim Locked'}
-                               </button>
+                               <div className="space-y-2">
+                                  {isMinted ? (
+                                    <div className="w-full py-6 rounded-[2.5rem] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-black uppercase italic text-sm flex items-center justify-center gap-3">
+                                      <CheckCircle2 className="w-5 h-5" /> Badge Secured
+                                    </div>
+                                  ) : (
+                                    <button 
+                                      onClick={handleMintBadge}
+                                      disabled={!claimEligibility.eligible || !badgeImage || isMinting} 
+                                      className={`w-full py-6 rounded-[2.5rem] font-black uppercase italic text-sm flex flex-col items-center justify-center transition-all border shadow-2xl ${claimEligibility.eligible && badgeImage ? 'bg-blue-600 text-white border-blue-400 shadow-blue-500/30' : 'bg-white/5 text-gray-600 opacity-50'}`}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                         {isMinting ? <Loader2 className="w-4 h-4 animate-spin" /> : claimEligibility.eligible && badgeImage ? <Zap className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                                         {isMinting ? 'Sedang Minting...' : !badgeImage && claimEligibility.eligible ? 'Buat Visual Untuk Klaim' : claimEligibility.buttonText}
+                                      </div>
+                                      {claimEligibility.eligible && badgeImage && !isMinting && (
+                                         <span className="text-[8px] opacity-80 mt-1">FREE CLAIM + GAS FEE</span>
+                                      )}
+                                    </button>
+                                  )}
+                                  <p className="text-[9px] font-bold text-gray-500 uppercase italic tracking-wider flex items-center justify-center gap-1.5">
+                                     <Info size={10} /> CLAIM GRATIS — HANYA GAS FEE
+                                  </p>
+                               </div>
+                               
+                               {!claimEligibility.eligible && claimEligibility.reasons.length > 0 && (
+                                 <p className="text-[9px] text-center font-bold text-gray-500 uppercase italic px-4 mt-2">
+                                   * Lengkapi persyaratan di atas untuk membuka klaim gratis Anda.
+                                 </p>
+                               )}
                              </div>
                           </div>
                        </div>
@@ -523,6 +714,35 @@ const App: React.FC = () => {
                 <button onClick={handleFarcasterAutoLogin} className="w-full p-6 rounded-[1.5rem] bg-gradient-to-br from-purple-600/20 to-indigo-800/20 border border-purple-500/40 flex items-center gap-5">
                   <div className="w-14 h-14 rounded-2xl bg-purple-500 flex items-center justify-center text-white font-black text-2xl">F</div>
                   <p className="font-black text-lg uppercase italic">Farcaster Identity</p>
+                </button>
+             </div>
+          </div>
+        )}
+
+        {showCastPrompt && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-blue-900/40 backdrop-blur-xl">
+             <div className="w-full max-w-md glass-effect border-blue-400/30 rounded-[3rem] p-10 text-center space-y-8 animate-in zoom-in duration-300">
+                <div className="w-20 h-20 bg-blue-600 rounded-full mx-auto flex items-center justify-center shadow-[0_0_30px_rgba(37,99,235,0.6)]">
+                   <Share2 className="text-white w-10 h-10" />
+                </div>
+                <div className="space-y-3">
+                  <h3 className="text-3xl font-black uppercase italic tracking-tighter">Share Success</h3>
+                  <p className="text-sm text-gray-300 font-medium">To finalize your claim and notify the ecosystem, broadcast your impression to Farcaster.</p>
+                </div>
+                <div className="bg-white/5 border border-white/10 p-5 rounded-2xl italic text-xs text-blue-400 font-bold">
+                  "Check, Track and CLAIM your BASE IMPRESSION with zero fee"
+                </div>
+                <button 
+                  onClick={handleCastAchievement}
+                  className="w-full py-6 bg-white text-black rounded-[2rem] font-black uppercase italic text-sm flex items-center justify-center gap-3 hover:scale-[1.02] transition-transform"
+                >
+                  <MessageSquare className="w-5 h-5" /> Cast Achievement
+                </button>
+                <button 
+                  onClick={() => setShowCastPrompt(false)}
+                  className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
+                >
+                  I'll do it later
                 </button>
              </div>
           </div>
