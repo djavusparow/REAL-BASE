@@ -42,15 +42,14 @@ const MINIMAL_NFT_ABI = [
   }
 ];
 
-// Placeholder image URL if AI fails
-const PLACEHOLDER_BADGE = "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=400";
+const DEFAULT_PREVIEW_IMG = "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?auto=format&fit=crop&q=80&w=400";
 
 const BrandLogo: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => {
   const dimensions = size === 'lg' ? 'w-40 h-40' : 'w-10 h-10';
   const radius = size === 'lg' ? 'rounded-[2.5rem]' : 'rounded-xl';
   return (
     <div className={`${dimensions} ${radius} relative overflow-hidden border border-white/20 blue-glow`}>
-      <img src={PLACEHOLDER_BADGE} className="absolute inset-0 w-full h-full object-cover brightness-75" alt="Base" />
+      <img src={DEFAULT_PREVIEW_IMG} className="absolute inset-0 w-full h-full object-cover brightness-75" alt="Base" />
       <div className="absolute inset-0 bg-blue-600/30 mix-blend-overlay" />
       <div className="absolute inset-0 flex items-center justify-center">
         <span className={`${size === 'lg' ? 'text-lg' : 'text-[7px]'} font-black text-white uppercase italic leading-none text-center`}>Base<br/>Impression</span>
@@ -187,27 +186,29 @@ const App: React.FC = () => {
     if (isGenerating || isMinting || isMinted) return;
     
     setIsGenerating(true);
-    let finalImage = PLACEHOLDER_BADGE;
+    let finalImage = null;
     
     try {
       const currentTier = getTierFromPoints(user!.points);
-      const generatedImg = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
+      // Attempt high quality AI generation
+      finalImage = await geminiService.generateBadgePreview(currentTier, user!.twitterHandle);
       
-      if (generatedImg) {
-        finalImage = generatedImg;
-        setBadgeImage(generatedImg);
+      if (finalImage) {
+        setBadgeImage(finalImage);
       } else {
-        console.warn("AI Generation failed, using placeholder");
-        setBadgeImage(PLACEHOLDER_BADGE);
+        // IF AI FAILS, STOP THE PROCESS
+        throw new Error("AI Visual Generation failed. Please try again to get your custom badge.");
       }
-    } catch (e) {
-      console.error("Visual generation logic failed:", e);
-      setBadgeImage(PLACEHOLDER_BADGE);
+    } catch (e: any) {
+      console.error("Visual generation failed:", e);
+      alert(e.message || "Failed to generate your unique badge. Please try again.");
+      setIsGenerating(false);
+      return; // STOP HERE - No fallback to placeholder allowed
     } finally {
       setIsGenerating(false);
     }
 
-    // Continue to minting even if AI fails (use placeholder)
+    // Continue to minting ONLY if finalImage is valid
     setIsMinting(true);
     try {
       const provider = sdk.wallet?.ethProvider;
@@ -220,6 +221,7 @@ const App: React.FC = () => {
       const tierMap: Record<string, number> = { 'PLATINUM': 0, 'GOLD': 1, 'SILVER': 2, 'BRONZE': 3 };
       const tierIndex = tierMap[currentTier] ?? 3;
 
+      // Mint with the actual AI generated image
       const mintTx = await contract.methods.mintBadge(finalImage, tierIndex).send({ 
         from: address,
       });
@@ -368,7 +370,7 @@ const App: React.FC = () => {
 
         {showWalletSelector && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md">
-             <div className="w-full max-w-sm bg-[#0a0a0a] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 shadow-2xl">
+             <div className="w-full max-sm bg-[#0a0a0a] border border-white/10 rounded-[3rem] p-10 text-center space-y-8 shadow-2xl">
                 <div className="space-y-2">
                    <h3 className="text-2xl font-black italic uppercase">Verify Profile</h3>
                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Sign with your Farcaster/Base identity</p>
