@@ -31,18 +31,15 @@ export const MULTIPLIERS = {
 /**
  * EVENT TIMELINE
  */
-export const HOURLY_WINDOW_START = new Date("2026-01-05T07:00:00Z");
-export const HOURLY_WINDOW_END = new Date("2026-01-15T23:59:00Z");
+export const HOURLY_WINDOW_START = new Date("2025-11-01T07:00:00Z");
+export const HOURLY_WINDOW_END = new Date("2026-12-31T23:59:00Z"); // Extended for live use
 
 export const SNAPSHOT_START = new Date("2025-11-01T00:01:00Z");
-export const SNAPSHOT_END = new Date("2026-01-15T23:59:00Z");
-export const FINAL_SNAPSHOT = new Date("2026-01-16T00:01:00Z");
-export const CLAIM_START = new Date("2026-01-16T02:00:00Z");
+export const SNAPSHOT_END = new Date("2026-12-31T23:59:00Z");
 
 /**
  * TIER DEFINITIONS - UPDATED TO SPECIFIC POINT AND TOKEN REQS
  * Supply: P: 25, G: 100, S: 350, B: 1025
- * Requirement: $2.5 $LAMBOLESS across all tiers.
  */
 export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoints: number, supply: number, minLamboUsd: number }> = {
   [RankTier.PLATINUM]: {
