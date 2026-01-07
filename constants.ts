@@ -37,52 +37,56 @@ export const SNAPSHOT_START = new Date("2025-11-01T00:01:00Z");
 export const SNAPSHOT_END = new Date("2026-12-31T23:59:00Z");
 
 /**
- * TIER DEFINITIONS - Cleaned up to rely on High-Quality AI Generation
+ * TIER DEFINITIONS - Explicitly using the user's provided badge designs
  */
-export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoints: number, supply: number, minLamboUsd: number }> = {
+export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoints: number, supply: number, minLamboUsd: number, referenceImageUrl: string }> = {
   [RankTier.PLATINUM]: {
     name: "Platinum",
-    color: "from-white via-indigo-200 to-purple-400",
+    color: "from-indigo-500 via-purple-500 to-pink-500",
     description: "Elite Impact - Platinum Shield",
     range: "751 - 2500 Pts",
-    glowClass: "shadow-[0_0_50px_rgba(255,255,255,0.4)]",
+    glowClass: "rainbow-border shadow-[0_0_25px_rgba(255,255,255,0.8)]",
     minPoints: 751,
     maxPoints: 2500,
     supply: 25,
-    minLamboUsd: 2.5
+    minLamboUsd: 2.5,
+    referenceImageUrl: "https://i.ibb.co/C3Xg3mC/platinum.jpg"
   },
   [RankTier.GOLD]: {
     name: "Gold",
-    color: "from-yellow-200 via-yellow-500 to-yellow-700",
+    color: "from-yellow-400 via-yellow-600 to-yellow-800",
     description: "High Impact - Gold Shield",
     range: "351 - 750 Pts",
-    glowClass: "shadow-[0_0_40px_rgba(234,179,8,0.4)]",
+    glowClass: "bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.6)]",
     minPoints: 351,
     maxPoints: 750,
     supply: 100,
-    minLamboUsd: 2.5
+    minLamboUsd: 2.5,
+    referenceImageUrl: "https://i.ibb.co/mH1mY6n/gold.jpg"
   },
   [RankTier.SILVER]: {
     name: "Silver",
-    color: "from-gray-100 via-gray-400 to-gray-600",
+    color: "from-gray-300 via-gray-500 to-gray-700",
     description: "Solid Impact - Silver Shield",
     range: "151 - 350 Pts",
-    glowClass: "shadow-[0_0_40px_rgba(209,213,219,0.3)]",
+    glowClass: "bg-gray-400 shadow-[0_0_20px_rgba(156,163,175,0.6)]",
     minPoints: 151,
     maxPoints: 350,
     supply: 350,
-    minLamboUsd: 2.5
+    minLamboUsd: 2.5,
+    referenceImageUrl: "https://i.ibb.co/vYmC7Wd/silver.jpg"
   },
   [RankTier.BRONZE]: {
     name: "Bronze",
-    color: "from-orange-300 via-orange-600 to-orange-900",
+    color: "from-purple-600 via-purple-800 to-purple-900",
     description: "Active Entry - Bronze Shield",
     range: "100 - 150 Pts",
-    glowClass: "shadow-[0_0_40px_rgba(234,88,12,0.3)]",
+    glowClass: "bg-purple-600 shadow-[0_0_20px_rgba(147,51,234,0.6)]",
     minPoints: 100,
     maxPoints: 150,
     supply: 1025,
-    minLamboUsd: 2.5
+    minLamboUsd: 2.5,
+    referenceImageUrl: "https://i.ibb.co/L8yX7M0/bronze.jpg"
   },
   [RankTier.NONE]: {
     name: "Member",
@@ -93,7 +97,8 @@ export const TIERS: Record<RankTier, BadgeConfig & { minPoints: number, maxPoint
     minPoints: 0,
     maxPoints: 99,
     supply: 0,
-    minLamboUsd: 0
+    minLamboUsd: 0,
+    referenceImageUrl: ""
   }
 };
 
