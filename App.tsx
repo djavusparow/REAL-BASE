@@ -33,7 +33,9 @@ import {
   ChevronDown,
   ChevronUp,
   History,
-  Calendar
+  Calendar,
+  UserPlus,
+  Hash
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -46,7 +48,7 @@ import {
   HOURLY_WINDOW_START,
   HOURLY_WINDOW_END
 } from './constants.ts';
-import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations.ts';
+import { calculateDetailedPoints, getTierFromPoints, calculateFidPoints } from './utils/calculations.ts';
 import BadgeDisplay from './components/BadgeDisplay.tsx';
 import { geminiService } from './services/geminiService.ts';
 import { twitterService } from './services/twitterService.ts';
@@ -250,7 +252,7 @@ const App: React.FC = () => {
     }
   };
 
-  const scanFarcasterId = async () => {
+  const syncFarcasterProfile = async () => {
     if (!user) return;
     setIsSyncingFID(true);
     try {
@@ -264,7 +266,11 @@ const App: React.FC = () => {
           user.twitterAgeDays,
           user.validTweetsCount,
           fid,
-          { lambo: user.lambolessBalance || 0, jesse: user.jesseBalance || 0, nick: user.nickBalance || 0 },
+          { 
+            lambo: user.lambolessBalance || 0, 
+            jesse: user.jesseBalance || 0, 
+            nick: user.nickBalance || 0 
+          },
           user.basepostingPoints
         );
 
@@ -276,10 +282,10 @@ const App: React.FC = () => {
           pointsBreakdown: breakdown
         });
       } else {
-        alert("Could not detect Farcaster ID.");
+        alert("Farcaster profile not detected.");
       }
     } catch (e) {
-      console.error("Failed to scan FID", e);
+      console.error("Failed to sync Farcaster profile", e);
     } finally {
       setIsSyncingFID(false);
     }
@@ -315,7 +321,7 @@ const App: React.FC = () => {
       
       await new Promise(r => setTimeout(r, 1000));
       setScanProgress(80);
-      setScanLogs(prev => [...prev, "Validation complete. Total points: " + results.basepostingPoints]);
+      setScanLogs(prev => [...prev, "Validation complete. Points calculated."]);
       
       const stats: UserStats = {
         address,
@@ -335,7 +341,7 @@ const App: React.FC = () => {
       const { total, breakdown } = calculateDetailedPoints(
         stats.baseAppAgeDays,
         stats.twitterAgeDays,
-        0,
+        stats.validTweetsCount,
         0,
         { lambo: 0, jesse: 0, nick: 0 },
         stats.basepostingPoints
@@ -448,33 +454,14 @@ const App: React.FC = () => {
     const lamboUsdNeeded = Math.max(0, minLamboUsd - (user.lambolessBalance || 0));
 
     if (currentTier === RankTier.NONE) {
-      return { 
-        eligible: false, 
-        message: `Rank Too Low.`, 
-        status: 'INELIGIBLE',
-        pointsNeeded,
-        lamboUsdNeeded
-      };
+      return { eligible: false, message: `Rank Too Low.`, status: 'INELIGIBLE', pointsNeeded, lamboUsdNeeded };
     }
 
     if (lamboUsdNeeded > 0) {
-      return { 
-        eligible: false, 
-        message: `Need $${lamboUsdNeeded.toFixed(2)} more.`, 
-        status: 'INELIGIBLE',
-        pointsNeeded,
-        lamboUsdNeeded
-      };
+      return { eligible: false, message: `Need $${lamboUsdNeeded.toFixed(2)} more.`, status: 'INELIGIBLE', pointsNeeded, lamboUsdNeeded };
     }
 
-    return { 
-      eligible: true, 
-      message: "Eligible for Badge Mint!", 
-      status: 'ELIGIBLE', 
-      tierName: TIERS[currentTier].name,
-      pointsNeeded: 0,
-      lamboUsdNeeded: 0
-    };
+    return { eligible: true, message: "Eligible for Badge Mint!", status: 'ELIGIBLE', tierName: TIERS[currentTier].name, pointsNeeded: 0, lamboUsdNeeded: 0 };
   }, [user]);
 
   if (!isReady) return (
@@ -574,22 +561,52 @@ const App: React.FC = () => {
                       </div>
 
                       <div className="glass-effect p-8 rounded-[3rem] border-white/10 text-center flex flex-col items-center justify-center gap-6">
-                         <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">ECOSYSTEM ACTIONS</span>
-                         <div className="flex flex-col w-full gap-3">
+                         <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">IDENTITY SCANNERS</span>
+                         <div className="grid grid-cols-1 w-full gap-3">
+                            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+                               <div className="flex items-center gap-3">
+                                  <Twitter className="text-blue-400" size={18} />
+                                  <div className="text-left">
+                                     <p className="text-[10px] font-black uppercase text-gray-500">Twitter Identity</p>
+                                     <p className="text-xs font-bold text-gray-200">{user.twitterHandle}</p>
+                                  </div>
+                               </div>
+                               <div className="text-right">
+                                  <p className="text-[10px] font-black text-blue-400">+{user.pointsBreakdown?.social_twitter.toFixed(2)} PTS</p>
+                               </div>
+                            </div>
+                            
+                            {/* BASEPOSTING SECTION */}
+                            <div className="bg-blue-600/5 border border-blue-500/20 rounded-2xl p-4 flex items-center justify-between group hover:bg-blue-600/10 transition-all">
+                               <div className="flex items-center gap-3">
+                                  <Hash className="text-blue-500" size={18} />
+                                  <div className="text-left">
+                                     <p className="text-[10px] font-black uppercase text-blue-500">#Baseposting</p>
+                                     <p className="text-xs font-bold text-gray-300">Verified Mentions Since Nov 1</p>
+                                  </div>
+                               </div>
+                               <div className="text-right">
+                                  <div className="flex items-center gap-1 justify-end">
+                                     <p className="text-[10px] font-black text-blue-500">+{user.basepostingPoints} PTS</p>
+                                     <Info size={10} className="text-blue-500/50 cursor-help" title="1 pt per original post mentioning @base, @baseapp, @baseposting, @jessepollak or @brian_armstrong. Capped at 5 pts/day." />
+                                  </div>
+                                  <p className="text-[8px] font-bold text-gray-600 uppercase">Capped at 5/Day</p>
+                               </div>
+                            </div>
+
                             <button 
-                               onClick={scanFarcasterId}
+                               onClick={syncFarcasterProfile}
                                disabled={isSyncingFID}
-                               className="w-full py-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-2xl flex items-center justify-center gap-3 text-sm font-black uppercase italic transition-all group"
+                               className={`w-full py-3 border rounded-2xl flex items-center justify-center gap-3 text-sm font-black uppercase italic transition-all group ${user.farcasterId ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-blue-600/20 border-blue-500/30 text-blue-400 hover:bg-blue-600/30'}`}
                             >
-                               {isSyncingFID ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 group-hover:scale-110 transition-transform" />}
-                               {user.farcasterId ? `FID Synced: ${user.farcasterId}` : 'Sync Farcaster ID'}
-                            </button>
-                            <button 
-                               onClick={handleShareOnFarcaster}
-                               className="w-full py-3 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-2xl flex items-center justify-center gap-3 text-sm font-black uppercase italic transition-all group"
-                            >
-                               <Share2 className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                               Share Your Impact
+                               {isSyncingFID ? (
+                                 <Loader2 className="w-4 h-4 animate-spin" />
+                               ) : user.farcasterId ? (
+                                 <UserCheck className="w-4 h-4" />
+                               ) : (
+                                 <UserPlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                               )}
+                               {user.farcasterId ? `Synced FID: ${user.farcasterId}` : 'Sync Farcaster ID'}
                             </button>
                          </div>
                       </div>
@@ -617,7 +634,7 @@ const App: React.FC = () => {
                                  {Object.entries((user as any).twitterDailyBreakdown || {}).map(([day, count], i) => (
                                     <div key={i} className="bg-white/5 border border-white/5 p-3 rounded-xl flex justify-between items-center">
                                        <span className="text-[10px] font-mono text-gray-400">{day.split('-').slice(1).join('/')}</span>
-                                       <span className="text-xs font-black text-blue-400">+{count}</span>
+                                       <span className="text-xs font-black text-blue-400">+{Math.min(count as number, 5)}</span>
                                     </div>
                                  ))}
                               </div>
