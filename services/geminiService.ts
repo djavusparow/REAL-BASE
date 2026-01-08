@@ -10,9 +10,9 @@ export class GeminiService {
       // Step 1: Attempt AI Generation (High quality, but can be slow/fail)
       // Note: Using gemini-2.5-flash-image for image generation as per guidelines.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `A centered, minimalist digital NFT Badge Shield for "${username}". 
-        Tier: ${tier}. Metallic finish, luxury automotive aesthetic, clean dark background. 
-        Highly detailed beveled edges, 8k resolution.`;
+      
+      // Simplified prompt for consistency and speed
+      const prompt = `Sleek minimalist automotive shield badge. Tier: ${tier}. User: ${username}. Luxury metallic finish, dark studio lighting, high-end car aesthetic, clean beveled edges.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',

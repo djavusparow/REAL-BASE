@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Zap, 
   ShieldCheck, 
-  Info, 
   Loader2, 
   Share2, 
   PlusCircle, 
@@ -11,16 +10,15 @@ import {
   LayoutDashboard, 
   Gift, 
   Twitter, 
-  ExternalLink, 
-  CheckCircle2, 
-  Lock, 
   RefreshCw,
   Fingerprint,
   ChevronRight,
   Coins,
   Search,
-  UserCheck,
-  LogOut
+  LogOut,
+  CheckCircle2,
+  ShieldAlert,
+  UserCheck
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
@@ -107,7 +105,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleDisconnect = () => {
-    if (confirm("Are you sure you want to disconnect? This will clear your current session.")) {
+    if (confirm("Disconnect Farcaster account?")) {
       localStorage.removeItem(STORAGE_KEY);
       setIsAuthenticated(false);
       setUser(null);
@@ -140,7 +138,7 @@ const App: React.FC = () => {
           }
         }
       } catch (e) {
-        console.error("Farcaster Connection Failed", e);
+        console.error("Farcaster Context Discovery Failed", e);
       } finally {
         setIsReady(true);
       }
@@ -160,20 +158,27 @@ const App: React.FC = () => {
     }
   };
 
-  const startSecureLogin = async () => {
+  /**
+   * Two-Step Secure Farcaster Authentication
+   * 1. Approve: OIDC Sign-in via Frame SDK
+   * 2. Sign: Personal signature for wallet verification
+   */
+  const startFarcasterLogin = async () => {
     setLoginStep('APPROVE');
     try {
       const context = await sdk.context;
-      if (!context?.user) throw new Error("No Farcaster user detected. Ensure you're in a Farcaster client.");
+      if (!context?.user) throw new Error("Farcaster identity not found. Please open in a Farcaster client.");
 
       const generatedNonce = Math.random().toString(36).substring(2, 15);
 
+      // Step 1: Approve Identity
       const signInResult = await sdk.actions.signIn({ nonce: generatedNonce });
-      if (!signInResult) throw new Error("Sign in failed");
+      if (!signInResult) throw new Error("Approval rejected.");
       
+      // Step 2: Sign Verification
       setLoginStep('SIGNING');
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("No wallet provider found");
+      if (!provider) throw new Error("Secure wallet provider unavailable.");
       
       let rawAddress = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
       
@@ -186,10 +191,10 @@ const App: React.FC = () => {
         if (accounts?.[0]) rawAddress = accounts[0];
       }
 
-      if (!rawAddress) throw new Error("No usable wallet address found for this account.");
+      if (!rawAddress) throw new Error("No verified address linked to this Farcaster account.");
 
       const address = ethers.getAddress(rawAddress);
-      const challenge = `BASE IMPRESSION SECURITY CHALLENGE\n\nFID: #${context.user.fid}\nTimestamp: ${Date.now()}\n\nSign to verify your impact on Base.`;
+      const challenge = `BASE IMPRESSION IDENTITY VERIFICATION\n\nFID: #${context.user.fid}\nTimestamp: ${Date.now()}\n\nVerify your impact on Base network.`;
       
       await provider.request({
         method: 'personal_sign',
@@ -203,9 +208,9 @@ const App: React.FC = () => {
       }, 800);
 
     } catch (e: any) {
-      console.error("Authentication Process Failed:", e);
+      console.error("Farcaster Auth Failed:", e);
       setLoginStep('IDLE');
-      alert(e.message || "Authentication failed. Please try again.");
+      alert(e.message || "Farcaster connection failed.");
     }
   };
 
@@ -223,7 +228,7 @@ const App: React.FC = () => {
         );
       }
     } catch (e) {
-      console.error("Farcaster Profile Scan Failed", e);
+      console.error("Farcaster Scan Error", e);
     } finally {
       setIsScanningFarcaster(false);
     }
@@ -243,7 +248,7 @@ const App: React.FC = () => {
       
       setIsMinting(true);
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet not detected");
+      if (!provider) throw new Error("Secure provider missing.");
       
       const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
@@ -256,8 +261,8 @@ const App: React.FC = () => {
         text: `🛡️ My ${tier} Impact on @base is verified via @farcaster!\n\nFID: #${user.farcasterId}\nScore: ${user.points.toFixed(0)}\n\nVerify yours: real-base-2026.vercel.app\n\n#Base #Onchain #Baseposting` 
       });
     } catch (e) {
-      console.error("Mint Error:", e);
-      alert("Mint failed. Ensure you have ETH on Base for gas.");
+      console.error("Badge Forge Error:", e);
+      alert("Forge failed. Ensure gas is available on Base.");
     } finally {
       setIsGenerating(false);
       setIsMinting(false);
@@ -267,7 +272,7 @@ const App: React.FC = () => {
   const connectTwitterSecurely = async () => {
     setIsLinkingTwitter(true);
     await new Promise(r => setTimeout(r, 1500));
-    const handle = prompt("Connect X Account. Enter your handle:", user?.farcasterUsername || "");
+    const handle = prompt("Connect X Account:", user?.farcasterUsername || "");
     if (handle) {
       const sanitized = handle.replace('@', '');
       setLinkedTwitterHandle(sanitized);
@@ -284,7 +289,7 @@ const App: React.FC = () => {
         </div>
         <h2 className="text-4xl font-black italic uppercase tracking-tighter mb-4">Mandatory Add</h2>
         <p className="text-sm text-gray-400 font-bold uppercase tracking-widest leading-relaxed mb-8 max-w-[280px] mx-auto">
-          To calculate your real-time impact, you must add <span className="text-blue-500">Base Impression</span> to your Farcaster mini-apps.
+          Add <span className="text-blue-500">Base Impression</span> to your Farcaster apps to start calculating your impact.
         </p>
         <button 
           onClick={handleAddFrame}
@@ -299,41 +304,56 @@ const App: React.FC = () => {
   if (isReady && !isAuthenticated) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 text-center">
-        <div className="absolute inset-0 opacity-20 pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-blue-600 rounded-full blur-[140px]" />
-          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-600 rounded-full blur-[140px]" />
+        <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-blue-600 rounded-full blur-[140px] animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-600 rounded-full blur-[140px] animate-pulse delay-1000" />
         </div>
+        
         <div className="relative space-y-8 max-w-sm w-full">
-          <div className="flex flex-col items-center gap-4">
-            <Zap className="text-blue-500 w-20 h-20" fill="currentColor" />
-            <h1 className="text-5xl font-black italic tracking-tighter">BASE IMPRESSION</h1>
-            <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.4em]">Secure Protocol v4.5</p>
+          <div className="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-700">
+            <div className="relative">
+              <Zap className="text-blue-500 w-24 h-24" fill="currentColor" />
+              <div className="absolute inset-0 blur-xl bg-blue-500/20 rounded-full animate-pulse" />
+            </div>
+            <h1 className="text-5xl font-black italic tracking-tighter text-white">BASE IMPRESSION</h1>
+            <div className="px-4 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-full">
+              <p className="text-[10px] text-blue-400 font-black uppercase tracking-[0.4em]">Farcaster Native v4.5</p>
+            </div>
           </div>
-          <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-6 backdrop-blur-2xl">
+
+          <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-6 backdrop-blur-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-700 delay-300">
             <div className="space-y-4">
-              {[ { s: 'APPROVE', l: 'Step 1: Link Profile' }, { s: 'SIGNING', l: 'Step 2: Authenticate' } ].map((step, i) => (
-                <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all duration-500 ${loginStep === step.s ? 'bg-blue-600/10 border-blue-500 shadow-xl' : (loginStep === 'SUCCESS' || (i === 0 && loginStep === 'SIGNING') ? 'bg-green-500/10 border-green-500/40' : 'bg-white/5 border-white/10 opacity-40')}`}>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black ${loginStep === 'SUCCESS' || (i === 0 && loginStep === 'SIGNING') ? 'bg-green-500 text-black shadow-lg shadow-green-500/20' : 'bg-white/10 text-white'}`}>
-                    {loginStep === 'SUCCESS' || (i === 0 && loginStep === 'SIGNING') ? <CheckCircle2 size={18} /> : i+1}
+              {[ 
+                { s: 'APPROVE', l: 'Step 1: Approve Identity', icon: <UserCheck size={18} /> }, 
+                { s: 'SIGNING', l: 'Step 2: Sign Verification', icon: <ShieldCheck size={18} /> } 
+              ].map((step, i) => (
+                <div key={i} className={`flex items-center gap-4 p-5 rounded-2xl border transition-all duration-500 ${loginStep === step.s ? 'bg-blue-600/10 border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.1)]' : (loginStep === 'SUCCESS' || (i === 0 && loginStep === 'SIGNING') ? 'bg-green-500/10 border-green-500/40 opacity-100' : 'bg-white/5 border-white/10 opacity-30')}`}>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black transition-all duration-500 ${loginStep === 'SUCCESS' || (i === 0 && loginStep === 'SIGNING') ? 'bg-green-500 text-black shadow-lg shadow-green-500/20' : 'bg-white/10 text-white'}`}>
+                    {loginStep === 'SUCCESS' || (i === 0 && loginStep === 'SIGNING') ? <CheckCircle2 size={24} /> : step.icon}
                   </div>
                   <div className="text-left">
-                    <p className="text-[11px] font-black uppercase tracking-widest">{step.l}</p>
-                    <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Secure Handshake</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-white/90">{step.l}</p>
+                    <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Secure Protocol</p>
                   </div>
                 </div>
               ))}
             </div>
+
             <button 
-              onClick={startSecureLogin}
+              onClick={startFarcasterLogin}
               disabled={loginStep !== 'IDLE'}
-              className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl shadow-2xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-all disabled:opacity-50 active:scale-95"
+              className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl shadow-2xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-all disabled:opacity-80 active:scale-95 group"
             >
               {loginStep === 'IDLE' ? (
-                <>START LOGIN <ChevronRight size={24} /></>
+                <>CONNECT FARCASTER <ChevronRight size={24} className="group-hover:translate-x-1 transition-transform" /></>
               ) : (
-                <><Loader2 size={24} className="animate-spin" /> {loginStep === 'APPROVE' ? "LINKING..." : loginStep === 'SIGNING' ? "SIGNING..." : "SUCCESS"}</>
+                <><Loader2 size={24} className="animate-spin" /> {loginStep === 'SUCCESS' ? "SUCCESS!" : "CONNECTING FARCASTER..."}</>
               )}
             </button>
+            
+            <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest text-center italic">
+              * Verification requires a signed message via Frame SDK
+            </p>
           </div>
         </div>
       </div>
@@ -390,7 +410,7 @@ const App: React.FC = () => {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400 overflow-hidden">
-                  {user?.farcasterPfp ? <img src={user.farcasterPfp} className="w-full h-full object-cover" /> : <Share2 size={16} />}
+                  {user?.farcasterPfp ? <img src={user.farcasterPfp} className="w-full h-full object-cover" /> : <Search size={16} />}
                 </div>
                 <div className="overflow-hidden">
                   <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">FID: #{user?.farcasterId || '---'}</p>
@@ -477,7 +497,7 @@ const App: React.FC = () => {
               onClick={handleDisconnect}
               className="w-full py-4 bg-transparent hover:bg-red-500/5 text-red-500/60 hover:text-red-500 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-dashed border-red-500/20 hover:border-red-500/40 rounded-xl"
             >
-              <LogOut size={14} /> Disconnect Session
+              <LogOut size={14} /> Disconnect Account
             </button>
           </div>
         ) : (
@@ -487,10 +507,10 @@ const App: React.FC = () => {
               <h3 className="text-2xl font-black italic tracking-tight uppercase bg-clip-text text-transparent bg-gradient-to-b from-white to-white/40">{getTierFromPoints(user?.points || 0)} IMPRESSION SHIELD</h3>
             </div>
             <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 space-y-5 shadow-2xl">
-              <h4 className="text-[10px] font-black uppercase text-blue-400">Mint Threshold Verification</h4>
+              <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Forge Prerequisites</h4>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400 font-medium">100+ Total Points</span>
-                {user && user.points >= 100 ? <CheckCircle /> : <Warning label="Missing Points" />}
+                {user && user.points >= 100 ? <CheckCircle /> : <Warning label="Point Deficiency" />}
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400 font-medium">1,000+ LAMBO Hold</span>
@@ -501,10 +521,10 @@ const App: React.FC = () => {
               onClick={handleClaim}
               disabled={!user || user.points < 100 || (user.lambolessAmount || 0) < 1000 || isMinting || isMinted}
               className={`w-full py-7 rounded-[2rem] font-black uppercase italic text-xl shadow-2xl transition-all ${
-                isMinted ? 'bg-green-600' : 'bg-blue-600 hover:scale-[1.03] active:scale-95 disabled:opacity-20'
+                isMinted ? 'bg-green-600 shadow-green-500/20' : 'bg-blue-600 hover:scale-[1.03] active:scale-95 disabled:opacity-20'
               }`}
             >
-              {isMinting ? <Loader2 className="animate-spin mx-auto" /> : isMinted ? 'BADGE COLLECTED' : 'MINT INSTANT SHIELD'}
+              {isMinting ? <Loader2 className="animate-spin mx-auto" /> : isMinted ? 'FORGE COMPLETE' : 'FORGE INSTANT SHIELD'}
             </button>
           </div>
         )}
@@ -520,9 +540,12 @@ const CheckCircle = () => (
 );
 
 const Warning = ({ label }: { label: string }) => (
-  <span className="text-[10px] font-black bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg border border-red-500/30 uppercase tracking-widest shadow-lg shadow-red-500/5">
-    {label}
-  </span>
+  <div className="flex items-center gap-2">
+    <ShieldAlert size={14} className="text-red-500" />
+    <span className="text-[10px] font-black bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg border border-red-500/30 uppercase tracking-widest shadow-lg shadow-red-500/5">
+      {label}
+    </span>
+  </div>
 );
 
 export default App;
