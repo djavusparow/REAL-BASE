@@ -3,16 +3,13 @@ import { GoogleGenAI } from "@google/genai";
 export class GeminiService {
   /**
    * Generates a badge image using Gemini with an instant SVG fallback.
-   * This ensures the process is "simpler, faster, and fail-proof".
    */
   async generateBadgePreview(tier: string, username: string): Promise<string | null> {
     try {
-      // Step 1: Attempt AI Generation (High quality, but can be slow/fail)
-      // Note: Using gemini-2.5-flash-image for image generation as per guidelines.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // Simplified prompt for consistency and speed
-      const prompt = `Sleek minimalist automotive shield badge. Tier: ${tier}. User: ${username}. Luxury metallic finish, dark studio lighting, high-end car aesthetic, clean beveled edges.`;
+      // User requested specific prompt: "Generate a simple, clean vector illustration of a Lamborghini car, minimalist style, premium badge background"
+      const prompt = `Generate a simple, clean vector illustration of a Lamborghini car, minimalist style, premium ${tier.toLowerCase()} badge background for user ${username}. 4k, digital art.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -28,18 +25,13 @@ export class GeminiService {
         }
       }
       
-      // Step 2: Fallback to Instant High-Quality SVG if AI fails
       return this.generateInstantBadge(tier, username);
     } catch (error) {
-      console.error(`Gemini AI failed, using Instant Fallback:`, error);
+      console.error(`Gemini AI failed, using fallback:`, error);
       return this.generateInstantBadge(tier, username);
     }
   }
 
-  /**
-   * Generates a beautiful SVG badge instantly. 
-   * Simple, fast, and deterministic.
-   */
   private generateInstantBadge(tier: string, username: string): string {
     const colors: Record<string, { start: string, mid: string, end: string }> = {
       'PLATINUM': { start: '#E2E8F0', mid: '#94A3B8', end: '#1E293B' },
@@ -59,21 +51,13 @@ export class GeminiService {
           <stop offset="50%" style="stop-color:${c.mid};stop-opacity:1" />
           <stop offset="100%" style="stop-color:${c.end};stop-opacity:1" />
         </linearGradient>
-        <filter id="shadow">
-          <feDropShadow dx="0" dy="20" stdDeviation="30" flood-opacity="0.5"/>
-        </filter>
       </defs>
       <rect width="1024" height="1024" fill="#000000"/>
-      <path d="M512 128 L832 256 L832 576 C832 768 512 896 512 896 C512 896 192 768 192 576 L192 256 L512 128Z" 
-            fill="url(#shieldGrad)" filter="url(#shadow)" stroke="#ffffff" stroke-opacity="0.2" stroke-width="8"/>
-      <path d="M512 180 L780 285 L780 576 C780 730 512 830 512 830 C512 830 244 730 244 576 L244 285 L512 180Z" 
-            fill="black" fill-opacity="0.3"/>
-      <text x="512" y="520" font-family="Arial, sans-serif" font-weight="900" font-size="64" fill="white" text-anchor="middle" style="letter-spacing: 12px; opacity: 0.9">${tier}</text>
-      <text x="512" y="600" font-family="Arial, sans-serif" font-weight="400" font-size="32" fill="white" text-anchor="middle" style="letter-spacing: 4px; opacity: 0.6">IMPRESSION SHIELD</text>
-      <text x="512" y="800" font-family="Arial, sans-serif" font-weight="700" font-size="24" fill="white" text-anchor="middle" style="opacity: 0.4">${username.toUpperCase()}</text>
+      <path d="M512 128 L832 256 L832 576 C832 768 512 896 512 896 C512 896 192 768 192 576 L192 256 L512 128Z" fill="url(#shieldGrad)" />
+      <text x="512" y="520" font-family="Arial" font-weight="900" font-size="80" fill="white" text-anchor="middle">${tier}</text>
+      <text x="512" y="800" font-family="Arial" font-weight="700" font-size="30" fill="white" text-anchor="middle">${username.toUpperCase()}</text>
     </svg>`;
     
-    // Convert SVG string to Base64 data URL
     return `data:image/svg+xml;base64,${btoa(svg)}`;
   }
 
@@ -87,7 +71,6 @@ export class GeminiService {
       });
       return parseFloat(response.text?.replace(/[^0-9.]/g, '') || "0.0001");
     } catch (error) {
-      console.error("Token price fetch failed", error);
       return 0.0001; 
     }
   }
