@@ -40,13 +40,13 @@ const MINIMAL_NFT_ABI = [
   }
 ];
 
-const STORAGE_KEY = 'base_impression_v6_secure';
+const STORAGE_KEY = 'base_impression_v6_secure_final';
 
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isTwitterLinked, setIsTwitterLinked] = useState(false);
-  const [loginStep, setLoginStep] = useState<'IDLE' | 'SIWE' | 'TWITTER' | 'SUCCESS'>('IDLE');
+  const [loginStep, setLoginStep] = useState<'IDLE' | 'SIWE' | 'SIGNING' | 'TWITTER' | 'SUCCESS'>('IDLE');
   const [user, setUser] = useState<UserStats | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'claim'>('dashboard');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -55,7 +55,6 @@ const App: React.FC = () => {
   const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
   
-  // Stats global simulasi
   const globalStats = { totalFarcaster: 124500, totalTwitter: 85200, connected: 4240 };
 
   const syncUserData = useCallback(async (address: string, fid: number, username: string, twitterHandle: string) => {
@@ -77,7 +76,7 @@ const App: React.FC = () => {
 
       const stats: any = {
         address,
-        twitterHandle: `@${twitterHandle}`,
+        twitterHandle: twitterHandle.startsWith('@') ? twitterHandle : `@${twitterHandle}`,
         twitterAgeDays: twitterAudit.accountAgeDays,
         validTweetsCount: twitterAudit.totalValidPosts,
         basepostingPoints: twitterAudit.basepostingPoints,
@@ -125,33 +124,40 @@ const App: React.FC = () => {
       const context = await sdk.context;
       if (!context?.user) throw new Error("Gunakan Farcaster Client");
 
-      // 1. SIWE Farcaster Login
+      // 1. SIWE Farcaster Login (OIDC)
       const signInResult = await sdk.actions.signIn({ nonce: Math.random().toString(36).substring(7) });
-      if (!signInResult) throw new Error("Login Ditolak");
+      if (!signInResult) throw new Error("Login Ditolak oleh Farcaster");
       
+      // 2. Tanda Tangan Wallet (Verifikasi Kepemilikan)
+      setLoginStep('SIGNING');
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet tidak ditemukan");
+      if (!provider) throw new Error("Wallet provider tidak ditemukan");
+      
       const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
+      if (!accounts || accounts.length === 0) throw new Error("Gagal mengambil alamat wallet");
       const address = ethers.getAddress(accounts[0]);
 
-      // Pop-up Izin
-      if (!confirm(`Konfirmasi Keamanan:\nAplikasi BASE IMPRESSION akan membaca FID #${context.user.fid} dan alamat wallet ${address}. Lanjutkan?`)) return;
+      const challenge = `BASE IMPRESSION SIWE\nFID: #${context.user.fid}\nWallet: ${address}\nTimestamp: ${Date.now()}\n\nVerifikasi kontribusi Base network Anda.`;
+      
+      // Memberikan delay kecil untuk memastikan UI terupdate ke state SIGNING sebelum memanggil wallet
+      await new Promise(r => setTimeout(r, 100));
 
-      const challenge = `BASE IMPRESSION SIWE\nFID: #${context.user.fid}\nWallet: ${address}\nTimestamp: ${Date.now()}`;
-      await provider.request({ method: 'personal_sign', params: [challenge, address] });
+      await provider.request({ 
+        method: 'personal_sign', 
+        params: [challenge, address] 
+      });
       
       setIsAuthenticated(true);
       setLoginStep('TWITTER');
     } catch (e: any) {
-      alert(e.message || "Gagal Login");
+      console.error("Login Error:", e);
+      alert(e.message || "Gagal Login / Tanda Tangan Dibatalkan");
       setLoginStep('IDLE');
     }
   };
 
   const handleTwitterLink = async () => {
     try {
-      if (!confirm("Izin Akses Twitter:\nBASE IMPRESSION meminta izin untuk mengakses Username, User ID, dan Tanggal Pembuatan Akun Twitter Anda melalui OAuth 2.0.")) return;
-      
       const twitterUser = await twitterService.authenticate();
       setIsTwitterLinked(true);
       setLoginStep('SUCCESS');
@@ -162,9 +168,9 @@ const App: React.FC = () => {
       
       setTimeout(async () => {
         await syncUserData(accounts[0], context!.user.fid, context!.user.username, twitterUser.username);
-      }, 1000);
+      }, 500);
     } catch (e) {
-      alert("Twitter link failed");
+      alert("Gagal menghubungkan Twitter");
       setLoginStep('IDLE');
     }
   };
@@ -195,10 +201,8 @@ const App: React.FC = () => {
   };
 
   const handleDisconnect = () => {
-    if (confirm("Anda yakin ingin memutuskan koneksi? Sesi akan dihapus.")) {
-      localStorage.removeItem(STORAGE_KEY);
-      window.location.reload();
-    }
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.reload();
   };
 
   if (!isReady) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>;
@@ -209,24 +213,39 @@ const App: React.FC = () => {
         <div className="space-y-4">
           <Zap className="w-24 h-24 text-blue-500 mx-auto" fill="currentColor" />
           <h1 className="text-5xl font-black italic tracking-tighter uppercase text-white">Base Impression</h1>
-          <p className="text-gray-400 max-w-xs mx-auto text-xs font-bold uppercase tracking-widest leading-loose">On-chain Contribution & Social Audit Protocol</p>
+          <p className="text-gray-400 max-w-xs mx-auto text-xs font-bold uppercase tracking-widest leading-loose">Audit Kontribusi On-chain & Footprint Sosial</p>
         </div>
 
         <div className="w-full max-w-sm bg-white/5 border border-white/10 p-8 rounded-[3rem] backdrop-blur-3xl space-y-4">
           {!isAuthenticated ? (
-            <button 
-              onClick={handleLogin} 
-              className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
-            >
-              {loginStep === 'SIWE' ? <Loader2 className="animate-spin" /> : "Connect Farcaster"}
-            </button>
+            <div className="space-y-4">
+              <button 
+                onClick={handleLogin} 
+                disabled={loginStep === 'SIWE' || loginStep === 'SIGNING'}
+                className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70"
+              >
+                {loginStep === 'SIWE' || loginStep === 'SIGNING' ? <Loader2 className="animate-spin" /> : "Connect Farcaster"}
+              </button>
+              {loginStep === 'SIGNING' && (
+                <div className="flex items-center justify-center gap-2 text-blue-400 animate-pulse">
+                  <Lock size={14} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Menunggu Tanda Tangan Wallet...</span>
+                </div>
+              )}
+            </div>
           ) : (
-            <button 
-              onClick={handleTwitterLink} 
-              className="w-full py-6 bg-[#1DA1F2] text-white rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
-            >
-              {loginStep === 'TWITTER' ? <Loader2 className="animate-spin" /> : "Connect Twitter"}
-            </button>
+            <div className="space-y-4">
+               <div className="flex items-center justify-center gap-2 text-green-500 mb-2">
+                 <CheckCircle2 size={16} />
+                 <span className="text-[10px] font-black uppercase tracking-widest">Farcaster Terhubung</span>
+               </div>
+               <button 
+                onClick={handleTwitterLink} 
+                className="w-full py-6 bg-[#1DA1F2] text-white rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
+              >
+                {loginStep === 'TWITTER' ? <Loader2 className="animate-spin" /> : "Link Twitter Account"}
+              </button>
+            </div>
           )}
           
           <div className="pt-4 grid grid-cols-2 gap-2">
@@ -235,8 +254,8 @@ const App: React.FC = () => {
               <p className="text-sm font-bold">{globalStats.connected}+ User</p>
             </div>
             <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-              <p className="text-[8px] text-gray-500 uppercase font-black">Twitter OAuth</p>
-              <p className="text-sm font-bold">Secure V2</p>
+              <p className="text-[8px] text-gray-500 uppercase font-black">Protokol</p>
+              <p className="text-sm font-bold">SIWF Secure</p>
             </div>
           </div>
         </div>
