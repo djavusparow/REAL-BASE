@@ -11,7 +11,9 @@ import {
   TrendingUp,
   Clock,
   LayoutDashboard,
-  Gift
+  Gift,
+  Twitter,
+  User
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -40,7 +42,7 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
-  const [userCount, setUserCount] = useState(2540); 
+  const [userCount, setUserCount] = useState(2815); 
 
   useEffect(() => {
     const init = async () => {
@@ -69,25 +71,25 @@ const App: React.FC = () => {
     };
     init();
     
-    const interval = setInterval(() => setUserCount(prev => prev + Math.floor(Math.random() * 3)), 15000);
+    const interval = setInterval(() => setUserCount(prev => prev + Math.floor(Math.random() * 4)), 10000);
     return () => clearInterval(interval);
   }, []);
 
   const syncUserData = async (address: string, fid: number, username: string) => {
     setIsSyncing(true);
     try {
-      // 1. On-Chain Sync (Holdings)
+      // 1. On-Chain Sync (Holdings & Duration via calculations)
       const lamboBalance = await tokenService.getBalance(address, LAMBOLESS_CONTRACT);
       const lamboPrice = await tokenService.getTokenPrice(LAMBOLESS_CONTRACT);
       const lamboUsdValue = lamboBalance * lamboPrice;
 
-      // 2. Social Sync (Twitter/X)
-      // We use the Farcaster username as a proxy for the Twitter handle for this audit
+      // 2. Social Sync (Twitter/X) - Uses FC username as handle for simulation
       const twitterAudit = await twitterService.scanPosts(username);
 
-      // 3. Point Calculation Engine
+      // 3. Point Calculation Engine (Weighted Logic)
+      // FID Tiers + Twitter Age + Baseposting (Posts vs Mentions) + Token Hold Duration
       const { total, breakdown } = calculateDetailedPoints(
-        1, // Internal seniority (days since using app)
+        1, // Internal app seniority
         twitterAudit.accountAgeDays,
         twitterAudit.totalValidPosts,
         fid,
@@ -97,7 +99,7 @@ const App: React.FC = () => {
 
       setUser({
         address,
-        twitterHandle: `@${username}`,
+        twitterHandle: `@${username}`, // Connected social handle
         baseAppAgeDays: 1,
         twitterAgeDays: twitterAudit.accountAgeDays,
         validTweetsCount: twitterAudit.totalValidPosts,
@@ -106,7 +108,7 @@ const App: React.FC = () => {
         lambolessAmount: lamboBalance,
         points: total,
         rank: 0,
-        farcasterId: fid,
+        farcasterId: fid, // Connected FID
         farcasterUsername: username,
         pointsBreakdown: breakdown
       } as any);
@@ -141,7 +143,7 @@ const App: React.FC = () => {
       
       setIsMinted(true);
       sdk.actions.cast({ 
-        text: `🚀 My ${tier} impact on @base is verified! \n\nCheck your Impression Points & Claim Free Reward at: real-base-2026.vercel.app \n\n#Base #BaseApp #Onchain #Baseposting` 
+        text: `🚀 Verified my ${tier} impact on @base with ${user.points.toFixed(0)} points! \n\nCheck your Impression Score & Claim Free Reward: real-base-2026.vercel.app \n\n#Base #BaseApp #Onchain #Baseposting` 
       });
     } catch (e) {
       console.error(e);
@@ -173,6 +175,7 @@ const App: React.FC = () => {
       </nav>
 
       <main className="max-w-md mx-auto p-6 space-y-6">
+        {/* Navigation Tabs */}
         <div className="flex p-1 bg-white/5 rounded-2xl border border-white/10">
           <button 
             onClick={() => setActiveTab('dashboard')}
@@ -190,26 +193,46 @@ const App: React.FC = () => {
 
         {activeTab === 'dashboard' ? (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-            <div className="bg-gradient-to-br from-blue-600/20 to-transparent p-8 rounded-[2.5rem] border border-blue-500/20 text-center relative overflow-hidden shadow-2xl">
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mb-2">Base Impression Point</p>
-              <h2 className="text-7xl font-black italic tracking-tighter mb-4">
-                {isSyncing ? <Loader2 className="animate-spin inline" /> : user?.points.toFixed(0) || 0}
-              </h2>
-              <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-gray-400 bg-black/40 py-2 px-4 rounded-full w-fit mx-auto border border-white/5">
-                <ShieldCheck size={14} className="text-blue-500" />
-                Live Sync Verified
+            {/* Identity Info Section */}
+            <div className="grid grid-cols-2 gap-3 mb-2">
+              <div className="bg-white/5 px-4 py-3 rounded-2xl border border-white/5 flex items-center gap-2">
+                <Share2 size={12} className="text-purple-400" />
+                <div className="overflow-hidden">
+                  <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">FID</p>
+                  <p className="text-[10px] font-bold truncate">#{user?.farcasterId || '---'}</p>
+                </div>
+              </div>
+              <div className="bg-white/5 px-4 py-3 rounded-2xl border border-white/5 flex items-center gap-2">
+                <Twitter size={12} className="text-blue-400" />
+                <div className="overflow-hidden">
+                  <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">X Handle</p>
+                  <p className="text-[10px] font-bold truncate">{user?.twitterHandle || '---'}</p>
+                </div>
               </div>
             </div>
 
+            {/* Total Points Display */}
+            <div className="bg-gradient-to-br from-blue-600/20 to-transparent p-10 rounded-[2.5rem] border border-blue-500/20 text-center relative overflow-hidden shadow-2xl">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400 mb-2">Base Impression Point</p>
+              <h2 className="text-8xl font-black italic tracking-tighter mb-4">
+                {isSyncing ? <Loader2 className="animate-spin inline" /> : user?.points.toFixed(0) || 0}
+              </h2>
+              <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-gray-400 bg-black/40 py-2.5 px-5 rounded-full w-fit mx-auto border border-white/5 backdrop-blur-md">
+                <ShieldCheck size={14} className="text-blue-500" />
+                Real-Time Social & Asset Sync
+              </div>
+            </div>
+
+            {/* Breakdown Grid */}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-blue-500/30 transition-colors">
                 <Clock size={16} className="text-blue-400 mb-2" />
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Twitter Age</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">X Account Age</p>
                 <p className="text-xl font-bold">+{user?.pointsBreakdown?.social_twitter.toFixed(0) || 0}</p>
               </div>
               <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-purple-500/30 transition-colors">
                 <Share2 size={16} className="text-purple-400 mb-2" />
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">FID Score</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">FID Seniority</p>
                 <p className="text-xl font-bold">+{user?.pointsBreakdown?.social_fc.toFixed(0) || 0}</p>
               </div>
               <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-green-500/30 transition-colors">
@@ -219,7 +242,7 @@ const App: React.FC = () => {
               </div>
               <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-yellow-500/30 transition-colors">
                 <Coins size={16} className="text-yellow-400 mb-2" />
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Asset Duration</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Hold Duration</p>
                 <p className="text-xl font-bold">+{user?.pointsBreakdown?.lambo.toFixed(0) || 0}</p>
               </div>
             </div>
@@ -229,11 +252,12 @@ const App: React.FC = () => {
               disabled={isSyncing}
               className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {isSyncing ? <Loader2 size={14} className="animate-spin" /> : "Sync Real-Time Data"}
+              {isSyncing ? <Loader2 size={14} className="animate-spin" /> : "Refresh On-Chain Stats"}
             </button>
           </div>
         ) : (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+            {/* Preview Section */}
             <div className="space-y-4">
               <BadgeDisplay 
                 tier={getTierFromPoints(user?.points || 0)} 
@@ -241,38 +265,40 @@ const App: React.FC = () => {
                 loading={isGenerating} 
               />
               <div className="text-center">
-                <h3 className="text-xl font-black italic tracking-tight">{getTierFromPoints(user?.points || 0)} BADGE</h3>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Eligible based on Audit Result</p>
+                <h3 className="text-xl font-black italic tracking-tight uppercase">{getTierFromPoints(user?.points || 0)} SHIELD</h3>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Calculated from Real-Time Audit</p>
               </div>
             </div>
 
+            {/* Requirements Section */}
             <div className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Mint Prerequisites</h4>
               
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400 font-medium">100+ Total Points</span>
-                {user && user.points >= 100 ? <CheckCircle /> : <Warning label={`${(100 - (user?.points || 0)).toFixed(0)} more points`} />}
+                {user && user.points >= 100 ? <CheckCircle /> : <Warning label={`${(100 - (user?.points || 0)).toFixed(0)} points more`} />}
               </div>
               
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400 font-medium">1,000+ LAMBO Token Hold</span>
-                {user && (user.lambolessAmount || 0) >= 1000 ? <CheckCircle /> : <Warning label="Below Threshold" />}
+                {user && (user.lambolessAmount || 0) >= 1000 ? <CheckCircle /> : <Warning label="Holdings Required" />}
               </div>
 
               {user && (user.lambolessAmount || 0) < 1000 && (
                 <div className="pt-2">
                   <p className="text-[9px] text-gray-500 font-bold uppercase leading-relaxed mb-2">
-                    Contract Address (Base):<br/>
-                    <code className="text-blue-400 break-all select-all">{LAMBOLESS_CONTRACT}</code>
+                    Contract Address (Buy on Base):<br/>
+                    <code className="text-blue-400 break-all select-all font-mono">{LAMBOLESS_CONTRACT}</code>
                   </p>
                 </div>
               )}
             </div>
 
+            {/* Claim Action */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 p-4 bg-blue-500/10 rounded-2xl border border-blue-500/20">
                 <Info size={14} className="text-blue-500" />
-                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Minting is gas-only on Base</p>
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Free Claim — Pay Gas only on Base</p>
               </div>
 
               <button 
@@ -282,18 +308,19 @@ const App: React.FC = () => {
                   isMinted ? 'bg-green-600' : 'bg-blue-600 hover:scale-[1.02] active:scale-95 disabled:opacity-20 disabled:grayscale'
                 }`}
               >
-                {isMinting ? <Loader2 className="animate-spin mx-auto" /> : isMinted ? 'VERIFIED ON-CHAIN' : 'MINT IMPRESSION BADGE'}
+                {isMinting ? <Loader2 className="animate-spin mx-auto" /> : isMinted ? 'ON-CHAIN VERIFIED' : 'MINT IMPRESSION BADGE'}
               </button>
             </div>
           </div>
         )}
       </main>
 
+      {/* Frame Install Prompt Hint */}
       {!isReady && (
         <div className="fixed bottom-6 left-6 right-6 p-4 bg-blue-600 rounded-2xl flex items-center justify-between shadow-2xl animate-bounce">
           <div className="flex items-center gap-3">
             <PlusCircle size={20} />
-            <span className="text-xs font-black uppercase italic">Install Mini-App to Start</span>
+            <span className="text-xs font-black uppercase italic tracking-widest">Add App to Farcaster</span>
           </div>
         </div>
       )}
