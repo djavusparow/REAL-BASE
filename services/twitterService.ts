@@ -25,23 +25,19 @@ const REQUIRED_MENTIONS = ['@base', '@baseapp', '@baseposting', '@jessepollak', 
 const BASEPOSTING_START_DATE = new Date("2025-11-01T23:59:00Z");
 
 export class TwitterService {
-  async login() {
-    return true;
-  }
-
   async scanPosts(handle: string): Promise<ScanResult> {
     const username = handle.replace('@', '');
     
-    // Simulate API latency for the "Auditing" feel
-    await new Promise(r => setTimeout(r, 2000));
+    // Authenticator simulation feel
+    await new Promise(r => setTimeout(r, 1500));
 
     const seed = username.length;
     const registrationDate = new Date();
-    // Simulate account age: older handles get more days
+    // Simulate account age: 1-5 years based on name length
     registrationDate.setFullYear(registrationDate.getFullYear() - (1 + (seed % 5)));
     const accountAgeDays = calculateAccountAgeDays(registrationDate);
 
-    const rawTweets = this.generateRealisticMockTweets(handle);
+    const rawTweets = this.generateRealisticMockTweets();
     const validBasepostingTweets: Tweet[] = [];
     const dailyCounts: Record<string, number> = {};
     let originalPostsCount = 0;
@@ -76,7 +72,7 @@ export class TwitterService {
       }
     }
 
-    // Calculation: Original posts (2 pts) + Mentions (1 pt), capped at 10 pts per day
+    // Calculation Logic
     let basepostingPointsTotal = 0;
     Object.keys(dailyCounts).forEach(day => {
       const dayTweets = validBasepostingTweets.filter(t => t.createdAt.toISOString().split('T')[0] === day);
@@ -101,7 +97,7 @@ export class TwitterService {
     };
   }
 
-  private generateRealisticMockTweets(handle: string): Tweet[] {
+  private generateRealisticMockTweets(): Tweet[] {
     const templates = [
       { text: "Building the future on @base is the best decision I've made. @jessepollak", isReply: false },
       { text: "gm @base community! Checking out the latest from @baseapp.", isReply: false },
