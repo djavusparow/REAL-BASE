@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Zap, 
@@ -24,7 +23,6 @@ import {
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
-import Web3 from 'web3';
 import { UserStats } from './types';
 import { LAMBOLESS_CONTRACT } from './constants';
 import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations';
@@ -35,10 +33,7 @@ import { tokenService } from './services/tokenService';
 
 const NFT_CONTRACT_ADDRESS = "0x4afc5DF90f6F2541C93f9b29Ec0A95b46ad61a6B"; 
 const MINIMAL_NFT_ABI = [
-  {
-    "inputs": [{ "internalType": "string", "name": "tokenURI", "type": "string" }, { "internalType": "uint8", "name": "tier", "type": "uint8" }],
-    "name": "mintBadge", "outputs": [], "stateMutability": "payable", "type": "function"
-  }
+  "function mintBadge(string tokenURI, uint8 tier) payable"
 ];
 
 const STORAGE_KEY = 'base_impression_identity_secure_v4';
@@ -176,7 +171,6 @@ const App: React.FC = () => {
       if (!rawAddress) throw new Error("Verified wallet not found. Link a wallet to Farcaster.");
 
       const address = ethers.getAddress(rawAddress);
-
       await new Promise(resolve => setTimeout(resolve, 800));
 
       setLoginStep('SUCCESS');
@@ -215,23 +209,38 @@ const App: React.FC = () => {
     try {
       const tier = getTierFromPoints(user.points);
       const preview = await geminiService.generateBadgePreview(tier, user.farcasterUsername || "BaseUser");
+      if (!preview) throw new Error("Failed to generate AI badge image.");
       setBadgeImage(preview);
       setIsGenerating(false);
       
       setIsMinting(true);
-      const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet provider missing");
+      const ethProvider = sdk.wallet?.ethProvider;
+      if (!ethProvider) throw new Error("Wallet provider missing. Ensure you are logged into Warpcast.");
       
-      const web3 = new Web3(provider);
-      const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
+      // Use Ethers.js v6 BrowserProvider for better compatibility with Warpcast/BaseApp
+      const browserProvider = new ethers.BrowserProvider(ethProvider);
+      const signer = await browserProvider.getSigner();
+      
+      const contract = new ethers.Contract(NFT_CONTRACT_ADDRESS, MINIMAL_NFT_ABI, signer);
       
       const tierMap: Record<string, number> = { 'PLATINUM': 0, 'GOLD': 1, 'SILVER': 2, 'BRONZE': 3 };
       
-      await contract.methods.mintBadge(preview || "", tierMap[tier]).send({ from: user.address });
+      // Execute mint with Ethers.js
+      const tx = await contract.mintBadge(preview, tierMap[tier]);
+      console.log("Transaction sent:", tx.hash);
+      
+      // Wait for confirmation
+      await tx.wait();
+      
       setIsMinted(true);
+      sdk.actions.cast({ 
+        text: `🛡️ My ${tier} Impact on @base is verified via @farcaster!\n\nFID: #${user.farcasterId}\nScore: ${user.points.toFixed(0)}\n\nVerify yours: real-base-2026.vercel.app\n\n#Base #BaseApp #Onchain` 
+      });
     } catch (e: any) {
       console.error("Claim Error:", e);
-      alert(e.message || "Failed to process claim.");
+      // Detailed error message for the user
+      const msg = e.reason || e.message || "Failed to process claim. Ensure you have ETH on Base network.";
+      alert(msg);
     } finally {
       setIsGenerating(false);
       setIsMinting(false);
