@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Coins,
   Search,
-  UserCheck
+  UserCheck,
+  LogOut
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import { ethers } from 'ethers';
@@ -104,6 +105,17 @@ const App: React.FC = () => {
       setIsSyncing(false);
     }
   }, []);
+
+  const handleDisconnect = () => {
+    if (confirm("Are you sure you want to disconnect? This will clear your current session.")) {
+      localStorage.removeItem(STORAGE_KEY);
+      setIsAuthenticated(false);
+      setUser(null);
+      setLinkedTwitterHandle(null);
+      setLoginStep('IDLE');
+      setActiveTab('dashboard');
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -342,9 +354,18 @@ const App: React.FC = () => {
           <Zap className="text-blue-500" fill="currentColor" size={20} />
           <h1 className="text-lg font-black italic tracking-tighter">BASE IMPRESSION</h1>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 rounded-full border border-blue-500/20">
-          <TrendingUp size={12} className="text-blue-500" />
-          <span className="text-[10px] font-bold tracking-widest">{userCount} AUDITED</span>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-blue-500/10 rounded-full border border-blue-500/20">
+            <TrendingUp size={12} className="text-blue-500" />
+            <span className="text-[10px] font-bold tracking-widest">{userCount} AUDITED</span>
+          </div>
+          <button 
+            onClick={handleDisconnect}
+            className="p-2 bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/30 rounded-full text-gray-400 hover:text-red-500 transition-all active:scale-90"
+            title="Disconnect Session"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </nav>
 
@@ -450,6 +471,13 @@ const App: React.FC = () => {
             >
               {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
               {isSyncing ? "Verifying Protocols..." : "Refresh Audit Data"}
+            </button>
+
+            <button 
+              onClick={handleDisconnect}
+              className="w-full py-4 bg-transparent hover:bg-red-500/5 text-red-500/60 hover:text-red-500 text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-dashed border-red-500/20 hover:border-red-500/40 rounded-xl"
+            >
+              <LogOut size={14} /> Disconnect Session
             </button>
           </div>
         ) : (
