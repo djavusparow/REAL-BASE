@@ -34,6 +34,8 @@ export interface UserStats {
   // Farcaster specific fields
   farcasterId?: number;
   farcasterUsername?: string;
+  farcasterDisplayName?: string;
+  farcasterPfp?: string;
   farcasterAgeDays?: number;
   farcasterCreatedAt?: string;
 

@@ -8,6 +8,7 @@ export class GeminiService {
   async generateBadgePreview(tier: string, username: string): Promise<string | null> {
     try {
       // Step 1: Attempt AI Generation (High quality, but can be slow/fail)
+      // Note: Using gemini-2.5-flash-image for image generation as per guidelines.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `A centered, minimalist digital NFT Badge Shield for "${username}". 
         Tier: ${tier}. Metallic finish, luxury automotive aesthetic, clean dark background. 
@@ -72,6 +73,7 @@ export class GeminiService {
       <text x="512" y="800" font-family="Arial, sans-serif" font-weight="700" font-size="24" fill="white" text-anchor="middle" style="opacity: 0.4">${username.toUpperCase()}</text>
     </svg>`;
     
+    // Convert SVG string to Base64 data URL
     return `data:image/svg+xml;base64,${btoa(svg)}`;
   }
 
@@ -85,6 +87,7 @@ export class GeminiService {
       });
       return parseFloat(response.text?.replace(/[^0-9.]/g, '') || "0.0001");
     } catch (error) {
+      console.error("Token price fetch failed", error);
       return 0.0001; 
     }
   }
