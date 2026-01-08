@@ -52,7 +52,7 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
-  const [userCount, setUserCount] = useState(4120); 
+  const [userCount, setUserCount] = useState(4240); 
   
   const [isLinkingTwitter, setIsLinkingTwitter] = useState(false);
   const [linkedTwitterHandle, setLinkedTwitterHandle] = useState<string | null>(null);
@@ -148,14 +148,16 @@ const App: React.FC = () => {
       const context = await sdk.context;
       if (!context?.user) throw new Error("No Farcaster user detected");
 
-      // Step 1: Sign In (OIDC)
-      const signInResult = await sdk.actions.signIn();
+      // Generate a unique nonce to fix "property 'nonce' of undefined"
+      const generatedNonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+      // Step 1: Sign In (OIDC) with explicit nonce
+      const signInResult = await sdk.actions.signIn({ nonce: generatedNonce });
       if (!signInResult) throw new Error("Sign in cancelled or failed");
       
       // Step 2: On-chain Verification (Personal Sign)
       setLoginStep('SIGNING');
       
-      // Ensure provider is ready
       const provider = sdk.wallet?.ethProvider;
       if (!provider) {
         throw new Error("Ethereum Provider not available. Ensure your wallet is connected to Farcaster.");
@@ -164,10 +166,10 @@ const App: React.FC = () => {
       const rawAddress = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
       if (!rawAddress) throw new Error("No verified address found for this FID");
 
-      // CRITICAL: Checksum the address to avoid common "mismatch" errors in mobile providers
+      // Checksum address using ethers
       const address = ethers.getAddress(rawAddress);
       
-      const challenge = `BASE IMPRESSION SECURITY CHALLENGE\n\nVerify identity for FID: #${context.user.fid}\nTimestamp: ${Date.now()}\n\nThis signature proves ownership of the verified Farcaster account.`;
+      const challenge = `BASE IMPRESSION SECURITY CHALLENGE\n\nVerify identity for FID: #${context.user.fid}\nTimestamp: ${Date.now()}\n\nThis signature proves ownership of the verified Farcaster account and completes the secure authentication.`;
       
       try {
         await provider.request({
@@ -176,7 +178,7 @@ const App: React.FC = () => {
         });
       } catch (signError) {
         console.error("Signature rejected", signError);
-        throw new Error("Security signature was rejected by the wallet.");
+        throw new Error("Security signature was rejected.");
       }
 
       setLoginStep('SUCCESS');
@@ -188,8 +190,7 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error("Authentication Process Failed:", e);
       setLoginStep('IDLE');
-      // Graceful error notification
-      alert(e.message || "Authentication failed. Please try again.");
+      alert(e.message || "Authentication failed. Try updating your Warpcast app.");
     }
   };
 
@@ -230,11 +231,11 @@ const App: React.FC = () => {
       
       setIsMinted(true);
       sdk.actions.cast({ 
-        text: `🛡️ Verified my ${tier} Impact on @base via @farcaster!\n\nFID: #${user.farcasterId}\nPoints: ${user.points.toFixed(0)}\n\nVerify yours: real-base-2026.vercel.app\n\n#Base #BaseApp #Onchain` 
+        text: `🛡️ My ${tier} Impact on @base is verified via @farcaster!\n\nFID: #${user.farcasterId}\nScore: ${user.points.toFixed(0)}\n\nVerify yours: real-base-2026.vercel.app\n\n#Base #BaseApp #Onchain` 
       });
     } catch (e) {
       console.error(e);
-      alert("Mint failed. Ensure you are on Base network and have ETH for gas.");
+      alert("Mint failed. Ensure you have ETH on Base for gas.");
     } finally {
       setIsGenerating(false);
       setIsMinting(false);
@@ -273,7 +274,7 @@ const App: React.FC = () => {
           <div className="flex flex-col items-center gap-4">
             <Zap className="text-blue-500 w-20 h-20" fill="currentColor" />
             <h1 className="text-5xl font-black italic tracking-tighter">BASE IMPRESSION</h1>
-            <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.4em]">Farcaster Identity Protocol v2</p>
+            <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.4em]">Secure Multi-Step Authentication</p>
           </div>
 
           <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 space-y-6 backdrop-blur-2xl">
@@ -283,8 +284,8 @@ const App: React.FC = () => {
                   {loginStep === 'SUCCESS' || loginStep === 'SIGNING' ? <CheckCircle2 size={18} /> : "1"}
                 </div>
                 <div className="text-left">
-                  <p className="text-[11px] font-black uppercase tracking-widest">Step 1: Approve</p>
-                  <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Link Farcaster Profile</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest">Step 1: Link Profile</p>
+                  <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Secure OIDC Handshake</p>
                 </div>
               </div>
 
@@ -294,7 +295,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="text-left">
                   <p className="text-[11px] font-black uppercase tracking-widest">Step 2: Authenticate</p>
-                  <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Verified Signature</p>
+                  <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">On-chain Proof Signature</p>
                 </div>
               </div>
             </div>
@@ -305,16 +306,16 @@ const App: React.FC = () => {
               className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl shadow-2xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-all disabled:opacity-50 active:scale-95"
             >
               {loginStep === 'IDLE' ? (
-                <>VERIFY ACCOUNT <ChevronRight size={24} /></>
+                <>START LOGIN <ChevronRight size={24} /></>
               ) : (
-                <><Loader2 size={24} className="animate-spin" /> {loginStep === 'APPROVE' ? "APPROVING..." : loginStep === 'SIGNING' ? "AUTHENTICATING..." : "AUTHENTICATED"}</>
+                <><Loader2 size={24} className="animate-spin" /> {loginStep === 'APPROVE' ? "WAITING..." : loginStep === 'SIGNING' ? "SIGNING..." : "SUCCESS"}</>
               )}
             </button>
           </div>
 
           <div className="flex items-center justify-center gap-2 text-gray-600">
             <Lock size={14} />
-            <p className="text-[10px] font-black uppercase tracking-widest">Secure 256-bit Identity Hash</p>
+            <p className="text-[10px] font-black uppercase tracking-widest">Protocol Version: BASE_SECURE_V4</p>
           </div>
         </div>
       </div>
