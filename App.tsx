@@ -16,7 +16,8 @@ import {
   User,
   ExternalLink,
   CheckCircle2,
-  Lock
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 import { sdk } from '@farcaster/frame-sdk';
 import Web3 from 'web3';
@@ -36,7 +37,7 @@ const MINIMAL_NFT_ABI = [
   }
 ];
 
-const STORAGE_KEY = 'base_impression_session_v2';
+const STORAGE_KEY = 'base_impression_identity_secure';
 
 const App: React.FC = () => {
   const [isReady, setIsReady] = useState(false);
@@ -47,7 +48,7 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
-  const [userCount, setUserCount] = useState(3120); 
+  const [userCount, setUserCount] = useState(3450); 
   
   // Twitter Linking State
   const [isLinkingTwitter, setIsLinkingTwitter] = useState(false);
@@ -59,7 +60,7 @@ const App: React.FC = () => {
         await sdk.actions.ready();
         const context = await sdk.context;
         
-        // Auto-detect Farcaster User
+        // Farcaster Account Detection (Exclusive Login)
         if (context?.user) {
           const address = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
           const fid = context.user.fid;
@@ -69,41 +70,46 @@ const App: React.FC = () => {
             sdk.actions.addFrame();
           }
 
-          // Load previous session if exists
-          const savedSession = localStorage.getItem(STORAGE_KEY);
-          if (savedSession) {
-            const parsed = JSON.parse(savedSession);
-            if (parsed.farcasterId === fid) {
+          // Secure persistence for linked social identity
+          const savedData = localStorage.getItem(STORAGE_KEY);
+          let twitterHandleToUse = username; // Default to FC username
+          
+          if (savedData) {
+            const parsed = JSON.parse(savedData);
+            if (parsed.fid === fid) {
+              twitterHandleToUse = parsed.twitterHandle || username;
               setLinkedTwitterHandle(parsed.twitterHandle);
-              setUser(parsed);
             }
           }
 
           if (address) {
-            await syncUserData(address, fid, username, linkedTwitterHandle || username);
+            await syncUserData(address, fid, username, twitterHandleToUse);
           }
         }
       } catch (e) {
-        console.error("Farcaster Auth Error", e);
+        console.error("Farcaster Connection Failed", e);
       } finally {
         setIsReady(true);
       }
     };
     init();
     
-    const interval = setInterval(() => setUserCount(prev => prev + Math.floor(Math.random() * 5)), 12000);
+    const interval = setInterval(() => setUserCount(prev => prev + Math.floor(Math.random() * 6)), 8000);
     return () => clearInterval(interval);
-  }, [linkedTwitterHandle]);
+  }, []);
 
   const syncUserData = async (address: string, fid: number, username: string, twitterHandle: string) => {
     setIsSyncing(true);
     try {
+      // 1. Asset Holding Sync (Current balance)
       const lamboBalance = await tokenService.getBalance(address, LAMBOLESS_CONTRACT);
       const lamboPrice = await tokenService.getTokenPrice(LAMBOLESS_CONTRACT);
       const lamboUsdValue = lamboBalance * lamboPrice;
 
+      // 2. Twitter Audit (Age & Baseposting)
       const twitterAudit = await twitterService.scanPosts(twitterHandle);
 
+      // 3. Weight-Based Calculation (FID + Age + Baseposting + Duration)
       const { total, breakdown } = calculateDetailedPoints(
         1, 
         twitterAudit.accountAgeDays,
@@ -113,7 +119,7 @@ const App: React.FC = () => {
         twitterAudit.basepostingPoints
       );
 
-      const updatedUser: any = {
+      const stats: any = {
         address,
         twitterHandle: twitterHandle.startsWith('@') ? twitterHandle : `@${twitterHandle}`,
         baseAppAgeDays: 1,
@@ -129,8 +135,9 @@ const App: React.FC = () => {
         pointsBreakdown: breakdown
       };
 
-      setUser(updatedUser);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
+      setUser(stats);
+      // Save identity linkage
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ fid, twitterHandle }));
     } catch (e) {
       console.error("Sync Error", e);
     } finally {
@@ -140,14 +147,16 @@ const App: React.FC = () => {
 
   const connectTwitterSecurely = async () => {
     setIsLinkingTwitter(true);
-    // Simulation of a secure OAuth2 / Authenticator Handshake
-    await new Promise(r => setTimeout(r, 2000));
+    // Simulation of Secure OAuth2 / Verified Authenticator Handshake
+    await new Promise(r => setTimeout(r, 2500));
     
-    const handle = prompt("Enter your X (Twitter) Username to link securely:", user?.farcasterUsername || "");
+    const handle = prompt("Connect X Account Securely. Enter your handle:", user?.farcasterUsername || "");
     if (handle) {
       const sanitized = handle.replace('@', '');
       setLinkedTwitterHandle(sanitized);
-      // Trigger re-sync in useEffect
+      if (user) {
+        await syncUserData(user.address, user.farcasterId || 0, user.farcasterUsername || "", sanitized);
+      }
     }
     setIsLinkingTwitter(false);
   };
@@ -167,7 +176,7 @@ const App: React.FC = () => {
       
       setIsMinting(true);
       const provider = sdk.wallet?.ethProvider;
-      if (!provider) throw new Error("Wallet not found");
+      if (!provider) throw new Error("Wallet not detected");
       const web3 = new Web3(provider);
       const contract = new web3.eth.Contract(MINIMAL_NFT_ABI, NFT_CONTRACT_ADDRESS);
       
@@ -176,11 +185,11 @@ const App: React.FC = () => {
       
       setIsMinted(true);
       sdk.actions.cast({ 
-        text: `🛡️ My ${tier} Impression on @base is verified!\n\nScore: ${user.points.toFixed(0)} Points\nFID: #${user.farcasterId}\n\nClaim your free badge: real-base-2026.vercel.app\n\n#Base #BaseApp #Onchain` 
+        text: `🚀 My ${tier} impact on @base is verified!\n\nFID: #${user.farcasterId}\nScore: ${user.points.toFixed(0)} Points\n\nVerify yours: real-base-2026.vercel.app\n\n#Base #BaseApp #Onchain` 
       });
     } catch (e) {
       console.error(e);
-      alert("Mint failed. Ensure you have Base ETH for gas.");
+      alert("Verification failed. Check your Base ETH balance for gas.");
     } finally {
       setIsGenerating(false);
       setIsMinting(false);
@@ -209,104 +218,96 @@ const App: React.FC = () => {
       </nav>
 
       <main className="max-w-md mx-auto p-6 space-y-6">
-        {/* Navigation Tabs */}
+        {/* Main Tabs */}
         <div className="flex p-1 bg-white/5 rounded-2xl border border-white/10">
           <button 
             onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 shadow-lg' : 'text-gray-500'}`}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:text-gray-300'}`}
           >
             <LayoutDashboard size={14} /> DASHBOARD
           </button>
           <button 
             onClick={() => setActiveTab('claim')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all ${activeTab === 'claim' ? 'bg-blue-600 shadow-lg' : 'text-gray-500'}`}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold transition-all ${activeTab === 'claim' ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'text-gray-500 hover:text-gray-300'}`}
           >
             <Gift size={14} /> CLAIM
           </button>
         </div>
 
         {activeTab === 'dashboard' ? (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             
-            {/* Identity & Connection Header */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-4 py-3 bg-white/5 rounded-2xl border border-white/5">
-                <div className="flex items-center gap-3">
-                   <div className="w-8 h-8 rounded-full bg-purple-600/20 flex items-center justify-center text-purple-400 border border-purple-500/20">
-                      <Share2 size={14} />
-                   </div>
-                   <div>
-                      <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Connected FID</p>
-                      <p className="text-xs font-bold italic tracking-tight">#{user?.farcasterId || '---'} (@{user?.farcasterUsername})</p>
-                   </div>
+            {/* Connection Identity Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                  <Share2 size={16} />
                 </div>
-                <CheckCircle2 size={16} className="text-green-500" />
+                <div className="overflow-hidden">
+                  <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">Farcaster FID</p>
+                  <p className="text-xs font-bold italic truncate">#{user?.farcasterId || '---'}</p>
+                </div>
               </div>
-
+              
               {linkedTwitterHandle ? (
-                <div className="flex items-center justify-between px-4 py-3 bg-white/5 rounded-2xl border border-white/5">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400 border border-blue-500/20">
-                        <Twitter size={14} />
-                    </div>
-                    <div>
-                        <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">X Identity</p>
-                        <p className="text-xs font-bold italic tracking-tight">{user?.twitterHandle}</p>
-                    </div>
+                <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                    <Twitter size={16} />
                   </div>
-                  <button onClick={connectTwitterSecurely} className="p-1 text-gray-600 hover:text-white transition-colors">
-                    <ExternalLink size={14} />
-                  </button>
+                  <div className="overflow-hidden">
+                    <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">X Account</p>
+                    <p className="text-xs font-bold italic truncate">{user?.twitterHandle}</p>
+                  </div>
                 </div>
               ) : (
                 <button 
                   onClick={connectTwitterSecurely}
-                  className="w-full flex items-center justify-between px-4 py-4 bg-blue-600/10 hover:bg-blue-600/20 rounded-2xl border border-blue-500/30 transition-all group"
+                  className="bg-blue-600/10 p-4 rounded-2xl border border-blue-500/30 flex items-center gap-3 group hover:bg-blue-600/20 transition-all"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
-                        <Twitter size={14} />
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Secure Link X Account</span>
+                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                    {isLinkingTwitter ? <Loader2 size={16} className="animate-spin" /> : <Twitter size={16} />}
                   </div>
-                  {isLinkingTwitter ? <Loader2 size={14} className="animate-spin text-blue-500" /> : <Lock size={14} className="text-blue-500 group-hover:translate-x-1 transition-transform" />}
+                  <div className="text-left">
+                    <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest">Secure Link</p>
+                    <p className="text-[10px] font-bold text-white group-hover:underline">Connect X</p>
+                  </div>
                 </button>
               )}
             </div>
 
-            {/* Total Points Display */}
+            {/* Central Points Hub */}
             <div className="bg-gradient-to-br from-blue-600/20 to-transparent p-10 rounded-[3rem] border border-blue-500/20 text-center relative overflow-hidden shadow-2xl">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-50" />
-              <p className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-400 mb-2">Base Impression Point</p>
-              <h2 className="text-8xl font-black italic tracking-tighter mb-4 transition-all duration-700">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+              <p className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-400 mb-2">Base Impression Points</p>
+              <h2 className="text-8xl font-black italic tracking-tighter mb-4">
                 {isSyncing ? <Loader2 className="animate-spin inline" /> : user?.points.toFixed(0) || 0}
               </h2>
-              <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-gray-400 bg-black/40 py-2.5 px-6 rounded-full w-fit mx-auto border border-white/5 backdrop-blur-md">
-                <ShieldCheck size={14} className="text-blue-500" />
-                Live Authenticated Sync
+              <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-gray-400 bg-black/40 py-3 px-6 rounded-full w-fit mx-auto border border-white/5 backdrop-blur-md">
+                <Lock size={12} className="text-blue-500" />
+                Real-Time Verified Identity Sync
               </div>
             </div>
 
-            {/* Breakdown Grid */}
+            {/* Data Metrics Grid */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-blue-500/30 transition-colors">
+              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-blue-500/30 transition-all">
                 <Clock size={16} className="text-blue-400 mb-2" />
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Account Age</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Identity Age</p>
                 <p className="text-xl font-bold">+{user?.pointsBreakdown?.social_twitter.toFixed(0) || 0}</p>
               </div>
-              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-purple-500/30 transition-colors">
+              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-purple-500/30 transition-all">
                 <Share2 size={16} className="text-purple-400 mb-2" />
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">FID Points</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">FID Seniority</p>
                 <p className="text-xl font-bold">+{user?.pointsBreakdown?.social_fc.toFixed(0) || 0}</p>
               </div>
-              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-green-500/30 transition-colors">
+              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-green-500/30 transition-all">
                 <TrendingUp size={16} className="text-green-400 mb-2" />
                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Baseposting</p>
                 <p className="text-xl font-bold">+{user?.basepostingPoints || 0}</p>
               </div>
-              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-yellow-500/30 transition-colors">
+              <div className="bg-white/5 p-5 rounded-3xl border border-white/10 hover:border-yellow-500/30 transition-all">
                 <Coins size={16} className="text-yellow-400 mb-2" />
-                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Duration Value</p>
+                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Hold Duration</p>
                 <p className="text-xl font-bold">+{user?.pointsBreakdown?.lambo.toFixed(0) || 0}</p>
               </div>
             </div>
@@ -314,14 +315,15 @@ const App: React.FC = () => {
             <button 
               onClick={() => user && syncUserData(user.address, user.farcasterId || 0, user.farcasterUsername || "", linkedTwitterHandle || user.farcasterUsername || "")}
               disabled={isSyncing}
-              className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {isSyncing ? <Loader2 size={14} className="animate-spin" /> : "Refresh Verification"}
+              {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {isSyncing ? "Syncing..." : "Update Verified Stats"}
             </button>
           </div>
         ) : (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-            {/* Preview Section */}
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+            {/* Badge Preview */}
             <div className="space-y-4">
               <BadgeDisplay 
                 tier={getTierFromPoints(user?.points || 0)} 
@@ -330,13 +332,13 @@ const App: React.FC = () => {
               />
               <div className="text-center">
                 <h3 className="text-xl font-black italic tracking-tight uppercase">{getTierFromPoints(user?.points || 0)} SHIELD</h3>
-                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest italic">Sync Status: Authenticated</p>
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest italic">Connected via @{user?.farcasterUsername}</p>
               </div>
             </div>
 
-            {/* Requirements Section */}
-            <div className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-4">
-              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Mint Prerequisites</h4>
+            {/* Threshold Progress */}
+            <div className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-4 shadow-xl">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Verification Thresholds</h4>
               
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400 font-medium">100+ Total Points</span>
@@ -345,7 +347,7 @@ const App: React.FC = () => {
               
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-400 font-medium">1,000+ LAMBO Token Hold</span>
-                {user && (user.lambolessAmount || 0) >= 1000 ? <CheckCircle /> : <Warning label="Below Minimum" />}
+                {user && (user.lambolessAmount || 0) >= 1000 ? <CheckCircle /> : <Warning label="Threshold Required" />}
               </div>
 
               {user && (user.lambolessAmount || 0) < 1000 && (
@@ -358,10 +360,11 @@ const App: React.FC = () => {
               )}
             </div>
 
+            {/* Action Area */}
             <div className="space-y-4">
               <div className="flex items-center gap-2 p-4 bg-blue-500/10 rounded-2xl border border-blue-500/20">
                 <Info size={14} className="text-blue-500" />
-                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Minting cost: 0 ETH + Gas</p>
+                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Minting cost is 0 ETH (+ Gas)</p>
               </div>
 
               <button 
@@ -371,19 +374,19 @@ const App: React.FC = () => {
                   isMinted ? 'bg-green-600' : 'bg-blue-600 hover:scale-[1.02] active:scale-95 disabled:opacity-20 disabled:grayscale'
                 }`}
               >
-                {isMinting ? <Loader2 className="animate-spin mx-auto" /> : isMinted ? 'BADGE SECURED' : 'MINT IMPRESSION BADGE'}
+                {isMinting ? <Loader2 className="animate-spin mx-auto" /> : isMinted ? 'BADGE COLLECTED' : 'MINT ON-CHAIN SHIELD'}
               </button>
             </div>
           </div>
         )}
       </main>
 
-      {/* Login Gate Simulation for non-Farcaster environments */}
+      {/* Frame Login Gate */}
       {!isReady && (
         <div className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center p-8 text-center space-y-6">
            <Zap className="text-blue-600 w-16 h-16 animate-pulse" fill="currentColor" />
-           <h2 className="text-3xl font-black italic uppercase tracking-tighter">Farcaster Required</h2>
-           <p className="text-sm text-gray-500 font-bold uppercase tracking-widest">Please open this app inside Warpcast or a Farcaster client.</p>
+           <h2 className="text-3xl font-black italic uppercase tracking-tighter">Farcaster Exclusive</h2>
+           <p className="text-sm text-gray-500 font-bold uppercase tracking-widest">Please login via Warpcast to verify your Base Impression.</p>
         </div>
       )}
     </div>

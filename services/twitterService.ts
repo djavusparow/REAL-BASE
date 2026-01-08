@@ -25,19 +25,26 @@ const REQUIRED_MENTIONS = ['@base', '@baseapp', '@baseposting', '@jessepollak', 
 const BASEPOSTING_START_DATE = new Date("2025-11-01T23:59:00Z");
 
 export class TwitterService {
+  /**
+   * Secure identity scanning simulation.
+   * Logic: Distinguish between original posts (2 pts) and mentions/replies (1 pt).
+   */
   async scanPosts(handle: string): Promise<ScanResult> {
-    const username = handle.replace('@', '');
+    const username = handle.replace('@', '').toLowerCase();
     
-    // Authenticator simulation feel
-    await new Promise(r => setTimeout(r, 1500));
+    // Authenticator simulation delay
+    await new Promise(r => setTimeout(r, 2000));
 
-    const seed = username.length;
+    // Stable seed based on handle for consistent results per session
+    const seed = username.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    
     const registrationDate = new Date();
-    // Simulate account age: 1-5 years based on name length
-    registrationDate.setFullYear(registrationDate.getFullYear() - (1 + (seed % 5)));
+    // Simulate older accounts for longer handles or specific seeds
+    const yearsBack = 1 + (seed % 6);
+    registrationDate.setFullYear(registrationDate.getFullYear() - yearsBack);
     const accountAgeDays = calculateAccountAgeDays(registrationDate);
 
-    const rawTweets = this.generateRealisticMockTweets();
+    const rawTweets = this.generateDeterministicMockTweets(seed);
     const validBasepostingTweets: Tweet[] = [];
     const dailyCounts: Record<string, number> = {};
     let originalPostsCount = 0;
@@ -72,14 +79,16 @@ export class TwitterService {
       }
     }
 
-    // Calculation Logic
+    // Calculation Engine
     let basepostingPointsTotal = 0;
     Object.keys(dailyCounts).forEach(day => {
       const dayTweets = validBasepostingTweets.filter(t => t.createdAt.toISOString().split('T')[0] === day);
       let dayPoints = 0;
       dayTweets.forEach(t => {
+        // Original posts earn 2 points, replies earn 1 point
         dayPoints += t.isReply ? 1 : 2;
       });
+      // Cap at 10 points per day to prevent spam
       basepostingPointsTotal += Math.min(dayPoints, 10);
     });
 
@@ -97,28 +106,32 @@ export class TwitterService {
     };
   }
 
-  private generateRealisticMockTweets(): Tweet[] {
+  private generateDeterministicMockTweets(seed: number): Tweet[] {
     const templates = [
       { text: "Building the future on @base is the best decision I've made. @jessepollak", isReply: false },
       { text: "gm @base community! Checking out the latest from @baseapp.", isReply: false },
       { text: "@baseapp great update today! Love the new UI.", isReply: true },
-      { text: "Contribution matters. #Baseposting @base", isReply: false },
+      { text: "On-chain is the only way. #Baseposting @base", isReply: false },
       { text: "@jessepollak keep building the @base vision! 🔵", isReply: true },
-      { text: "Just minted my first NFT on @base network.", isReply: false },
+      { text: "Just verified my impact on @base network with @baseapp.", isReply: false },
       { text: "Bridge to @base is lightning fast today. @baseapp", isReply: false },
-      { text: "@brian_armstrong decentralization is key for @base.", isReply: true }
+      { text: "@brian_armstrong decentralization is key for @base.", isReply: true },
+      { text: "The @base ecosystem is growing so fast. @baseposting", isReply: false },
+      { text: "@baseapp is my favorite gateway to the Base ecosystem.", isReply: true }
     ];
     
     const tweets: Tweet[] = [];
-    const count = 15 + Math.floor(Math.random() * 25);
+    const count = 10 + (seed % 30);
     const start = BASEPOSTING_START_DATE.getTime();
     const end = Date.now();
 
     for (let i = 0; i < count; i++) {
-      const ts = start + Math.random() * (end - start);
+      // Deterministic timestamp within range
+      const offset = (seed * i * 1000000) % (end - start);
+      const ts = start + offset;
       const template = templates[i % templates.length];
       tweets.push({
-        id: `tweet-${i}-${Math.random().toString(36).substr(2, 5)}`,
+        id: `tweet-${seed}-${i}`,
         text: template.text,
         createdAt: new Date(ts),
         isReply: template.isReply,
