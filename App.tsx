@@ -146,30 +146,44 @@ const App: React.FC = () => {
     setLoginStep('APPROVE');
     try {
       const context = await sdk.context;
-      if (!context?.user) throw new Error("No Farcaster user detected");
+      if (!context?.user) throw new Error("No Farcaster user detected. Open this in Warpcast.");
 
-      // Generate a unique nonce to fix "property 'nonce' of undefined"
-      const generatedNonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      const generatedNonce = Math.random().toString(36).substring(2, 15);
 
-      // Step 1: Sign In (OIDC) with explicit nonce
+      // Step 1: Sign In (OIDC)
       const signInResult = await sdk.actions.signIn({ nonce: generatedNonce });
       if (!signInResult) throw new Error("Sign in cancelled or failed");
       
-      // Step 2: On-chain Verification (Personal Sign)
+      // Step 2: On-chain Verification
       setLoginStep('SIGNING');
       
       const provider = sdk.wallet?.ethProvider;
       if (!provider) {
-        throw new Error("Ethereum Provider not available. Ensure your wallet is connected to Farcaster.");
+        throw new Error("Wallet provider not found. Please connect your wallet to Farcaster.");
       }
       
-      const rawAddress = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
-      if (!rawAddress) throw new Error("No verified address found for this FID");
+      // Multi-strategy address lookup
+      let rawAddress = context.user.verifiedAddresses?.ethAddresses?.[0] || context.user.custodyAddress;
+      
+      // Fallback 1: Check signInResult for user info
+      if (!rawAddress && signInResult.user) {
+        rawAddress = (signInResult.user as any).verifiedAddresses?.ethAddresses?.[0] || (signInResult.user as any).custodyAddress;
+      }
+
+      // Fallback 2: Direct provider request (Strongest fallback)
+      if (!rawAddress) {
+        const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
+        if (accounts && accounts.length > 0) {
+          rawAddress = accounts[0];
+        }
+      }
+
+      if (!rawAddress) throw new Error("No usable wallet address found for this FID. Check your Warpcast settings.");
 
       // Checksum address using ethers
       const address = ethers.getAddress(rawAddress);
       
-      const challenge = `BASE IMPRESSION SECURITY CHALLENGE\n\nVerify identity for FID: #${context.user.fid}\nTimestamp: ${Date.now()}\n\nThis signature proves ownership of the verified Farcaster account and completes the secure authentication.`;
+      const challenge = `BASE IMPRESSION SECURITY CHALLENGE\n\nVerify identity for FID: #${context.user.fid}\nTimestamp: ${Date.now()}\n\nThis signature proves ownership of the Farcaster identity.`;
       
       try {
         await provider.request({
@@ -178,7 +192,7 @@ const App: React.FC = () => {
         });
       } catch (signError) {
         console.error("Signature rejected", signError);
-        throw new Error("Security signature was rejected.");
+        throw new Error("Security signature was rejected by user.");
       }
 
       setLoginStep('SUCCESS');
@@ -190,7 +204,7 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error("Authentication Process Failed:", e);
       setLoginStep('IDLE');
-      alert(e.message || "Authentication failed. Try updating your Warpcast app.");
+      alert(e.message || "Authentication failed. Try again or check your wallet connection.");
     }
   };
 
