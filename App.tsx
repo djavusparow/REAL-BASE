@@ -30,6 +30,7 @@ import { calculateDetailedPoints, getTierFromPoints } from './utils/calculations
 import BadgeDisplay from './components/BadgeDisplay';
 import { geminiService } from './services/geminiService';
 import { twitterService } from './services/twitterService';
+import { twitterOAuthService } from './services/twitterOAuthService';
 import { tokenService } from './services/tokenService';
 
 const NFT_CONTRACT_ADDRESS = "0x4afc5DF90f6F2541C93f9b29Ec0A95b46ad61a6B"; 
@@ -54,6 +55,9 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [isMinted, setIsMinted] = useState(false);
+  const [isOAuthCallback, setIsOAuthCallback] = useState(false);
+  const [oauthLoading, setOAuthLoading] = useState(false);
+  const [oauthError, setOAuthError] = useState<string | null>(null);
   
   const globalStats = { totalFarcaster: 124500, totalTwitter: 85200, connected: 4240 };
 
@@ -100,6 +104,51 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
+        // Check if this is an OAuth callback
+        const path = window.location.pathname;
+        if (path.includes('auth/twitter/callback') || path.includes('auth/twitter/success')) {
+          setIsOAuthCallback(true);
+          setOAuthLoading(true);
+
+          const params = new URLSearchParams(window.location.search);
+          
+          // Check for error
+          const errorParam = params.get('error');
+          if (errorParam) {
+            setOAuthError(decodeURIComponent(errorParam));
+            setOAuthLoading(false);
+            return;
+          }
+
+          try {
+            // Process OAuth callback
+            const twitterUser = await twitterOAuthService.handleCallbackResponse(params);
+            
+            // Store Twitter user info
+            const context = await sdk.context;
+            const provider = sdk.wallet?.ethProvider;
+            const accounts = await provider?.request({ method: 'eth_requestAccounts' }) as string[];
+            
+            setIsTwitterLinked(true);
+            setLoginStep('SUCCESS');
+            
+            // Sync user data
+            if (accounts?.[0] && context?.user) {
+              await syncUserData(accounts[0], context.user.fid, context.user.username, twitterUser.username);
+            }
+
+            // Redirect to main app after 2 seconds
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 2000);
+          } catch (err: any) {
+            setOAuthError(err.message || 'Failed to complete OAuth');
+          } finally {
+            setOAuthLoading(false);
+          }
+          return;
+        }
+
         await sdk.actions.ready();
         const context = await sdk.context;
         if (context?.user) {
@@ -158,7 +207,20 @@ const App: React.FC = () => {
 
   const handleTwitterLink = async () => {
     try {
-      const twitterUser = await twitterService.authenticate();
+      // Initiate OAuth flow - this will redirect to Twitter
+      await twitterOAuthService.authenticate();
+      // User will be redirected to Twitter's authorization page
+      // After authorization, they'll be redirected back to our callback handler
+    } catch (e: any) {
+      console.error("Twitter OAuth error:", e);
+      alert("Gagal menghubungkan Twitter: " + (e.message || "Unknown error"));
+      setLoginStep('IDLE');
+    }
+  };
+
+  // Handle OAuth callback (when user is redirected back from Twitter)
+  const handleOAuthCallback = async (twitterUser: any) => {
+    try {
       setIsTwitterLinked(true);
       setLoginStep('SUCCESS');
       
@@ -170,7 +232,8 @@ const App: React.FC = () => {
         await syncUserData(accounts[0], context!.user.fid, context!.user.username, twitterUser.username);
       }, 500);
     } catch (e) {
-      alert("Gagal menghubungkan Twitter");
+      console.error("OAuth callback error:", e);
+      alert("Gagal memproses Twitter login");
       setLoginStep('IDLE');
     }
   };
@@ -204,6 +267,49 @@ const App: React.FC = () => {
     localStorage.removeItem(STORAGE_KEY);
     window.location.reload();
   };
+
+  // Handle OAuth callback UI
+  if (isOAuthCallback) {
+    if (oauthLoading) {
+      return (
+        <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 space-y-6">
+          <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+          <div className="text-center space-y-2">
+            <h2 className="text-2xl font-bold text-white">Completing Twitter Authentication</h2>
+            <p className="text-gray-400">Please wait while we verify your credentials...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (oauthError) {
+      return (
+        <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 space-y-6">
+          <ShieldAlert className="w-12 h-12 text-red-500" />
+          <div className="text-center space-y-4">
+            <h2 className="text-2xl font-bold text-white">Authentication Failed</h2>
+            <p className="text-red-400 max-w-md">{oauthError}</p>
+            <a 
+              href="/" 
+              className="inline-block mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Back to Login
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 space-y-6">
+        <CheckCircle2 className="w-12 h-12 text-green-500" />
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-bold text-white">Authentication Successful</h2>
+          <p className="text-gray-400">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isReady) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>;
 
@@ -366,15 +472,15 @@ const App: React.FC = () => {
                 {user && user.points >= 1000 ? <CheckCircle2 className="text-green-500" /> : <ShieldAlert className="text-red-500" />}
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">$LAMBOLESS Balance (>$2.5)</span>
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{'$LAMBOLESS Balance (>$2.5)'}</span>
                 {user && user.lambolessBalance >= 2.5 ? <CheckCircle2 className="text-green-500" /> : <ShieldAlert className="text-red-500" />}
               </div>
               
               <div className="pt-4 border-t border-white/5 space-y-4">
                  <div className="flex items-center justify-between text-[10px] font-bold uppercase text-gray-500">
-                    <span>Platinum: >5000</span>
-                    <span>Gold: >3000</span>
-                    <span>Silver: >1000</span>
+                    <span>{'Platinum: >5000'}</span>
+                    <span>{'Gold: >3000'}</span>
+                    <span>{'Silver: >1000'}</span>
                  </div>
               </div>
             </div>
