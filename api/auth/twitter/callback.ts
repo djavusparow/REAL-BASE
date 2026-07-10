@@ -1,12 +1,15 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { IncomingMessage, ServerResponse } from 'http';
 import axios from 'axios';
 
 // Twitter OAuth endpoints
 const TWITTER_OAUTH_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
 const TWITTER_USER_URL = 'https://api.twitter.com/2/users/me?user.fields=created_at,username';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const { code, state } = req.query;
+export default async function handler(req: any, res: any) {
+  // Parse query parameters from URL
+  const url = new URL(req.url || '', `http://${req.headers.host}`);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
 
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
