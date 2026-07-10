@@ -104,21 +104,67 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        // Check if this is an OAuth callback
+        // Check if this is an OAuth callback response
+        const params = new URLSearchParams(window.location.search);
+        const oauthUser = params.get('oauth_user');
+        const oauthError = params.get('oauth_error');
+
+        if (oauthUser || oauthError) {
+          setIsOAuthCallback(true);
+          setOAuthLoading(true);
+
+          if (oauthError) {
+            setOAuthError('OAuth Error: ' + decodeURIComponent(oauthError));
+            setOAuthLoading(false);
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          }
+
+          if (oauthUser) {
+            try {
+              const userData = JSON.parse(decodeURIComponent(oauthUser));
+              console.log('[v0] OAuth user received:', userData.username);
+
+              // Store access token
+              if (userData.access_token) {
+                sessionStorage.setItem('twitter_access_token', userData.access_token);
+              }
+
+              // Store Twitter user info
+              const context = await sdk.context;
+              const provider = sdk.wallet?.ethProvider;
+              const accounts = await provider?.request({ method: 'eth_requestAccounts' }) as string[];
+
+              setIsTwitterLinked(true);
+              setLoginStep('SUCCESS');
+
+              // Sync user data
+              if (accounts?.[0] && context?.user) {
+                await syncUserData(accounts[0], context.user.fid, context.user.username, userData.username);
+              }
+
+              // Clean up URL and redirect to main app after 2 seconds
+              window.history.replaceState({}, document.title, window.location.pathname);
+              setTimeout(() => {
+                window.location.href = '/';
+              }, 2000);
+            } catch (err: any) {
+              console.error('[v0] OAuth parsing error:', err);
+              setOAuthError('Failed to process OAuth response: ' + err.message);
+              window.history.replaceState({}, document.title, window.location.pathname);
+            } finally {
+              setOAuthLoading(false);
+            }
+            return;
+          }
+        }
+
+        // Check if this is an OAuth callback redirect (old flow)
         const path = window.location.pathname;
         if (path.includes('auth/twitter/callback') || path.includes('auth/twitter/success')) {
           setIsOAuthCallback(true);
           setOAuthLoading(true);
-
-          const params = new URLSearchParams(window.location.search);
-          
-          // Check for error
-          const errorParam = params.get('error');
-          if (errorParam) {
-            setOAuthError(decodeURIComponent(errorParam));
-            setOAuthLoading(false);
-            return;
-          }
 
           try {
             // Process OAuth callback
