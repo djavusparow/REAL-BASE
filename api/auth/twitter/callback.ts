@@ -25,7 +25,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const clientId = process.env.TWITTER_CONSUMER_KEY;
     const clientSecret = process.env.TWITTER_CONSUMER_SECRET;
-    const redirectUri = process.env.TWITTER_CALLBACK_URL || `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/auth/twitter/callback`;
+    
+    // Determine the correct redirect URI
+    let redirectUri = process.env.TWITTER_CALLBACK_URL;
+    
+    if (!redirectUri) {
+      // Build from request headers (for Vercel deployment)
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
+      redirectUri = `${protocol}://${host}/api/auth/twitter/callback`;
+    }
+    
+    console.log('[OAuth API] ========== CALLBACK DEBUG ==========');
+    console.log('[OAuth API] Method:', req.method);
+    console.log('[OAuth API] Code:', code ? '✓ RECEIVED' : '✗ MISSING');
+    console.log('[OAuth API] State:', state ? '✓ RECEIVED' : '✗ MISSING');
+    console.log('[OAuth API] Redirect URI:', redirectUri);
+    console.log('[OAuth API] Client ID:', clientId ? '✓ SET' : '✗ MISSING');
+    console.log('[OAuth API] Client Secret:', clientSecret ? '✓ SET' : '✗ MISSING');
+    console.log('[OAuth API] Request Headers:');
+    console.log('[OAuth API]   - Host:', req.headers.host);
+    console.log('[OAuth API]   - x-forwarded-proto:', req.headers['x-forwarded-proto']);
+    console.log('[OAuth API]   - x-forwarded-host:', req.headers['x-forwarded-host']);
+    console.log('[OAuth API] =================================');
 
     if (!clientId || !clientSecret) {
       console.error('Missing Twitter API credentials');

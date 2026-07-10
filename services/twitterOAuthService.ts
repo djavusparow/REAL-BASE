@@ -168,7 +168,13 @@ export class TwitterOAuthService {
         `code_challenge=${encodeURIComponent(codeChallenge)}&` +
         `code_challenge_method=S256`;
       
-      console.log('[OAuth] Redirecting to Twitter authorization...');
+      console.log('[OAuth] ========== DEBUG INFO ==========');
+      console.log('[OAuth] Client ID:', TWITTER_CLIENT_ID ? '✓ SET' : '✗ MISSING');
+      console.log('[OAuth] Callback URL:', TWITTER_CALLBACK_URL);
+      console.log('[OAuth] Scope:', scope);
+      console.log('[OAuth] App Origin:', window.location.origin);
+      console.log('[OAuth] Redirecting to Twitter...');
+      console.log('[OAuth] ===================================');
       window.location.href = authUrl;
 
       // Return dummy user (this won't be reached due to redirect)
