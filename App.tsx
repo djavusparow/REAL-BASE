@@ -313,7 +313,7 @@ const App: React.FC = () => {
 
   if (!isReady) return <div className="min-h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>;
 
-  if (!isAuthenticated || !isTwitterLinked) {
+  if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-8 space-y-12 text-center bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-black to-black">
         <div className="space-y-4">
@@ -325,13 +325,24 @@ const App: React.FC = () => {
         <div className="w-full max-w-sm bg-white/5 border border-white/10 p-8 rounded-[3rem] backdrop-blur-3xl space-y-4">
           {!isAuthenticated ? (
             <div className="space-y-4">
+              {/* Twitter Login Button */}
+              <button 
+                onClick={handleTwitterLink} 
+                disabled={loginStep === 'TWITTER'}
+                className="w-full py-6 bg-[#1DA1F2] text-white rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70 hover:bg-[#1a91da]"
+              >
+                {loginStep === 'TWITTER' ? <Loader2 className="animate-spin" /> : "Connect Twitter"}
+              </button>
+
+              {/* Farcaster Login Button */}
               <button 
                 onClick={handleLogin} 
                 disabled={loginStep === 'SIWE' || loginStep === 'SIGNING'}
-                className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70"
+                className="w-full py-6 bg-white text-black rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70 hover:bg-gray-100"
               >
                 {loginStep === 'SIWE' || loginStep === 'SIGNING' ? <Loader2 className="animate-spin" /> : "Connect Farcaster"}
               </button>
+
               {loginStep === 'SIGNING' && (
                 <div className="flex items-center justify-center gap-2 text-blue-400 animate-pulse">
                   <Lock size={14} />
@@ -345,12 +356,21 @@ const App: React.FC = () => {
                  <CheckCircle2 size={16} />
                  <span className="text-[10px] font-black uppercase tracking-widest">Farcaster Terhubung</span>
                </div>
-               <button 
-                onClick={handleTwitterLink} 
-                className="w-full py-6 bg-[#1DA1F2] text-white rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all"
-              >
-                {loginStep === 'TWITTER' ? <Loader2 className="animate-spin" /> : "Link Twitter Account"}
-              </button>
+               {!isTwitterLinked && (
+                <button 
+                  onClick={handleTwitterLink} 
+                  disabled={loginStep === 'TWITTER'}
+                  className="w-full py-6 bg-[#1DA1F2] text-white rounded-2xl font-black uppercase italic text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70 hover:bg-[#1a91da]"
+                >
+                  {loginStep === 'TWITTER' ? <Loader2 className="animate-spin" /> : "Connect Twitter"}
+                </button>
+               )}
+               {isTwitterLinked && (
+                <div className="flex items-center justify-center gap-2 text-green-500 mb-2">
+                  <CheckCircle2 size={16} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Twitter Terhubung</span>
+                </div>
+               )}
             </div>
           )}
           
