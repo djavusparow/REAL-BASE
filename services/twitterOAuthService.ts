@@ -52,19 +52,24 @@ function getOAuthServerUrl(): string {
 export class TwitterOAuthService {
   /**
    * Step 1: Get OAuth Authorization URL
+   * Note: For production/deployed apps, this will throw an error and we'll use direct OAuth flow
    */
   async getAuthorizationUrl(): Promise<{ authUrl: string; state: string }> {
     try {
       const oauthUrl = getOAuthServerUrl();
-      console.log('[OAuth] Getting auth URL from:', oauthUrl);
-      const response = await axios.get(`${oauthUrl}/auth/twitter/request`);
+      if (!oauthUrl) {
+        throw new Error('Backend OAuth server not available in production');
+      }
+      
+      console.log('[OAuth] Getting auth URL from backend:', oauthUrl);
+      const response = await axios.get(`${oauthUrl}/auth/twitter/request`, { timeout: 5000 });
       return {
         authUrl: response.data.authUrl,
         state: response.data.state
       };
     } catch (error: any) {
-      console.error('[OAuth] Failed to get authorization URL:', error.response?.data || error.message);
-      throw new Error('Failed to initiate Twitter OAuth: ' + (error.response?.data?.error || error.message));
+      console.warn('[OAuth] Backend authorization failed, using direct OAuth flow:', error.message);
+      throw new Error('Using direct OAuth flow');
     }
   }
 
@@ -121,12 +126,12 @@ export class TwitterOAuthService {
   async authenticate(): Promise<TwitterUser> {
     try {
       console.log('[OAuth] Starting authentication flow...');
+      console.log('[OAuth] Environment:', window.location.hostname === 'localhost' ? 'LOCAL' : 'PRODUCTION');
       
-      // Check if we can use backend
-      const oauthServerUrl = getOAuthServerUrl();
-      if (oauthServerUrl && window.location.hostname === 'localhost') {
+      // Try backend first only for local development
+      if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
         try {
-          // Try to get auth URL from backend (if available in dev)
+          console.log('[OAuth] Attempting to use backend server...');
           const { authUrl } = await this.getAuthorizationUrl();
           console.log('[OAuth] Got auth URL from backend');
           window.location.href = authUrl;
@@ -137,16 +142,16 @@ export class TwitterOAuthService {
             createdAt: new Date(),
             accountAgeDays: 0
           };
-        } catch (backendError) {
-          console.warn('[OAuth] Backend error:', backendError);
+        } catch (backendError: any) {
+          console.warn('[OAuth] Backend not available, falling back to direct OAuth:', backendError.message);
         }
       }
 
-      // Use direct OAuth flow (works in both dev and production)
+      // Use direct OAuth flow (default for production and fallback for dev)
       console.log('[OAuth] Using direct Twitter OAuth flow');
       
       if (!TWITTER_CLIENT_ID) {
-        throw new Error('Twitter API credentials not configured. Please set VITE_TWITTER_CONSUMER_KEY environment variable.');
+        throw new Error('Twitter credentials not configured: VITE_TWITTER_CONSUMER_KEY is missing');
       }
       
       const scope = 'tweet.read users.read';
