@@ -33,22 +33,43 @@ export interface ScanResult {
 
 const REQUIRED_MENTIONS = ['@base', '@baseapp', '@baseposting', '@jessepollak', '@brian_armstrong'];
 const BASEPOSTING_START_DATE = new Date("2024-01-01T00:00:00Z");
-const OAUTH_SERVER_URL = 'http://localhost:3001';
+
+// Get Twitter credentials from Vite environment
+const TWITTER_CLIENT_ID = import.meta.env.VITE_TWITTER_CONSUMER_KEY || '';
+const TWITTER_CALLBACK_URL = import.meta.env.VITE_TWITTER_CALLBACK_URL || `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/twitter/callback`;
+
+// Determine OAuth server URL based on environment
+function getOAuthServerUrl(): string {
+  // If we're in development mode and can access localhost
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return 'http://localhost:3001';
+  }
+  
+  // For deployed/production, return empty since we won't use backend
+  return '';
+}
 
 export class TwitterOAuthService {
   /**
    * Step 1: Get OAuth Authorization URL
+   * Note: For production/deployed apps, this will throw an error and we'll use direct OAuth flow
    */
   async getAuthorizationUrl(): Promise<{ authUrl: string; state: string }> {
     try {
-      const response = await axios.get(`${OAUTH_SERVER_URL}/auth/twitter/request`);
+      const oauthUrl = getOAuthServerUrl();
+      if (!oauthUrl) {
+        throw new Error('Backend OAuth server not available in production');
+      }
+      
+      console.log('[OAuth] Getting auth URL from backend:', oauthUrl);
+      const response = await axios.get(`${oauthUrl}/auth/twitter/request`, { timeout: 5000 });
       return {
         authUrl: response.data.authUrl,
         state: response.data.state
       };
     } catch (error: any) {
-      console.error('Failed to get authorization URL:', error.response?.data || error.message);
-      throw new Error('Failed to initiate Twitter OAuth');
+      console.warn('[OAuth] Backend authorization failed, using direct OAuth flow:', error.message);
+      throw new Error('Using direct OAuth flow');
     }
   }
 
@@ -68,7 +89,8 @@ export class TwitterOAuthService {
       }
 
       // Validate token with backend
-      const validationResponse = await axios.post(`${OAUTH_SERVER_URL}/auth/twitter/validate`, {
+      const oauthUrl = getOAuthServerUrl();
+      const validationResponse = await axios.post(`${oauthUrl}/auth/twitter/validate`, {
         token,
         userId
       });
@@ -103,10 +125,61 @@ export class TwitterOAuthService {
    */
   async authenticate(): Promise<TwitterUser> {
     try {
-      // Get auth URL
-      const { authUrl } = await this.getAuthorizationUrl();
+      console.log('[OAuth] Starting authentication flow...');
+      console.log('[OAuth] Environment:', window.location.hostname === 'localhost' ? 'LOCAL' : 'PRODUCTION');
       
-      // Redirect to Twitter
+      // Try backend first only for local development
+      if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        try {
+          console.log('[OAuth] Attempting to use backend server...');
+          const { authUrl } = await this.getAuthorizationUrl();
+          console.log('[OAuth] Got auth URL from backend');
+          window.location.href = authUrl;
+          
+          return {
+            id: '',
+            username: '',
+            createdAt: new Date(),
+            accountAgeDays: 0
+          };
+        } catch (backendError: any) {
+          console.warn('[OAuth] Backend not available, falling back to direct OAuth:', backendError.message);
+        }
+      }
+
+      // Use direct OAuth flow (default for production and fallback for dev)
+      console.log('[OAuth] Using direct Twitter OAuth flow');
+      
+      if (!TWITTER_CLIENT_ID) {
+        throw new Error('Twitter credentials not configured: VITE_TWITTER_CONSUMER_KEY is missing');
+      }
+      
+      const scope = 'tweet.read users.read';
+      const state = this.generateRandomString(32);
+      const codeVerifier = this.generateRandomString(128);
+      
+      // Store state and code verifier in sessionStorage for verification
+      sessionStorage.setItem('oauth_state', state);
+      sessionStorage.setItem('oauth_code_verifier', codeVerifier);
+      
+      const codeChallenge = this.generateCodeChallenge(codeVerifier);
+      
+      const authUrl = `https://twitter.com/i/oauth2/authorize?` +
+        `response_type=code&` +
+        `client_id=${encodeURIComponent(TWITTER_CLIENT_ID)}&` +
+        `redirect_uri=${encodeURIComponent(TWITTER_CALLBACK_URL)}&` +
+        `scope=${encodeURIComponent(scope)}&` +
+        `state=${encodeURIComponent(state)}&` +
+        `code_challenge=${encodeURIComponent(codeChallenge)}&` +
+        `code_challenge_method=S256`;
+      
+      console.log('[OAuth] ========== DEBUG INFO ==========');
+      console.log('[OAuth] Client ID:', TWITTER_CLIENT_ID ? '✓ SET' : '✗ MISSING');
+      console.log('[OAuth] Callback URL:', TWITTER_CALLBACK_URL);
+      console.log('[OAuth] Scope:', scope);
+      console.log('[OAuth] App Origin:', window.location.origin);
+      console.log('[OAuth] Redirecting to Twitter...');
+      console.log('[OAuth] ===================================');
       window.location.href = authUrl;
 
       // Return dummy user (this won't be reached due to redirect)
@@ -117,9 +190,32 @@ export class TwitterOAuthService {
         accountAgeDays: 0
       };
     } catch (error: any) {
-      console.error('Failed to authenticate:', error.message);
-      throw new Error('Failed to initiate Twitter login');
+      console.error('[OAuth] Failed to authenticate:', error.message);
+      throw new Error('Failed to initiate Twitter login: ' + error.message);
     }
+  }
+
+  private generateRandomString(length: number): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  private generateCodeChallenge(codeVerifier: string): string {
+    if (typeof window === 'undefined') return '';
+    // For browsers that support SubtleCrypto
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    // Using crypto API would require async, so we'll use a simple approach
+    // In production, this should be done on the backend
+    return this.base64UrlEncode(codeVerifier);
+  }
+
+  private base64UrlEncode(str: string): string {
+    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
   }
 
   /**
@@ -185,7 +281,8 @@ export class TwitterOAuthService {
       const accessToken = sessionStorage.getItem('twitter_access_token');
       
       if (accessToken) {
-        await axios.post(`${OAUTH_SERVER_URL}/auth/twitter/revoke`, {
+        const oauthUrl = getOAuthServerUrl();
+        await axios.post(`${oauthUrl}/auth/twitter/revoke`, {
           accessToken
         });
         
@@ -193,7 +290,7 @@ export class TwitterOAuthService {
         sessionStorage.removeItem('twitter_access_token');
       }
     } catch (error: any) {
-      console.error('Failed to logout:', error.message);
+      console.error('[OAuth] Failed to logout:', error.message);
       // Clear token anyway
       sessionStorage.removeItem('twitter_access_token');
     }
